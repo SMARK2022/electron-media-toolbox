@@ -67,6 +67,16 @@ Our project can achieve:
 本项目基于 [https://github.com/LuanRoger/electron-shadcn](https://github.com/LuanRoger/electron-shadcn) 制作，特别感谢。  
 This project is based on [https://github.com/LuanRoger/electron-shadcn](https://github.com/LuanRoger/electron-shadcn). Special thanks.
 
+特别感谢 [https://github.com/nasimjamshidi/LAR-IQA](https://github.com/nasimjamshidi/LAR-IQA) 的工作。  
+Special thanks to the work of [https://github.com/nasimjamshidi/LAR-IQA](https://github.com/nasimjamshidi/LAR-IQA).
+
+@article{avanaki2024lar,  
+  title={LAR-IQA: A Lightweight, Accurate, and Robust No-Reference Image Quality Assessment Model},  
+  author={Avanaki, Nasim Jamshidi and Ghildyal, Abhijay and Barman, Nabajeet and Zadtootaghaj, Saman},  
+  journal={arXiv preprint arXiv:2408.17057},  
+  year={2024}  
+}
+
 ## 许可证 | License
 此项目基于 Apache License 2.0 协议发布，详情请参见 LICENSE 文件。  
 This project is licensed under the Apache License 2.0. For details, please refer to the LICENSE file.
