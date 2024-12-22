@@ -1,0 +1,30 @@
+------------ Options -------------
+gpu_ids: 0
+test_dataset: live
+train_dataset: kadid10k
+train_patch_num: 1
+test_patch_num: 1
+lr: 2e-05
+weight_decay: 0.0005
+batch_size: 32
+epochs: 100
+patch_size: 224
+self_patch_num: 10
+train_test_num: 1
+update_opt_epoch: 30
+use_refHQ: True
+distillation_layer: 18
+net_print: 2000
+setting_file: ./checkpoint_DistillationIQA/setting.txt
+checkpoint_dir: ./checkpoint_DistillationIQA/
+use_fitting_prcc_srcc: True
+print_netC: False
+teacherNet_model_path: ./model_zoo/FR_teacher_cross_dataset.pth
+studentNet_model_path: None
+distillation_loss: l1
+ref_train_dataset_path: ./dataset/DIV2K_ref/train_HR/
+ref_test_dataset_path: ./dataset/DIV2K_ref/val_HR/
+model_checkpoint_dir: ./checkpoint_DistillationIQA/models/
+result_checkpoint_dir: ./checkpoint_DistillationIQA/results/
+log_checkpoint_dir: ./checkpoint_DistillationIQA/log/
+-------------- End ----------------

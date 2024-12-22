@@ -1,0 +1,45 @@
+# Node modules
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dependency directories
+jspm_packages/
+test_packages/
+
+# Production build
+build/
+dist/
+out/
+bak/
+
+*/build/
+
+# Cache directories
+.cache/
+.tmp/
+thumbs/
+
+# IDEs and editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+
+*.ckpt
+*.pt
+*.pth
+*.db
