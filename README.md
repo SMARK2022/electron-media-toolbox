@@ -4,8 +4,19 @@
 本项目是一个媒体工具箱，旨在对图片进行高效的管理、筛选和处理操作。  
 This project is a media toolbox designed for efficient management, filtering, and processing of images.
 
-本项目由 Electron、React 和 Python 等技术协同构建，致力于为用户提供一站式的图片处理与管理功能，支持批量导入、筛选和对图片进行相似度与质量分析。借助数据库技术，实现对各类元数据和编辑记录的持久化管理，方便日后回溯与检索。  
-This project is built with technologies such as Electron, React, and Python, aiming to provide users with a one-stop solution for image processing and management. It supports batch import, filtering, and similarity and quality analysis of images. With the help of database technology, it achieves persistent management of various metadata and editing records, facilitating future retrospection and retrieval.
+用户可能在摄影过程中存在大量的连拍照片，在后期照片筛选时会遇到棘手的难以筛选的问题。因此我创建了这个工具箱，可以直接读入相机存储卡的照片文件夹，经过HSV直方图相似度分组后，根据IQA美学评分进行美观度排序，便于删除。在用户管理照片完成后，进行导出复制到指定文件夹。  
+Users may have a large number of burst photos during photography, and it can be difficult to filter them during post-processing. Therefore, I created this toolbox, which can directly read the photo folder from the camera's storage card, group them by HSV histogram similarity, and then sort them by IQA aesthetic score for easy deletion. After users finish managing the photos, they can export and copy them to a specified folder.
+
+我们的项目能够实现：  
+Our project can achieve:
+- 3ms/frame 的缩略图生成能力  
+  3ms/frame thumbnail generation capability
+- 1s/frame 的照片推理与检测能力  
+  1s/frame photo inference and detection capability
+
+## 工作栈 | Tech Stack
+- Electron + Vite + React + Shadcn
+- Python + Torch-CUDA
 
 ## 项目结构 | Project Structure
 ```
