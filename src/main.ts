@@ -34,6 +34,7 @@ function createWindow() {
             preload: preload,
         },
         titleBarStyle: "hidden",
+        title: "Electron Media Toolbox", // 设置窗口名
     });
     registerListeners(mainWindow);
 
@@ -134,7 +135,7 @@ function createWindow() {
 
                         // 返回文件大小和完整的 EXIF 数据
                         resolve(result);
-                    } catch (exifError) {
+                    } catch (exifError: any) {
                         reject(`Error parsing EXIF data: ${exifError.message}`);
                     }
                 });

@@ -15,6 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { addPhotosExtend, clearPhotos, getPhotos, initializeDatabase } from "@/lib/db";
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 
 interface Photo {
     fileName: string;
@@ -43,6 +44,7 @@ interface FileImportDrawerProps {
 }
 
 function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
+    const { t } = useTranslation();
     const [fileNames, setFileNames] = React.useState<string[]>([]);
     const [folderName, setFolderName] = React.useState<string>("");
     const [isDropped, setIsDropped] = React.useState<boolean>(false);
@@ -61,7 +63,6 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
             if (fileExtension && validExtensions.includes(fileExtension)) {
                 const filePath = `${fileName}`;
                 fileList.push(filePath);
-                // console.log("File Path:", filePath);
             }
         }
 
@@ -85,14 +86,10 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
         setIsDropped(false);
     };
 
-    // 假设你已经定义了Photo类型和其他相关代码
     const handleSubmit = async () => {
         const savedFileNames = fileNames;
         const savedFolderName = folderName;
-        console.log("Saved File Names:", savedFileNames);
-        console.log("Saved Folder Name:", savedFolderName);
 
-        // 向 Python 后端请求生成缩略图
         const url = "http://localhost:8000/generate_thumbnails";
         const data = {
             folder_path: `${savedFolderName}`,
@@ -101,7 +98,7 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
         };
 
         try {
-            const response = await fetch(url, {
+            await fetch(url, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -112,7 +109,6 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
             console.error("Error generating thumbnails:", error);
         }
 
-        // 获取每个文件的拍摄时间
         const photoObjects: PhotoExtend[] = await Promise.all(
             savedFileNames.map(async (filePath) => {
                 const fileName = filePath.split("/").pop() || "";
@@ -122,23 +118,17 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
 
                 if (photoInfoResponse.ok) {
                     const photoInfo = await photoInfoResponse.json();
-                    // console.log("Photo Info:", photoInfo);
-
-                    // 将时间戳转化为日期格式
                     const captureTime = new Date(
                         photoInfo.tags.captureTime * 1000
                     ).toLocaleString();
 
                     return {
                         fileName: fileName,
-                        // 构建缩略图 URL
                         fileUrl: `thumbnail-resource://${savedFolderName}/${filePath}`,
                         filePath: `${savedFolderName}/${filePath}`,
-                        date: captureTime, // 使用拍摄时间替代 info 字段
+                        date: captureTime,
                         fileSize: photoInfo.tags.fileSize,
-                        info:
-                            `1/${1 / photoInfo.tags.ExposureTime} ${photoInfo.tags.LensModel}` ||
-                            undefined,
+                        info: `1/${1 / photoInfo.tags.ExposureTime} ${photoInfo.tags.LensModel}` || undefined,
                         isEnabled: true,
                     };
                 } else {
@@ -156,12 +146,10 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
             })
         );
 
-        // 保存到数据库
         clearPhotos();
         initializeDatabase();
         addPhotosExtend(photoObjects);
 
-        // Convert PhotoExtend objects to Photo objects
         const photoObjectsForState: Photo[] = photoObjects.map((photo) => ({
             fileName: photo.fileName,
             fileUrl: photo.fileUrl,
@@ -170,7 +158,7 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
             isEnabled: photo.isEnabled || true,
         }));
 
-        setPhotos(photoObjectsForState); // Set photo objects
+        setPhotos(photoObjectsForState);
         sessionStorage.setItem("savedFileNames", JSON.stringify(savedFileNames));
         sessionStorage.setItem("savedFolderName", savedFolderName);
         sessionStorage.setItem("savedPhotoObjectsForState", JSON.stringify(photoObjectsForState));
@@ -180,17 +168,17 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
     return (
         <Drawer>
             <DrawerTrigger asChild>
-                <Button variant="outline">导入照片</Button>
+                <Button variant="outline">{t("buttons.importPhotos")}</Button>
             </DrawerTrigger>
             <DrawerContent>
                 <div className="mx-auto mt-4 w-full max-w-sm">
                     <DrawerHeader>
-                        <DrawerTitle>照片导入</DrawerTitle>
-                        <DrawerDescription>将照片拖到上面的区域以导入它们。</DrawerDescription>
+                        <DrawerTitle>{t("modals.photoImport.title")}</DrawerTitle>
+                        <DrawerDescription>{t("modals.photoImport.description")}</DrawerDescription>
                     </DrawerHeader>
                     <Input
                         type="text"
-                        placeholder="输入文件夹路径"
+                        placeholder={t("placeholders.folderPath")}
                         value={folderName}
                         onChange={handleFolderChange}
                         className="mb-4"
@@ -198,7 +186,7 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
                     <ScrollArea className="h-72 w-full rounded-md border">
                         <div className="p-4">
                             <h4 className="mb-4 text-sm font-medium leading-none">
-                                文件列表 - {folderName || "请输入文件夹路径"}
+                                {t("labels.fileList")} - {folderName || t("placeholders.folderPath")}
                             </h4>
 
                             {!isDropped && (
@@ -208,7 +196,7 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
                                     onDrop={handleDrop}
                                     onDragOver={handleDragOver}
                                 >
-                                    <p className="text-center text-gray-500">将文件拖到这里</p>
+                                    <p className="text-center text-gray-500">{t("labels.dropFilesHere")}</p>
                                 </div>
                             )}
 
@@ -224,10 +212,10 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
                     </ScrollArea>
                     <DrawerFooter>
                         <DrawerClose asChild>
-                            <Button onClick={handleSubmit}>提交</Button>
+                            <Button onClick={handleSubmit}>{t("buttons.submit")}</Button>
                         </DrawerClose>
                         <Button variant="outline" onClick={handleReset}>
-                            重置
+                            {t("buttons.reset")}
                         </Button>
                     </DrawerFooter>
                 </div>
@@ -237,6 +225,7 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
 }
 
 export default function PhotoImportSubpage() {
+    const { t } = useTranslation();
     const [photos, setPhotos] = React.useState<Photo[]>([]);
 
     // 初始化数据库并加载数据
@@ -260,7 +249,7 @@ export default function PhotoImportSubpage() {
         <div className="min-h-screen p-4">
             <div className="mb-4 flex justify-between">
                 <FileImportDrawer setPhotos={setPhotos} />
-                <div className="text-right">总张数: {photos.length}</div>
+                <div className="text-right">{t("totalPhotosLabel")}: {photos.length}</div>
             </div>
             <ScrollArea className="mx-auto h-[80vh] w-[100vw] rounded-md border p-4">
                 <PhotoGridEnhance photos={photos} /> {/* Render PhotoGrid with photos */}

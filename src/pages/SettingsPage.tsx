@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast"; // Assuming toast is used for displaying alerts
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
 // Validation schema for the form using Zod
@@ -39,6 +40,7 @@ const loadSettingsFromLocalStorage = (): Partial<SettingsFormValues> => {
 
 // Settings page component
 export default function SettingsSubpage() {
+  const { t } = useTranslation();
   const defaultValues = loadSettingsFromLocalStorage();
 
   const form = useForm<SettingsFormValues>({
@@ -69,43 +71,44 @@ export default function SettingsSubpage() {
   }
 
   return (
-      <div className="min-h-screen p-16">
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-            <FormField
-              control={form.control}
-              name="cacheDirectory"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>缓存目录</FormLabel>
-                  <FormControl>
-                    <Input placeholder="请输入缓存目录" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="workerThreads"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>工作线程数</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      placeholder="请输入工作线程数"
-                      {...field}
-                      onChange={(e) => field.onChange(Number(e.target.value))}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <Button type="submit">更新设置</Button>
-          </form>
-        </Form>
-      </div>
+    <div className="min-h-screen p-16 pointer-events-none">
+      <p className="text-center text-blue-500">{t('settings.notAvailable')}</p>
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+          <FormField
+            control={form.control}
+            name="cacheDirectory"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('settings.cacheDirectory')}</FormLabel>
+                <FormControl>
+                  <Input placeholder={t('settings.enterCacheDirectory')} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="workerThreads"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('settings.workerThreads')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type="number"
+                    placeholder={t('settings.enterWorkerThreads')}
+                    {...field}
+                    onChange={(e) => field.onChange(Number(e.target.value))}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <Button type="submit">{t('settings.updateSettings')}</Button>
+        </form>
+      </Form>
+    </div>
   );
 }

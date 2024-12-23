@@ -116,7 +116,7 @@ export function PhotoGridEnhance({
                     tabIndex={0} // 允许每个图片项获取焦点
                     style={{
                         width: `${width}px`,
-                        background: photo.isEnabled ? "#ffffff" : "gray",
+                        background: photo.isEnabled ? "var(--card)" : "gray",
                         borderRadius: "3%",
                         border: `2px solid ${
                             isPhotoHighlighted(photo.fileName) ? "orange" : "transparent"

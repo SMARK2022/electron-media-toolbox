@@ -8,11 +8,19 @@ This project is a media toolbox designed for efficient management, filtering, an
 Users may have a large number of burst photos during photography, and it can be difficult to filter them during post-processing. Therefore, I created this toolbox, which can directly read the photo folder from the camera's storage card, group them by HSV histogram similarity, and then sort them by IQA aesthetic score for easy deletion. After users finish managing the photos, they can export and copy them to a specified folder.
 
 我们的项目能够实现：  
-Our project can achieve:
 - 3ms/frame 的缩略图生成能力  
-  3ms/frame thumbnail generation capability
 - 1s/frame 的照片推理与检测能力  
-  1s/frame photo inference and detection capability
+
+## 目前功能计划 | Current Feature Plan
+
+| 功能 | 完成进度 | 信息 | Feature | Progress | Info |
+| --- | --- | --- | --- | --- | --- |
+| 实现照片的分组 | ✅ 已完成 | 24.10.08 根据HSV相似度进行判断 | Grouping photos | ✅ Completed | 24.10.08 Judged by HSV similarity |
+| 添加显卡支持 | ✅ 已完成 | 24.12.02 使用pytorch+cuda | Add GPU support | ✅ Completed | 24.12.02 Using pytorch+cuda |
+| 调用更先进的IQA模型 | ✅ 已完成 | 24.12.16 使用浙大LAR-IQA无参图像评价算法 | Use advanced IQA model | ✅ Completed | 24.12.16 Using ZJU LAR-IQA no-reference image quality assessment algorithm |
+| 配置项、支持页面切换与状态复原 | ⬜ 未完成 | | Configuration options, support page switching and state restoration | ⬜ Not completed | |
+| 实现多种指标排序 | ⬜ 未完成 | | Implement multiple criteria sorting | ⬜ Not completed | |
+| 实现视频的导入与切片保存 | ⬜ 未完成 | | Implement video import and slice saving | ⬜ Not completed | |
 
 ## 工作栈 | Tech Stack
 - Electron + Vite + React + Shadcn
@@ -64,13 +72,19 @@ Our project can achieve:
 </table>
 
 ## 特别感谢 | Special Thanks
-本项目基于 [https://github.com/LuanRoger/electron-shadcn](https://github.com/LuanRoger/electron-shadcn) 制作，特别感谢。  
-This project is based on [https://github.com/LuanRoger/electron-shadcn](https://github.com/LuanRoger/electron-shadcn). Special thanks.
+本项目基于 [https://github.com/LuanRoger/electron-shadcn](https://github.com/LuanRoger/electron-shadcn) 构建。  
+This project is based on [https://github.com/LuanRoger/electron-shadcn](https://github.com/LuanRoger/electron-shadcn).
 
-特别感谢 [https://github.com/nasimjamshidi/LAR-IQA](https://github.com/nasimjamshidi/LAR-IQA) 的工作。  
-Special thanks to the work of [https://github.com/nasimjamshidi/LAR-IQA](https://github.com/nasimjamshidi/LAR-IQA).
+本项目采用了 [https://github.com/nasimjamshidi/LAR-IQA](https://github.com/nasimjamshidi/LAR-IQA) 算法。  
+This project uses the [https://github.com/nasimjamshidi/LAR-IQA](https://github.com/nasimjamshidi/LAR-IQA) algorithm.
 
 
 ## 许可证 | License
 此项目基于 Apache License 2.0 协议发布，详情请参见 LICENSE 文件。  
 This project is licensed under the Apache License 2.0. For details, please refer to the LICENSE file.
+
+## 更新日志 | Changelog
+- 2024.12.23 发布a1.1版本 设置全局语言翻译表，修改启动页，并整理代码  
+  ---------- Released version a1.1, set global language translation table, modified the startup page, and organized the code
+- 2024.12.22 发布a1.0版本 初始化整个项目，基本实现预期功能  
+  ---------- Released version a1.0, initialized the entire project, and basically achieved the expected functions

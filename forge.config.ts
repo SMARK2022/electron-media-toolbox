@@ -9,7 +9,7 @@ import { FuseV1Options, FuseVersion } from "@electron/fuses";
 
 const config: ForgeConfig = {
     packagerConfig: {
-        executableName: "electron-shadcn",
+        executableName: "Electron Media Toolbox",
         asar: true,
     },
     rebuildConfig: {},

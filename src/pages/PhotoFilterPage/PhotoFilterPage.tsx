@@ -57,7 +57,6 @@ export default function PhotoFilterSubpage() {
     const [photos, setPhotos] = React.useState<Photo[][]>([]); // 2D array of Photo type
     const [serverStatus, setServerStatus] = React.useState<string>("正在获取服务端状态...");
     const [serverData, setServerData] = React.useState<any>(null); // Store the complete server response
-    // const [enabledPhotos, setEnabledPhotos] = React.useState<PhotoExtend[]>([]);
 
     const [preview_photos, setPreviewPhotos] = React.useState<PhotoExtend[]>([]);
     const [panelTabValue, setPannelTabValue] = React.useState("filter");
@@ -87,37 +86,31 @@ export default function PhotoFilterSubpage() {
 
         initializeDatabase();
     }, []);
-
     const fetchEnabledPhotos = async () => {
         try {
-            // 获取未定义组(-1)的照片
             const undefinedGroupPhotos = await getPhotosExtendByCriteria(
-                galleryTabValue === "group" ?- 1:-2,
+                galleryTabValue === "group" ? -1 : -2,
                 sortedColumn,
                 !showDisabledPhotos
             );
 
-            // 获取启用的照片，groupId从0开始遍历
             let groupId = 0;
             let skippedGroup = 0;
-            let currentGroupPhotos = [];
             let groupedPhotos: { [key: number]: Photo[] } = {};
 
-            // 1. 如果未定义组的照片不为空，将其作为一组
             if (undefinedGroupPhotos.length > 0) {
                 groupedPhotos[groupId] = undefinedGroupPhotos.map((photo: PhotoExtend) => ({
                     fileName: photo.fileName,
                     fileUrl: photo.fileUrl,
                     filePath: photo.filePath,
-                    info: (photo.IQA || 0).toString(), // Set IQA as info
+                    info: (photo.IQA || 0).toString(),
                     isEnabled: photo.isEnabled,
                 }));
-                groupId++; // Move to the next group
+                groupId++;
             }
 
-            // 2. 遍历从groupId=0开始的组，直到某个组为空
-            while (true && galleryTabValue === "group") {
-                currentGroupPhotos = await getPhotosExtendByCriteria(
+            while (galleryTabValue === "group") {
+                const currentGroupPhotos = await getPhotosExtendByCriteria(
                     groupId + skippedGroup,
                     sortedColumn,
                     !showDisabledPhotos
@@ -125,36 +118,30 @@ export default function PhotoFilterSubpage() {
                 if (currentGroupPhotos.length === 0) {
                     if (skippedGroup < 20) {
                         skippedGroup++;
-                        continue; // Skip the empty group
+                        continue;
                     } else {
-                        break; // If a group is empty, stop the loop
+                        break;
                     }
                 }
 
-
-                // 将照片转换为新的格式，并加入到groupedPhotos
                 groupedPhotos[groupId] = currentGroupPhotos.map((photo: PhotoExtend) => ({
                     fileName: photo.fileName,
                     fileUrl: photo.fileUrl,
                     filePath: photo.filePath,
-                    info: (photo.IQA || 0).toString(), // Set IQA as info
+                    info: (photo.IQA || 0).toString(),
                     isEnabled: photo.isEnabled,
                 }));
 
-                groupId++; // Move to the next group
+                groupId++;
             }
 
-            // 4. 结果是按groupId分组的照片，sortedGroups是一个二维数组
-            const sortedGroups = Object.values(groupedPhotos);
-
-            setPhotos(sortedGroups); // Set the sorted groups
+            setPhotos(Object.values(groupedPhotos));
             console.log("照片更新一次", update);
         } catch (error) {
             console.error("获取启用照片失败:", error);
         }
     };
 
-    // Fetch server status
     const fetchServerStatus = async () => {
         console.log("更新状态", update);
         try {
@@ -162,21 +149,20 @@ export default function PhotoFilterSubpage() {
             if (response.ok) {
                 const data = await response.json();
                 setServerStatus(`服务端状态: ${data.status || "未知状态"}`);
-                setServerData(data); // Save complete data
+                setServerData(data);
 
-                // Get submit time from sessionStorage
                 const submitTime = sessionStorage.getItem("submitTime");
                 if (submitTime) {
                     const currentTime = Date.now();
-                    const timeDifference = (currentTime - parseInt(submitTime)) / 1000; // in seconds
+                    const timeDifference = (currentTime - parseInt(submitTime)) / 1000;
 
                     if (timeDifference > 6 && data.status === "空闲中") {
                         setTimeout(() => {
                             if (data.status === "空闲中") {
-                                setUpdate(false); // Stop updates if still idle after 8 seconds
+                                setUpdate(false);
                                 console.log("停止更新");
                             }
-                        }, 5000); // Wait for 8 seconds
+                        }, 5000);
                     }
                 }
             } else {
@@ -192,11 +178,9 @@ export default function PhotoFilterSubpage() {
     };
 
     const handleSubmit = async () => {
-        // Store current time in sessionStorage when submit is clicked
         const currentTime = Date.now();
         sessionStorage.setItem("submitTime", currentTime.toString());
 
-        // Send the POST request to submit the task
         const response = await fetch("http://127.0.0.1:8000/detect_images", {
             method: "POST",
             headers: {
@@ -210,17 +194,13 @@ export default function PhotoFilterSubpage() {
         if (response.ok) {
             const data = await response.json();
             console.log("检测任务已添加到队列:", data);
-
-            // Set the update flag to true after submit
             setUpdate(true);
         } else {
             console.error("提交检测任务失败");
         }
     };
 
-    // 定时轮询获取启用的照片并根据分组进行排序
     React.useEffect(() => {
-        // 每隔 5 秒获取一次启用照片
         fetchEnabledPhotos();
         const interval_photos = setInterval(() => {
             if (update) {
@@ -228,11 +208,9 @@ export default function PhotoFilterSubpage() {
             }
         }, 4000);
 
-        // 在组件卸载时清除定时器
         return () => clearInterval(interval_photos);
     }, [update]);
 
-    // 定时轮询获取启用的照片并根据分组进行排序
     React.useEffect(() => {
         fetchEnabledPhotos();
         if (reloadAlbum) {
@@ -241,7 +219,6 @@ export default function PhotoFilterSubpage() {
     }, [reloadAlbum, showDisabledPhotos, isPreviewEnabled, galleryTabValue]);
 
     React.useEffect(() => {
-        // 每隔 5 秒获取一次启用照片
         fetchServerStatus();
         const interval_status = setInterval(() => {
             if (update) {
@@ -249,7 +226,7 @@ export default function PhotoFilterSubpage() {
             }
         }, 1000);
 
-        return () => clearInterval(interval_status); // Clean up interval
+        return () => clearInterval(interval_status);
     }, [update]);
 
     return (
@@ -439,11 +416,6 @@ export default function PhotoFilterSubpage() {
                         <TabsContent value="preview" className="mt-0 border-0 p-0">
                             {preview_photos.length > 0 && (
                                 <div className="p-4">
-                                    {/* <img
-                                        id="preview-image"
-                                        src={`local-resource://${preview_photo.filePath}`}
-                                        style={{ width: "500px" }}
-                                    /> */}
 
                                     <ImagePreview
                                         src={`local-resource://${preview_photos[0].filePath}`}
@@ -454,141 +426,61 @@ export default function PhotoFilterSubpage() {
                                         <Table>
                                             <TableCaption>Preview Photo Details</TableCaption>
                                             <TableBody>
-                                                <TableRow>
-                                                    <TableCell className="font-medium">
-                                                        文件名
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {preview_photos[0].fileName}
-                                                    </TableCell>
-                                                </TableRow>
-                                                <TableRow>
-                                                    <TableCell className="font-medium">
-                                                        文件路径
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {preview_photos[0].filePath}
-                                                    </TableCell>
-                                                </TableRow>
-                                                {preview_photos[0].fileSize && (
-                                                    <TableRow>
-                                                        <TableCell className="font-medium">
-                                                            文件大小
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {preview_photos[0].fileSize >= 1048576
-                                                                ? (
-                                                                      preview_photos[0].fileSize /
-                                                                      1048576
-                                                                  ).toFixed(2) + " MB"
+                                                {[
+                                                    { label: "文件名", value: preview_photos[0].fileName },
+                                                    { label: "文件路径", value: preview_photos[0].filePath },
+                                                    {
+                                                        label: "文件大小",
+                                                        value:
+                                                            preview_photos[0].fileSize &&
+                                                            (preview_photos[0].fileSize >= 1048576
+                                                                ? (preview_photos[0].fileSize / 1048576).toFixed(2) + " MB"
                                                                 : preview_photos[0].fileSize >= 1024
-                                                                  ? (
-                                                                        preview_photos[0].fileSize /
-                                                                        1024
-                                                                    ).toFixed(2) + " KB"
-                                                                  : preview_photos[0].fileSize +
-                                                                    " B"}
-                                                        </TableCell>
-                                                    </TableRow>
-                                                )}
-                                                {preview_photos[0].info && (
-                                                    <TableRow>
-                                                        <TableCell className="font-medium">
-                                                            信息
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {preview_photos[0].info}
-                                                        </TableCell>
-                                                    </TableRow>
-                                                )}
-                                                {preview_photos[0].date && (
-                                                    <TableRow>
-                                                        <TableCell className="font-medium">
-                                                            日期
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {preview_photos[0].date}
-                                                        </TableCell>
-                                                    </TableRow>
-                                                )}
-                                                {preview_photos[0].groupId !== undefined && (
-                                                    <TableRow>
-                                                        <TableCell className="font-medium">
-                                                            分组编号
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {preview_photos[0].groupId}
-                                                        </TableCell>
-                                                    </TableRow>
-                                                )}
-                                                {preview_photos[0].similarity !== undefined && (
-                                                    <TableRow>
-                                                        <TableCell className="font-medium">
-                                                            相似度
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {preview_photos[0].similarity}
-                                                        </TableCell>
-                                                    </TableRow>
-                                                )}
-                                                {preview_photos[0].IQA !== undefined && (
-                                                    <TableRow>
-                                                        <TableCell className="font-medium">
-                                                            IQA
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {preview_photos[0].IQA}
-                                                        </TableCell>
-                                                    </TableRow>
-                                                )}
+                                                                ? (preview_photos[0].fileSize / 1024).toFixed(2) + " KB"
+                                                                : preview_photos[0].fileSize + " B"),
+                                                    },
+                                                    { label: "信息", value: preview_photos[0].info },
+                                                    { label: "日期", value: preview_photos[0].date },
+                                                    { label: "分组编号", value: preview_photos[0].groupId },
+                                                    { label: "相似度", value: preview_photos[0].similarity },
+                                                    { label: "IQA", value: preview_photos[0].IQA },
+                                                ]
+                                                    .filter((item) => item.value !== undefined)
+                                                    .map((item, index) => (
+                                                        <TableRow key={index}>
+                                                            <TableCell className="font-medium">{item.label}</TableCell>
+                                                            <TableCell>{item.value}</TableCell>
+                                                        </TableRow>
+                                                    ))}
                                                 {preview_photos[0].isEnabled !== undefined && (
                                                     <TableRow>
-                                                        <TableCell className="font-medium">
-                                                            是否启用
-                                                        </TableCell>
+                                                        <TableCell className="font-medium">是否启用</TableCell>
                                                         <TableCell>
                                                             <div className="flex items-center gap-2">
                                                                 <Switch
-                                                                    key={
-                                                                        preview_photos[0].isEnabled
-                                                                            ? "enabled"
-                                                                            : "disabled"
-                                                                    }
+                                                                    key={preview_photos[0].isEnabled ? "enabled" : "disabled"}
                                                                     id="disabled-display"
                                                                     checked={isPreviewEnabled}
                                                                     onClick={async (value) => {
                                                                         await updatePhotoEnabledStatus(
-                                                                            preview_photos[0]
-                                                                                .filePath,
+                                                                            preview_photos[0].filePath,
                                                                             !isPreviewEnabled
                                                                         );
 
                                                                         setPhotos((prevPhotos) =>
-                                                                            prevPhotos.map(
-                                                                                (group) =>
-                                                                                    group.map(
-                                                                                        (photo) =>
-                                                                                            photo.filePath ===
-                                                                                            preview_photos[0]
-                                                                                                .filePath
-                                                                                                ? {
-                                                                                                      ...photo,
-                                                                                                      isEnabled:
-                                                                                                          !isPreviewEnabled,
-                                                                                                  }
-                                                                                                : photo
-                                                                                    )
+                                                                            prevPhotos.map((group) =>
+                                                                                group.map((photo) =>
+                                                                                    photo.filePath === preview_photos[0].filePath
+                                                                                        ? { ...photo, isEnabled: !isPreviewEnabled }
+                                                                                        : photo
+                                                                                )
                                                                             )
                                                                         );
-                                                                        preview_photos[0].isEnabled =
-                                                                            !isPreviewEnabled;
+                                                                        preview_photos[0].isEnabled = !isPreviewEnabled;
                                                                     }}
                                                                 />
-
                                                                 <Label htmlFor="disabled-display">
-                                                                    {preview_photos[0].isEnabled
-                                                                        ? "启用"
-                                                                        : "弃用"}
+                                                                    {preview_photos[0].isEnabled ? "启用" : "弃用"}
                                                                 </Label>
                                                             </div>
                                                         </TableCell>
