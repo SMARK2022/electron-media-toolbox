@@ -62,7 +62,7 @@ export default function PhotoFilterSubpage() {
     const [panelTabValue, setPannelTabValue] = React.useState("filter");
     const [galleryTabValue, setGalleryTabValue] = React.useState("group");
 
-    const [update, setUpdate] = React.useState<boolean>(false); // Flag to control server status updates
+    const [update, setUpdate] = React.useState<boolean>(true); // Flag to control server status updates
     const [similarityThreshold, setSimilarityThreshold] = React.useState(0.8);
 
     const [showDisabledPhotos, setShowDisabledPhotos] = React.useState<boolean>(false);
@@ -260,7 +260,7 @@ export default function PhotoFilterSubpage() {
                                     整体模式
                                 </TabsTrigger>
                             </TabsList>
-                            <ScrollArea className="mx-auto h-[80vh] max-h-[80vh] min-h-[60vh] max-w-[70vw] rounded-md border p-4">
+                            <ScrollArea className="mx-auto h-[80vh] max-h-[80vh] min-h-[60vh]  min-w-[60vw] max-w-[60vw] rounded-md border p-4">
                                 {photos.map((group, index) => (
                                     <React.Fragment key={index}>
                                         <PhotoGridEnhance
@@ -361,14 +361,14 @@ export default function PhotoFilterSubpage() {
                         </div>
                     </div>
                 </div>
-                <div className="hidden h-[90vh] max-w-[35vw] flex-col space-y-4 sm:flex md:order-2">
+                <div className="hidden h-[90vh] max-w-[40vw] flex-col space-y-4 sm:flex md:order-2">
                     <Tabs
                         id="side-pannel"
                         defaultValue="filter"
                         value={panelTabValue}
                         className="flex-1"
                     >
-                        <div className="min-w-[25vw]">
+                        <div className="min-w-[35vw]">
                             <TabsList className="grid grid-cols-2">
                                 <TabsTrigger
                                     value="filter"
@@ -416,71 +416,115 @@ export default function PhotoFilterSubpage() {
                         <TabsContent value="preview" className="mt-0 border-0 p-0">
                             {preview_photos.length > 0 && (
                                 <div className="p-4">
-
                                     <ImagePreview
                                         src={`local-resource://${preview_photos[0].filePath}`}
-                                        width={"30vw"} // 预览控件的宽度
-                                        height={"40vh"} // 预览控件的高度
+                                        width={"35vw"} // 预览控件的宽度
+                                        height={"45vh"} // 预览控件的高度
                                     />
                                     <div className="mt-4 space-y-1">
                                         <Table>
                                             <TableCaption>Preview Photo Details</TableCaption>
                                             <TableBody>
                                                 {[
-                                                    { label: "文件名", value: preview_photos[0].fileName },
-                                                    { label: "文件路径", value: preview_photos[0].filePath },
+                                                    {
+                                                        label: "文件名",
+                                                        value: preview_photos[0].fileName,
+                                                    },
+                                                    {
+                                                        label: "文件路径",
+                                                        value: preview_photos[0].filePath,
+                                                    },
                                                     {
                                                         label: "文件大小",
                                                         value:
                                                             preview_photos[0].fileSize &&
                                                             (preview_photos[0].fileSize >= 1048576
-                                                                ? (preview_photos[0].fileSize / 1048576).toFixed(2) + " MB"
+                                                                ? (
+                                                                      preview_photos[0].fileSize /
+                                                                      1048576
+                                                                  ).toFixed(2) + " MB"
                                                                 : preview_photos[0].fileSize >= 1024
-                                                                ? (preview_photos[0].fileSize / 1024).toFixed(2) + " KB"
-                                                                : preview_photos[0].fileSize + " B"),
+                                                                  ? (
+                                                                        preview_photos[0].fileSize /
+                                                                        1024
+                                                                    ).toFixed(2) + " KB"
+                                                                  : preview_photos[0].fileSize +
+                                                                    " B"),
                                                     },
-                                                    { label: "信息", value: preview_photos[0].info },
-                                                    { label: "日期", value: preview_photos[0].date },
-                                                    { label: "分组编号", value: preview_photos[0].groupId },
-                                                    { label: "相似度", value: preview_photos[0].similarity },
+                                                    {
+                                                        label: "信息",
+                                                        value: preview_photos[0].info,
+                                                    },
+                                                    {
+                                                        label: "日期",
+                                                        value: preview_photos[0].date,
+                                                    },
+                                                    {
+                                                        label: "分组编号",
+                                                        value: preview_photos[0].groupId,
+                                                    },
+                                                    {
+                                                        label: "相似度",
+                                                        value: preview_photos[0].similarity,
+                                                    },
                                                     { label: "IQA", value: preview_photos[0].IQA },
                                                 ]
                                                     .filter((item) => item.value !== undefined)
                                                     .map((item, index) => (
                                                         <TableRow key={index}>
-                                                            <TableCell className="font-medium">{item.label}</TableCell>
+                                                            <TableCell className="font-medium">
+                                                                {item.label}
+                                                            </TableCell>
                                                             <TableCell>{item.value}</TableCell>
                                                         </TableRow>
                                                     ))}
                                                 {preview_photos[0].isEnabled !== undefined && (
                                                     <TableRow>
-                                                        <TableCell className="font-medium">是否启用</TableCell>
+                                                        <TableCell className="font-medium">
+                                                            是否启用
+                                                        </TableCell>
                                                         <TableCell>
                                                             <div className="flex items-center gap-2">
                                                                 <Switch
-                                                                    key={preview_photos[0].isEnabled ? "enabled" : "disabled"}
+                                                                    key={
+                                                                        preview_photos[0].isEnabled
+                                                                            ? "enabled"
+                                                                            : "disabled"
+                                                                    }
                                                                     id="disabled-display"
                                                                     checked={isPreviewEnabled}
                                                                     onClick={async (value) => {
                                                                         await updatePhotoEnabledStatus(
-                                                                            preview_photos[0].filePath,
+                                                                            preview_photos[0]
+                                                                                .filePath,
                                                                             !isPreviewEnabled
                                                                         );
 
                                                                         setPhotos((prevPhotos) =>
-                                                                            prevPhotos.map((group) =>
-                                                                                group.map((photo) =>
-                                                                                    photo.filePath === preview_photos[0].filePath
-                                                                                        ? { ...photo, isEnabled: !isPreviewEnabled }
-                                                                                        : photo
-                                                                                )
+                                                                            prevPhotos.map(
+                                                                                (group) =>
+                                                                                    group.map(
+                                                                                        (photo) =>
+                                                                                            photo.filePath ===
+                                                                                            preview_photos[0]
+                                                                                                .filePath
+                                                                                                ? {
+                                                                                                      ...photo,
+                                                                                                      isEnabled:
+                                                                                                          !isPreviewEnabled,
+                                                                                                  }
+                                                                                                : photo
+                                                                                    )
                                                                             )
                                                                         );
-                                                                        preview_photos[0].isEnabled = !isPreviewEnabled;
+                                                                        preview_photos[0].isEnabled =
+                                                                            !isPreviewEnabled;
                                                                     }}
                                                                 />
                                                                 <Label htmlFor="disabled-display">
-                                                                    {preview_photos[0].isEnabled ? "启用" : "弃用"}
+                                                                    {preview_photos[0].isEnabled
+                                                                        ? "启用"
+                                                                        : "弃用"}
                                                                 </Label>
                                                             </div>
                                                         </TableCell>

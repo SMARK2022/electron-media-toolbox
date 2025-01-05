@@ -63,6 +63,7 @@ i18n.use(initReactI18next).init({
                     totalPhotos: "Total Photos",
                     author: "Author",
                     email: "Email",
+                    totalPhotosLabel: "Total Photos",
                 },
                 about: {
                     pageTitle: "About Page",
@@ -143,6 +144,7 @@ i18n.use(initReactI18next).init({
                     totalPhotos: "总张数",
                     author: "作者",
                     email: "邮箱",
+                    totalPhotosLabel: "总张数",
                 },
                 about: {
                     pageTitle: "关于页面",

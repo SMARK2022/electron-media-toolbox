@@ -1,8 +1,27 @@
 # SMARK Media Tools
 
 ## 项目简介
-本项目是一个媒体工具箱，旨在对图片进行高效的管理、筛选和处理操作。
-本项目由 Electron、React 和 Python 等技术协同构建，致力于为用户提供一站式的图片处理与管理功能，支持批量导入、筛选和对图片进行相似度与质量分析。借助数据库技术，实现对各类元数据和编辑记录的持久化管理，方便日后回溯与检索。
+本项目是一个媒体工具箱，旨在对图片进行高效的管理、筛选和处理操作。  
+用户可能在摄影过程中存在大量的连拍照片，在后期照片筛选时会遇到棘手的难以筛选的问题。因此我创建了这个工具箱，可以直接读入相机存储卡的照片文件夹，经过HSV直方图相似度分组后，根据IQA美学评分进行美观度排序，便于删除。在用户管理照片完成后，进行导出复制到指定文件夹。
+
+我们的项目能够实现：  
+- 3ms/frame 的缩略图生成能力  
+- 1s/frame 的照片推理与检测能力  
+
+## 目前功能计划
+
+| 功能 | 完成进度 | 信息 |
+| --- | --- | --- |
+| 实现照片的分组 | ✅ 已完成 | 24.10.08 根据HSV相似度进行判断 |
+| 添加显卡支持 | ✅ 已完成 | 24.12.02 使用pytorch+cuda |
+| 调用更先进的IQA模型 | ✅ 已完成 | 24.12.16 使用浙大LAR-IQA无参图像评价算法 |
+| 配置项、支持页面切换与状态复原 | ⬜ 未完成 | |
+| 实现多种指标排序 | ⬜ 未完成 | |
+| 实现视频的导入与切片保存 | ⬜ 未完成 | |
+
+## 工作栈
+- Electron + Vite + React + Shadcn
+- Python + Torch-CUDA
 
 ## 项目结构
 ```
@@ -48,7 +67,12 @@
 </table>
 
 ## 特别感谢
-本项目基于 [https://github.com/LuanRoger/electron-shadcn](https://github.com/LuanRoger/electron-shadcn) 制作，特别感谢。
+本项目基于 [https://github.com/LuanRoger/electron-shadcn](https://github.com/LuanRoger/electron-shadcn) 制作，特别感谢。  
+本项目采用了 [https://github.com/nasimjamshidi/LAR-IQA](https://github.com/nasimjamshidi/LAR-IQA) 算法。
 
 ## 许可证
 此项目基于 Apache License 2.0 协议发布，详情请参见 LICENSE 文件。
+
+## 更新日志
+- 2024.12.23 发布a1.1版本 设置全局语言翻译表，修改启动页，并整理代码  
+- 2024.12.22 发布a1.0版本 初始化整个项目，基本实现预期功能

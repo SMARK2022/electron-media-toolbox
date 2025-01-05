@@ -175,16 +175,26 @@ def compute_similarity_and_IQA(img1, img2, img1filename):
     def calculate_histogram_similarity(img1, img2, bins, device):
         similarities = []
         for i, bin_size in enumerate(bins):
+            # 获取当前通道
             channel_img1 = img1[i].flatten()
             channel_img2 = img2[i].flatten()
+
+            # 计算直方图并归一化
             hist_img1 = torch.histc(channel_img1, bins=bin_size, min=0.0, max=1.0)
             hist_img2 = torch.histc(channel_img2, bins=bin_size, min=0.0, max=1.0)
-            # 归一化直方图
             hist_img1 /= hist_img1.sum()
             hist_img2 /= hist_img2.sum()
-            # 计算余弦相似度
-            similarity = torch.dot(hist_img1, hist_img2).item()
+
+            # 计算直方图相似度（使用相关性）
+            hist1_mean = hist_img1.mean()
+            hist2_mean = hist_img2.mean()
+            numerator = ((hist_img1 - hist1_mean) * (hist_img2 - hist2_mean)).sum()
+            denominator = torch.sqrt(
+                ((hist_img1 - hist1_mean) ** 2).sum() * ((hist_img2 - hist2_mean) ** 2).sum()
+            )
+            similarity = (numerator / (denominator + 1e-6)).item()
             similarities.append(similarity)
+
         return sum(similarities) / len(similarities)
 
     def hsv_similarity(img1, img2, bins, device):
@@ -272,14 +282,6 @@ def process_image_batch(worker_id, image_files, cache_data, db_path):
                 WHERE id = ?
                 """,
                 (previous_image[0], similarity, IQA, result[0]),
-            )
-        else:
-            cursor.execute(
-                """
-                INSERT INTO present (fileName, fileUrl, filePath, info, date, groupId, simRefPath, similarity, IQA)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (file, '', file, '', '', 0, previous_image[0], similarity, IQA),
             )
         conn.commit()
         conn.close()
