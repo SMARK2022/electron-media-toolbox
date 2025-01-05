@@ -205,10 +205,9 @@ def get_image_capture_time(image_path):
     return creation_time
 
 
-def generate_thumbnails(folder_path, width, height):
+def generate_thumbnails(folder_path, thumbs_path, width, height):
     """生成缩略图并保存为WEBP，同时修改文件时间"""
-    temp_folder = '../.cache/.thumbs'
-    os.makedirs(temp_folder, exist_ok=True)
+    os.makedirs(thumbs_path, exist_ok=True)
 
     image_files = [
         os.path.join(folder_path, f)
@@ -222,36 +221,19 @@ def generate_thumbnails(folder_path, width, height):
 
     start_time = time.time()
 
-    # 使用线程池处理图片
     def process_image(image_file):
-        # 获取缩略图数据（可以是任何生成缩略图的函数）
         bmp_data = get_thumbnail(image_file, width, height)
-
-        # 将 BMP 数据转换为图片
         image = Image.open(io.BytesIO(bmp_data))
-
-        # 修改保存文件名
         normalized_path = image_file.replace("\\", "/").lower()
-
-        # 计算CRC32哈希值
         crc32_hash = zlib.crc32(normalized_path.encode('utf-8'))
         crc32_hex = f"{crc32_hash:08x}"
-        output_file = os.path.join(temp_folder, f"{crc32_hex}.webp")
-
-        # 保存图片为WEBP格式
+        output_file = os.path.join(thumbs_path, f"{crc32_hex}.webp")
         image.save(output_file, "WEBP")
-
-        # 获取拍摄时间
         capture_time = get_image_capture_time(image_file)
-
-        # 转换为时间戳格式
         time_struct = time.strptime(capture_time, "%Y:%m:%d %H:%M:%S")
         timestamp = time.mktime(time_struct)
-
-        # 修改文件的创建和访问时间
         os.utime(output_file, (timestamp, timestamp))
 
-    # 使用 ThreadPoolExecutor 加速处理
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.map(process_image, image_files)
 

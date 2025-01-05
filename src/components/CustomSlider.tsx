@@ -10,7 +10,7 @@ interface CustomSliderProps {
     min: number;
     max: number;
     step: number;
-    defaultValue: number | number[];
+    value: number;
     onChange?: (value: number) => void;
 }
 
@@ -20,14 +20,11 @@ export function CustomSlider({
     min,
     max,
     step,
-    defaultValue,
+    value,
     onChange,
 }: CustomSliderProps) {
-    const [value, setValue] = React.useState(defaultValue);
-
     const handleValueChange = (newValue: number[]) => {
         const newValueSingle = newValue[0];
-        setValue(newValueSingle);
         if (onChange) {
             onChange(newValueSingle);
         }
@@ -48,7 +45,7 @@ export function CustomSlider({
                             id={label}
                             min={min}
                             max={max}
-                            defaultValue={Array.isArray(value) ? value : [value]}
+                            value={[value]}
                             step={step}
                             onValueChange={handleValueChange}
                             className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4"

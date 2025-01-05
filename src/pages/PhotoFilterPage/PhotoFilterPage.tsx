@@ -63,7 +63,10 @@ export default function PhotoFilterSubpage() {
     const [galleryTabValue, setGalleryTabValue] = React.useState("group");
 
     const [update, setUpdate] = React.useState<boolean>(true); // Flag to control server status updates
-    const [similarityThreshold, setSimilarityThreshold] = React.useState(0.8);
+    const [similarityThreshold, setSimilarityThreshold] = React.useState<number>(() => {
+        // Retrieve the initial value from session storage or default to 0.8
+        return parseFloat(sessionStorage.getItem("similarityThreshold") || "0.8");
+    });
 
     const [showDisabledPhotos, setShowDisabledPhotos] = React.useState<boolean>(false);
     const [sortedColumn, setSortedColumn] = React.useState("IQA");
@@ -87,6 +90,8 @@ export default function PhotoFilterSubpage() {
         initializeDatabase();
     }, []);
     const fetchEnabledPhotos = async () => {
+        console.log("galleryTabValue", galleryTabValue);
+        console.log("showDisabledPhotos", showDisabledPhotos);
         try {
             const undefinedGroupPhotos = await getPhotosExtendByCriteria(
                 galleryTabValue === "group" ? -1 : -2,
@@ -173,13 +178,17 @@ export default function PhotoFilterSubpage() {
         }
     };
 
-    const handleSliderChange = (value: React.SetStateAction<number>) => {
+    const handleSliderChange = (value: number) => {
         setSimilarityThreshold(value);
+        sessionStorage.setItem("similarityThreshold", value.toString()); // Store value in session storage
     };
 
     const handleSubmit = async () => {
         const currentTime = Date.now();
         sessionStorage.setItem("submitTime", currentTime.toString());
+
+        // Get the database path from the Electron API
+        const dbPath = window.ElectronDB.getDbPath();
 
         const response = await fetch("http://127.0.0.1:8000/detect_images", {
             method: "POST",
@@ -188,6 +197,8 @@ export default function PhotoFilterSubpage() {
             },
             body: JSON.stringify({
                 similarity_threshold: similarityThreshold,
+                db_path: dbPath, // Include the database path in the request
+                show_disabled_photos: showDisabledPhotos, // Include the showDisabledPhotos parameter
             }),
         });
 
@@ -409,7 +420,7 @@ export default function PhotoFilterSubpage() {
                                 min={0}
                                 max={1}
                                 step={0.01}
-                                defaultValue={0.8}
+                                value={similarityThreshold}
                                 onChange={handleSliderChange}
                             />
                         </TabsContent>

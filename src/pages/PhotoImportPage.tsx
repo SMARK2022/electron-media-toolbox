@@ -90,9 +90,13 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
         const savedFileNames = fileNames;
         const savedFolderName = folderName;
 
+        // Get the thumbnail directory path from the Electron API
+        const thumbsPath = window.ElectronDB.getThumbsPath();
+
         const url = "http://localhost:8000/generate_thumbnails";
         const data = {
             folder_path: `${savedFolderName}`,
+            thumbs_path: thumbsPath, // Include the thumbnail directory path in the request
             width: 128,
             height: 128,
         };
