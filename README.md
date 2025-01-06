@@ -84,6 +84,8 @@ This project uses the [https://github.com/nasimjamshidi/LAR-IQA](https://github.
 This project is licensed under the Apache License 2.0. For details, please refer to the LICENSE file.
 
 ## 更新日志 | Changelog
+- 2025.01.06 更新a1.1版本 修复了一些bug，改进了页面布局，并添加了文件夹可用性检测功能  
+  ---------- Released version a1.1, fixed several bugs, improved page layout, and added folder existence checking feature
 - 2024.12.23 发布a1.1版本 设置全局语言翻译表，修改启动页，并整理代码  
   ---------- Released version a1.1, set global language translation table, modified the startup page, and organized the code
 - 2024.12.22 发布a1.0版本 初始化整个项目，基本实现预期功能  

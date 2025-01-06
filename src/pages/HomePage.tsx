@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 
 export default function HomePage() {
     const { t, i18n } = useTranslation();
-    const [serverStatus, setServerStatus] = useState("checking");
+    const [serverStatusKey, setServerStatusKey] = useState("status.checking");
     const [statusColor, setStatusColor] = useState("gray");
 
     const checkServerStatus = async () => {
@@ -18,14 +18,14 @@ export default function HomePage() {
             clearTimeout(timeoutId);
 
             if (response.ok) {
-                setServerStatus(t("status.backendRunning"));
+                setServerStatusKey("status.backendRunning");
                 setStatusColor("green");
             } else {
-                setServerStatus(t("status.backendNotRunning"));
+                setServerStatusKey("status.backendNotRunning");
                 setStatusColor("red");
             }
         } catch (error) {
-            setServerStatus(t("status.backendNotRunning"));
+            setServerStatusKey("status.backendNotRunning");
             setStatusColor("red");
         }
     };
@@ -49,7 +49,7 @@ export default function HomePage() {
                             className={`mr-2 h-3 w-3 rounded-full`}
                             style={{ backgroundColor: statusColor }}
                         ></span>
-                        {serverStatus}
+                        {t(serverStatusKey)}
                     </Button>
                     <ToggleTheme />
                 </div>

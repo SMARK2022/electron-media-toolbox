@@ -250,14 +250,16 @@ export default function PhotoImportSubpage() {
     }, []);
 
     return (
-        <div className="min-h-screen p-4">
+        <div className="min-h-screen p-4 flex flex-col">
             <div className="mb-4 flex justify-between">
                 <FileImportDrawer setPhotos={setPhotos} />
                 <div className="text-right">{t("labels.totalPhotosLabel")}: {photos.length}</div>
             </div>
-            <ScrollArea className="mx-auto h-[80vh] w-[100vw] rounded-md border p-4">
-                <PhotoGridEnhance photos={photos} /> {/* Render PhotoGrid with photos */}
-            </ScrollArea>
+            <div className="flex-1 overflow-hidden">
+                <ScrollArea className="h-[calc(100vh-160px)] mx-auto w-full max-w-full rounded-md border p-4">
+                    <PhotoGridEnhance photos={photos} /> {/* Render PhotoGrid with photos */}
+                </ScrollArea>
+            </div>
         </div>
     );
 }

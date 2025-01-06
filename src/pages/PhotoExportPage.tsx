@@ -9,14 +9,14 @@ import {
     AlertDialogFooter,
     AlertDialogHeader,
     AlertDialogTitle,
-    AlertDialogTrigger
+    AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getPhotosExtendByCriteria, initializeDatabase } from "@/lib/db";
-import { copyPhotos } from "@/lib/system";
-import React from "react";
+import { copyPhotos, folderExists } from "@/lib/system";
+import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 interface PhotoExtend {
@@ -43,15 +43,20 @@ interface Photo {
 
 export default function PhotoExportSubpage() {
     const { t } = useTranslation();
-    const [photos, setPhotos] = React.useState<Photo[]>([]);
-    const [folderName, setFolderName] = React.useState<string>("");
-    const [isDialogOpen, setIsDialogOpen] = React.useState<boolean>(false);
-    const [copyInProgress, setCopyInProgress] = React.useState<boolean>(false);
+    const [photos, setPhotos] = useState<Photo[]>([]);
+    const [folderName, setFolderName] = useState<string>("");
+    const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
+    const [copyInProgress, setCopyInProgress] = useState<boolean>(false);
+    const [folderExistsStatus, setFolderExistsStatus] = useState<boolean | null>(null);
 
-    const handleFolderChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFolderChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const inputPath = event.target.value;
         const normalizedPath = inputPath.replace(/\\/g, "/");
         setFolderName(normalizedPath);
+
+        // Check if the folder exists
+        const exists = await folderExists(normalizedPath);
+        setFolderExistsStatus(exists);
     };
 
     const submitPhotosCopy = async () => {
@@ -63,11 +68,7 @@ export default function PhotoExportSubpage() {
 
     const fetchEnabledPhotos = async () => {
         try {
-            const undefinedGroupPhotos = await getPhotosExtendByCriteria(
-                -2,
-                "IQA",
-                true
-            );
+            const undefinedGroupPhotos = await getPhotosExtendByCriteria(-2, "IQA", true);
 
             let groupedPhotos: Photo[] = [];
 
@@ -89,7 +90,6 @@ export default function PhotoExportSubpage() {
         }
     };
 
-
     React.useEffect(() => {
         const currentTime = Date.now();
         sessionStorage.setItem("submitTime", currentTime.toString());
@@ -102,7 +102,9 @@ export default function PhotoExportSubpage() {
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>
-                            {copyInProgress ? t("status.exportingPhotos") : t("status.exportComplete")}
+                            {copyInProgress
+                                ? t("status.exportingPhotos")
+                                : t("status.exportComplete")}
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                             {copyInProgress
@@ -124,8 +126,10 @@ export default function PhotoExportSubpage() {
                     )}
                 </AlertDialogContent>
 
-                <div className="mb-4 flex justify-between items-center space-x-4">
-                    <div className="text-right">{t("labels.totalPhotos")}: {photos.length}</div>
+                <div className="mb-4 flex items-center justify-between space-x-4">
+                    <div className="text-right">
+                        {t("labels.totalPhotos")}: {photos.length}
+                    </div>
 
                     <AlertDialogTrigger asChild>
                         <Button variant="outline" onClick={submitPhotosCopy}>
@@ -133,17 +137,27 @@ export default function PhotoExportSubpage() {
                         </Button>
                     </AlertDialogTrigger>
 
-                    <Input
-                        type="text"
-                        placeholder={t("placeholders.folderPath")}
-                        value={folderName}
-                        onChange={handleFolderChange}
-                        className="mb-4"
-                    />
+                    <div className="flex flex-grow items-center space-x-2">
+                        <Input
+                            type="text"
+                            placeholder={t("placeholders.folderPath")}
+                            value={folderName}
+                            onChange={handleFolderChange}
+                            className="flex-grow"
+                        />
+                        <Button variant="outline" className="w-35 min-w-[140px] max-w-[140px] underline">
+                            <span
+                                className={`h-3 w-3 rounded-full ${
+                                    folderExistsStatus ? "bg-green-500" : "bg-red-500"
+                                }`}
+                            ></span>
+                            {folderExistsStatus ? "文件夹存在" : "文件夹不存在"}
+                        </Button>
+                    </div>
                 </div>
             </AlertDialog>
 
-            <ScrollArea className="mx-auto h-[80vh] max-h-[80vh] min-h-[60vh] min-w-[85vw] max-w-[100vw] rounded-md border p-2">
+            <ScrollArea className="mx-auto h-[calc(100vh-180px)] min-h-[60vh] min-w-[85vw] max-w-[100vw] rounded-md border p-2">
                 <PhotoGridEnhance photos={photos} />
             </ScrollArea>
         </div>

@@ -8,6 +8,10 @@ declare global {
             getDbPath: () => string;
             getThumbsPath: () => string;
         };
+        electronAPI: {
+            runCommand: (command: string, cwd?: string) => Promise<void>;
+            // Add other methods and properties as needed
+        };
     }
 }
 

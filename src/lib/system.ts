@@ -86,4 +86,22 @@ async function copyPhotos(
     await Promise.all(copyPromises);
 }
 
-export { changeFileExtension, copyFile, copyPhotos, createFolder };
+// Function to check if a folder exists
+async function folderExists(folderPath: string): Promise<boolean> {
+    // Validate the folder path to prevent command injection by checking for quotes
+    if (folderPath.includes('"') || folderPath.includes("'")) {
+        console.error("Invalid folder path: path cannot contain quotes");
+        return false;
+    }
+
+    try {
+        const command = `if exist "${folderPath.replace(/\//g, "\\")}" (echo true) else (echo false)`;
+        const result = await window.electronAPI.runCommand(command);
+        return String(result).trim() === "true";  // Convert result to string before using trim
+    } catch (error) {
+        console.error("Error checking folder existence:", error);
+        return false;
+    }
+}
+
+export { changeFileExtension, copyFile, copyPhotos, createFolder, folderExists };

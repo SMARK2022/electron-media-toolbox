@@ -23,7 +23,7 @@ function createWindow() {
     const mainWindow = new BrowserWindow({
         width: 800,
         height: 600,
-        minWidth: 700,
+        minWidth: 800,
         minHeight: 500,
         webPreferences: {
             devTools: inDevelopment,
@@ -41,6 +41,7 @@ function createWindow() {
     if (inDevelopment) {
         mainWindow.webContents.openDevTools();
     }
+    // mainWindow.webContents.openDevTools();
 
     if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
         mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
