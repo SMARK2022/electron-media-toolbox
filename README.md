@@ -12,15 +12,14 @@ Users may have a large number of burst photos during photography, and it can be 
 - 1s/frame 的照片推理与检测能力  
 
 ## 目前功能计划 | Current Feature Plan
-
-| 功能 | 完成进度 | 信息 | Feature | Progress | Info |
-| --- | --- | --- | --- | --- | --- |
-| 实现照片的分组 | ✅ 已完成 | 24.10.08 根据HSV相似度进行判断 | Grouping photos | ✅ Completed | 24.10.08 Judged by HSV similarity |
-| 添加显卡支持 | ✅ 已完成 | 24.12.02 使用pytorch+cuda | Add GPU support | ✅ Completed | 24.12.02 Using pytorch+cuda |
-| 调用更先进的IQA模型 | ✅ 已完成 | 24.12.16 使用浙大LAR-IQA无参图像评价算法 | Use advanced IQA model | ✅ Completed | 24.12.16 Using ZJU LAR-IQA no-reference image quality assessment algorithm |
-| 配置项、支持页面切换与状态复原 | ⬜ 未完成 | | Configuration options, support page switching and state restoration | ⬜ Not completed | |
-| 实现多种指标排序 | ⬜ 未完成 | | Implement multiple criteria sorting | ⬜ Not completed | |
-| 实现视频的导入与切片保存 | ⬜ 未完成 | | Implement video import and slice saving | ⬜ Not completed | |
+| 功能 | Feature | Progress | Info |
+| --- | --- | --- | --- |
+| 实现照片的分组 | Grouping photos | ✅ Done | 24.10.08 Judged by HSV similarity |
+| 添加显卡支持 | Add GPU support | ✅ Done | 24.12.02 Using pytorch+cuda |
+| 调用更先进的IQA模型 | Use advanced IQA model | ✅ Done | 24.12.16 Using ZJU LAR-IQA no-reference image quality assessment algorithm |
+| 配置项、支持页面切换与状态复原 | Configuration options, support page switching and state restoration | ⬜ In Progress | |
+| 实现多种指标排序 | Implement multiple criteria sorting | ⬜ Todo | |
+| 实现视频的导入与切片保存 | Implement video import and slice saving | ⬜ Todo | |
 
 ## 工作栈 | Tech Stack
 - Electron + Vite + React + Shadcn
@@ -85,7 +84,7 @@ This project is licensed under the Apache License 2.0. For details, please refer
 
 ## 更新日志 | Changelog
 - 2025.01.06 更新a1.1版本 修复了一些bug，改进了页面布局，并添加了文件夹可用性检测功能  
-  ---------- Released version a1.1, fixed several bugs, improved page layout, and added folder existence checking feature
+  ---------- Updated version a1.1, fixed several bugs, improved page layout, and added folder existence checking feature
 - 2024.12.23 发布a1.1版本 设置全局语言翻译表，修改启动页，并整理代码  
   ---------- Released version a1.1, set global language translation table, modified the startup page, and organized the code
 - 2024.12.22 发布a1.0版本 初始化整个项目，基本实现预期功能  
