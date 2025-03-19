@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Table, TableBody, TableCaption, TableCell, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     getPhotosExtendByCriteria,
@@ -212,6 +211,45 @@ export default function PhotoFilterSubpage() {
         }
     };
 
+    const handleDisableRedundant = async () => {
+        try {
+            // 并行处理所有组
+            await Promise.all(
+                photos.map(async (group) => {
+                    const updates = group
+                        .slice(1)
+                        .map((photo) => updatePhotoEnabledStatus(photo.filePath, false));
+                    await Promise.all(updates);
+                })
+            );
+            setReloadAlbum(true);
+        } catch (error) {
+            console.error("禁用冗余照片失败:", error);
+        }
+    };
+
+    const handleEnableAll = async () => {
+        try {
+            await Promise.all(
+                photos.flat().map((photo) => updatePhotoEnabledStatus(photo.filePath, true))
+            );
+            setReloadAlbum(true);
+        } catch (error) {
+            console.error("启用所有照片失败:", error);
+        }
+    };
+
+    // 添加组件卸载时的清理
+    React.useEffect(() => {
+        return () => {
+            // 清理预览图片内存
+            setPreviewPhotos([]);
+            // 取消所有进行中的请求
+            const controller = new AbortController();
+            controller.abort();
+        };
+    }, []);
+
     React.useEffect(() => {
         fetchEnabledPhotos();
         const interval_photos = setInterval(() => {
@@ -245,7 +283,7 @@ export default function PhotoFilterSubpage() {
         <div className="min-h-screen p-4">
             <div className="flex gap-6">
                 <div className="md:order-1">
-                    <div className="flex h-[85vh] max-w-[70vw] min-w-[50vw] flex-col space-y-4">
+                    <div className="flex h-[85vh] min-w-[50vw] max-w-[70vw] flex-col space-y-4">
                         <Tabs id="gallery-pannel" defaultValue="group" value={galleryTabValue}>
                             <TabsList className="grid grid-cols-2">
                                 <TabsTrigger
@@ -414,6 +452,8 @@ export default function PhotoFilterSubpage() {
                                 value={similarityThreshold}
                                 onChange={handleSliderChange}
                             />
+                            <Button onClick={handleDisableRedundant}>弃用冗余</Button>
+                            <Button onClick={handleEnableAll}>启用所有</Button>
                         </TabsContent>
                         <TabsContent value="preview" className="mt-0 border-0 p-0">
                             {preview_photos.length > 0 && (

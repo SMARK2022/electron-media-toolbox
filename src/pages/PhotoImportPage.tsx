@@ -87,7 +87,9 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
     };
 
     const handleSubmit = async () => {
-        const savedFileNames = fileNames;
+        const savedFileNames = [...fileNames].sort((a, b) =>
+            a.localeCompare(b, undefined, { numeric: true })
+        );
         const savedFolderName = folderName;
 
         // Get the thumbnail directory path from the Electron API
