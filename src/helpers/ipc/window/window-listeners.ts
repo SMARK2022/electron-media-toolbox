@@ -1,5 +1,9 @@
-import { BrowserWindow, clipboard, ipcMain } from "electron";
-import { WIN_CLOSE_CHANNEL, WIN_MAXIMIZE_CHANNEL, WIN_MINIMIZE_CHANNEL } from "./window-channels";
+import { BrowserWindow, ipcMain } from "electron";
+import {
+    WIN_CLOSE_CHANNEL,
+    WIN_MAXIMIZE_CHANNEL,
+    WIN_MINIMIZE_CHANNEL,
+} from "./window-channels";
 const fs = require("fs");
 
 const { protocol } = require("electron"); // 引入 protocol 模块，用于注册 schemes
@@ -51,19 +55,19 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 export function addWindowEventListeners(mainWindow: BrowserWindow) {
-    ipcMain.handle(WIN_MINIMIZE_CHANNEL, () => {
-        mainWindow.minimize();
-    });
-    ipcMain.handle(WIN_MAXIMIZE_CHANNEL, () => {
-        if (mainWindow.isMaximized()) {
-            mainWindow.unmaximize();
-        } else {
-            mainWindow.maximize();
-        }
-    });
-    ipcMain.handle(WIN_CLOSE_CHANNEL, () => {
-        mainWindow.close();
-    });
+  ipcMain.handle(WIN_MINIMIZE_CHANNEL, () => {
+    mainWindow.minimize();
+  });
+  ipcMain.handle(WIN_MAXIMIZE_CHANNEL, () => {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+  });
+  ipcMain.handle(WIN_CLOSE_CHANNEL, () => {
+    mainWindow.close();
+  });
 
     ipcMain.handle("read-file", async (event, filePath) => {
         try {

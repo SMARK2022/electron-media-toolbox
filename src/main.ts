@@ -2,6 +2,10 @@ import { app, BrowserWindow } from "electron";
 import registerListeners from "./helpers/ipc/listeners-register";
 // "electron-squirrel-startup" seems broken when packaging with vite
 //import started from "electron-squirrel-startup";
+import {
+    installExtension,
+    REACT_DEVELOPER_TOOLS,
+} from "electron-devtools-installer";
 import * as fs from "fs";
 import path from "path";
 import * as zlib from "zlib";
@@ -43,13 +47,14 @@ function createWindow() {
     }
     mainWindow.webContents.openDevTools();
 
-    if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-        mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-    } else {
-        mainWindow.loadFile(
-            path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`)
-        );
-    }
+
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+  } else {
+    mainWindow.loadFile(
+      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
+    );
+  }
 
     // 一个辅助函数，用于处理不同操作系统的文件路径问题
     function convertPath(originalPath: string) {
@@ -167,18 +172,27 @@ function createWindow() {
     });
 }
 
-app.whenReady().then(createWindow);
+async function installExtensions() {
+  try {
+    const result = await installExtension(REACT_DEVELOPER_TOOLS);
+    console.log(`Extensions installed successfully: ${result.name}`);
+  } catch {
+    console.error("Failed to install extensions");
+  }
+}
+
+app.whenReady().then(createWindow).then(installExtensions);
 
 //osX only
 app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") {
-        app.quit();
-    }
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
 });
 
 app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
-    }
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
 });
 //osX only ends

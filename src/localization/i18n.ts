@@ -15,6 +15,7 @@ i18n.use(initReactI18next).init({
                         "Import photos on the import page, then filter photos on the filter page, and finally select the photos you need.",
                 },
                 status: {
+                    checking: "Checking server status",
                     backendRunning: "Python backend is running",
                     backendNotRunning: "Python backend is not running",
                     exportingPhotos: "Exporting Photos",
@@ -97,6 +98,7 @@ i18n.use(initReactI18next).init({
                         "在导入页面中导入照片，然后在筛选页面中进行照片筛选，最终筛选出您需要的照片。",
                 },
                 status: {
+                    checking: "检查服务器状态中",
                     backendRunning: "Python后端已启动",
                     backendNotRunning: "Python后端未启动",
                     exportingPhotos: "正在导出照片",

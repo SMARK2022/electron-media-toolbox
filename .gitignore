@@ -13,12 +13,9 @@ jspm_packages/
 test_packages/
 
 # Production build
-build/
 dist/
 out/
 bak/
-
-*/build/
 
 # Cache directories
 .cache/

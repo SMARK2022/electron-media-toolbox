@@ -210,7 +210,7 @@ function LazyImageContainerExThumbs({ photo }: LazyImageContainerProps) {
             <div className="flex justify-center overflow-hidden rounded-md">
                 <img
                     ref={imgRef}
-                    src={thumbnailUrl || ""}
+                    src={thumbnailUrl || null}
                     alt={photo.fileName}
                     loading="lazy"
                     style={{
@@ -273,7 +273,7 @@ function LazyImageContainer({ photo }: LazyImageContainerProps) {
             <div className="flex justify-center overflow-hidden rounded-md">
                 <img
                     ref={imgRef}
-                    src={thumbnailUrl || ""}
+                    src={thumbnailUrl || null}
                     alt={photo.fileName}
                     loading="lazy"
                     className="transform transition-transform duration-300 ease-in-out hover:scale-110"

@@ -24,7 +24,7 @@ export default function HomePage() {
                 setServerStatusKey("status.backendNotRunning");
                 setStatusColor("red");
             }
-        } catch (error) {
+        } catch {
             setServerStatusKey("status.backendNotRunning");
             setStatusColor("red");
         }

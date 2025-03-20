@@ -1,7 +1,10 @@
 import * as fs from "fs";
 import * as path from "path";
-import { WIN_CLOSE_CHANNEL, WIN_MAXIMIZE_CHANNEL, WIN_MINIMIZE_CHANNEL } from "./window-channels";
-
+import {
+    WIN_CLOSE_CHANNEL,
+    WIN_MAXIMIZE_CHANNEL,
+    WIN_MINIMIZE_CHANNEL,
+} from "./window-channels";
 
 // 获取应用程序的根目录（打包后也有效）
 // 获取当前工作目录，即项目根目录
