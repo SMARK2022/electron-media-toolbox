@@ -9,10 +9,7 @@ import {
 import * as fs from "fs";
 import path from "path";
 import * as zlib from "zlib";
-// 使用 import 让 Vite 知道需要打包这个模块
-import exifParserModule from "exif-parser";
-// 同时使用 require 以兼容运行时
-const exifParser = exifParserModule || require("exif-parser");
+const exifParser = require("exif-parser");
 const { protocol } = require("electron"); // 引入 protocol 模块,用于注册 schemes
 
 // const inDevelopment = process.env.NODE_ENV === "development";

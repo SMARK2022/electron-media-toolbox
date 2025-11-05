@@ -4,6 +4,8 @@
 本项目是一个媒体工具箱，旨在对图片进行高效的管理、筛选和处理操作。  
 This project is a media toolbox designed for efficient management, filtering, and processing of images.
 
+![alt text](assets/gui.png)
+
 用户可能在摄影过程中存在大量的连拍照片，在后期照片筛选时会遇到棘手的难以筛选的问题。因此我创建了这个工具箱，可以直接读入相机存储卡的照片文件夹，经过HSV直方图相似度分组后，根据IQA美学评分进行美观度排序，便于删除。在用户管理照片完成后，进行导出复制到指定文件夹。  
 Users may have a large number of burst photos during photography, and it can be difficult to filter them during post-processing. Therefore, I created this toolbox, which can directly read the photo folder from the camera's storage card, group them by HSV histogram similarity, and then sort them by IQA aesthetic score for easy deletion. After users finish managing the photos, they can export and copy them to a specified folder.
 

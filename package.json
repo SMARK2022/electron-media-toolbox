@@ -52,6 +52,7 @@
     "eslint-plugin-prettier": "^5.2.3",
     "eslint-plugin-react": "^7.37.4",
     "eslint-plugin-react-compiler": "^19.0.0-beta-bafa41b-20250307",
+    "exif-parser": "^0.1.12",
     "globals": "^16.0.0",
     "jsdom": "^26.0.0",
     "postcss": "^8.5.3",
