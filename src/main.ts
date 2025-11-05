@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, protocol } from "electron";
 import registerListeners from "./helpers/ipc/listeners-register";
 // "electron-squirrel-startup" seems broken when packaging with vite
 // import started from "electron-squirrel-startup";
@@ -10,7 +10,8 @@ import * as fs from "fs";
 import path from "path";
 import * as zlib from "zlib";
 import { initializeLogger, closeLogger } from "./lib/logger";
-const { protocol } = require("electron"); // 引入 protocol 模块,用于注册 schemes
+// 引入 protocol 模块,用于注册 schemes
+const exifParser = require("exif-parser");
 
 /* -------------------------------------------------------------------------- */
 /*                               初始化与常量                                   */
@@ -18,14 +19,6 @@ const { protocol } = require("electron"); // 引入 protocol 模块,用于注册
 
 // 初始化日志系统（在所有其他代码之前）
 initializeLogger();
-
-// 延迟加载的外部模块句柄
-let exifParser: any;
-let betterSqlite3: any;
-
-// 延迟加载标志
-let exifParserInitialized = false;
-// let betterSqlite3Initialized = false;
 
 const inDevelopment = process.env.NODE_ENV === "development";
 // const inDevelopment = true;
@@ -41,92 +34,10 @@ const appRoot = process.cwd();
 console.log(`App root: ${appRoot}`);
 
 /* -------------------------------------------------------------------------- */
-/*                              动态加载模块工具                                 */
-/* -------------------------------------------------------------------------- */
-
-const loadModule = (moduleName: string): any => {
-  try {
-    // 开发环境优先使用标准方式加载
-    return require(moduleName);
-  } catch (error: any) {
-    console.error(`✗ Standard require for '${moduleName}' failed: ${error.message}`);
-
-    // 打包环境：尝试从 resources 路径加载
-    try {
-      const appPath = app.getAppPath();
-      let resourcePath = "";
-
-      if (appPath.includes("asar")) {
-        // /path/to/app.asar -> /path/to
-        const asarRoot = appPath.substring(0, appPath.indexOf("app.asar"));
-        resourcePath = path.join(asarRoot, moduleName);
-      } else {
-        // 开发模式的备用路径
-        resourcePath = path.join(appPath, "..", moduleName);
-      }
-
-      console.log(`Attempting to load '${moduleName}' from: ${resourcePath}`);
-      const mod = require(resourcePath);
-      console.log(`✓ '${moduleName}' loaded from resources`);
-      return mod;
-    } catch (error2: any) {
-      console.error(`✗ Loading '${moduleName}' from resources failed: ${error2.message}`);
-
-      // 最后的备用路径
-      try {
-        const execPath = process.execPath;
-        const exeDir = path.dirname(execPath);
-        const resourcePath2 = path.join(exeDir, "resources", moduleName);
-
-        console.log(`Attempting backup path for '${moduleName}': ${resourcePath2}`);
-        const mod = require(resourcePath2);
-        console.log(`✓ '${moduleName}' loaded from backup path`);
-        return mod;
-      } catch (error3: any) {
-        console.error(`✗ Backup path for '${moduleName}' also failed: ${error3.message}`);
-        return null;
-      }
-    }
-  }
-};
-
-// 动态加载 exif-parser 和 better-sqlite3
-const loadExifParser = (): boolean => {
-  if (exifParser) return true;
-  exifParser = loadModule("exif-parser");
-  return exifParser !== null;
-};
-
-// const loadBetterSqlite3 = (): boolean => {
-//   if (betterSqlite3) return true;
-//   betterSqlite3 = loadModule("better-sqlite3");
-//   return betterSqlite3 !== null;
-// };
-
-/* -------------------------------------------------------------------------- */
 /*                                 主窗口创建                                   */
 /* -------------------------------------------------------------------------- */
 
 function createWindow() {
-  // 在窗口创建时加载必要的模块
-  if (!exifParserInitialized) {
-    exifParserInitialized = loadExifParser();
-    if (exifParserInitialized && exifParser && typeof exifParser.create === "function") {
-      console.log("✓ exif-parser loaded successfully");
-    } else {
-      console.error("✗ exif-parser module not properly loaded");
-    }
-  }
-
-  // if (!betterSqlite3Initialized) {
-  //   betterSqlite3Initialized = loadBetterSqlite3();
-  //   if (betterSqlite3Initialized && betterSqlite3) {
-  //     console.log("✓ better-sqlite3 loaded successfully");
-  //   } else {
-  //     console.error("✗ better-sqlite3 module not properly loaded");
-  //   }
-  // }
-
   const preload = path.join(__dirname, "preload.js");
 
   const mainWindow = new BrowserWindow({
@@ -171,31 +82,33 @@ function createWindow() {
   }
 
   // local-resource:// 读取原始文件
-  protocol.handle("local-resource", async (request) => {
+  protocol.handle("local-resource", async (request: Request) => {
     const decodedUrl = decodeURIComponent(
       request.url.replace(new RegExp(`^local-resource:/`, "i"), ""),
     );
-    const fullPath = process.platform === "win32" ? convertPath(decodedUrl) : decodedUrl;
+    const fullPath =
+      process.platform === "win32" ? convertPath(decodedUrl) : decodedUrl;
 
     console.log(`Full path: ${fullPath}`);
 
     try {
       const data = await fs.promises.readFile(fullPath);
-      return new Response(data);
+      // Buffer -> Response 的类型不总是能被 TS 精确推断，使用 as any 以兼容运行时 API
+      return new Response(data as any);
     } catch (error: any) {
       console.error(`Failed to read file: ${error.message as string}`);
       return new Response(null, { status: 500 });
     }
   });
-
   /* ------------------------------ 协议处理: 缩略图 ------------------------------ */
 
-  protocol.handle("thumbnail-resource", async (request) => {
+  protocol.handle("thumbnail-resource", async (request: Request) => {
     const decodedUrl = decodeURIComponent(
       request.url.replace(new RegExp(`^thumbnail-resource:/`, "i"), ""),
     );
 
-    const fullPath = process.platform === "win32" ? convertPath(decodedUrl) : decodedUrl;
+    const fullPath =
+      process.platform === "win32" ? convertPath(decodedUrl) : decodedUrl;
     const normalizedPath = fullPath.replace(/\\/g, "/").toLowerCase();
 
     // 计算 CRC32 哈希值（用于缩略图缓存命名）
@@ -207,7 +120,7 @@ function createWindow() {
 
     try {
       const data = await fs.promises.readFile(thumbnailPath);
-      return new Response(data);
+      return new Response(data as any);
     } catch (error) {
       console.error(`Failed to read thumbnail: ${(error as Error).message}`);
       return new Response(null, { status: 500 });
@@ -242,7 +155,8 @@ function createWindow() {
 
             result.tags["captureTime"] =
               result.tags["DateTimeOriginal"] || result.tags["CreateDate"];
-            result.tags["cameraModel"] = result.tags["Model"] || "Unknown Camera";
+            result.tags["cameraModel"] =
+              result.tags["Model"] || "Unknown Camera";
             result.tags["fileSize"] = fileSize;
 
             resolve(result);
@@ -257,12 +171,14 @@ function createWindow() {
   }
 
   // photo-info:// 返回照片 EXIF 与文件信息
-  protocol.handle("photo-info", async (request) => {
+  // photo-info:// 返回照片 EXIF 与文件信息
+  protocol.handle("photo-info", async (request: Request) => {
     const decodedUrl = decodeURIComponent(
       request.url.replace(new RegExp(`^photo-info:/`, "i"), ""),
     );
 
-    const fullPath = process.platform === "win32" ? convertPath(decodedUrl) : decodedUrl;
+    const fullPath =
+      process.platform === "win32" ? convertPath(decodedUrl) : decodedUrl;
 
     try {
       const photoInfo = await getPhotoInfo(fullPath);
@@ -270,7 +186,9 @@ function createWindow() {
         headers: { "Content-Type": "application/json" },
       });
     } catch (error: any) {
-      console.error(`Failed to read photo info or thumbnail: ${error.message as string}`);
+      console.error(
+        `Failed to read photo info or thumbnail: ${error.message as string}`,
+      );
       return new Response(null, { status: 500 });
     }
   });
