@@ -9,11 +9,28 @@ import {
 import * as fs from "fs";
 import path from "path";
 import * as zlib from "zlib";
-const { protocol } = require("electron"); // 引入 protocol 模块，用于注册 schemes
+// 使用 import 让 Vite 知道需要打包这个模块
+import exifParserModule from "exif-parser";
+// 同时使用 require 以兼容运行时
+const exifParser = exifParserModule || require("exif-parser");
+const { protocol } = require("electron"); // 引入 protocol 模块,用于注册 schemes
 
-const inDevelopment = process.env.NODE_ENV === "development";
-const exifParser = require("exif-parser"); // 需要安装 exif-parser 库
+// const inDevelopment = process.env.NODE_ENV === "development";
+const inDevelopment = true;
 
+console.log("=== Application Starting ===");
+console.log(`Is Development: ${inDevelopment}`);
+console.log(`Node version: ${process.version}`);
+console.log(`Electron version: ${process.versions.electron}`);
+
+// 验证 exifParser 是否成功加载
+if (exifParser && typeof exifParser.create === "function") {
+  console.log("✓ exif-parser loaded successfully");
+} else {
+  console.log(
+    `✗ exif-parser failed to load. exifParser is: ${typeof exifParser}`,
+  );
+}
 
 // 获取应用程序的根目录（打包后也有效）
 // 获取当前工作目录，即项目根目录
@@ -116,6 +133,8 @@ function createWindow() {
 
     function getPhotoInfo(imagePath: string): Promise<any> {
         return new Promise((resolve, reject) => {
+            console.log(`Getting photo info for: ${imagePath}`);
+
             fs.stat(imagePath, (err, stats) => {
                 if (err) {
                     reject(`Error reading file stats: ${err.message}`);
@@ -133,6 +152,10 @@ function createWindow() {
                     try {
                         const parser = exifParser.create(data);
                         const result = parser.parse();
+                        
+                        console.log(
+                          `✓ Successfully parsed EXIF data for: ${imagePath}`,
+                        );
 
                         result.tags["captureTime"] = result.tags["DateTimeOriginal"] || result.tags["CreateDate"];
                         result.tags["cameraModel"] = result.tags["Model"] || "Unknown Camera";
@@ -142,7 +165,9 @@ function createWindow() {
                         // 返回文件大小和完整的 EXIF 数据
                         resolve(result);
                     } catch (exifError: any) {
-                        reject(`Error parsing EXIF data: ${exifError.message}`);
+                        const errorMsg = `Error parsing EXIF data: ${exifError.message}`;
+                        console.log(`✗ ${errorMsg}`);
+                        reject(errorMsg);
                     }
                 });
             });
@@ -177,6 +202,7 @@ async function installExtensions() {
     const result = await installExtension(REACT_DEVELOPER_TOOLS);
     console.log(`Extensions installed successfully: ${result.name}`);
   } catch {
+    console.log("Failed to install extensions");
     console.error("Failed to install extensions");
   }
 }
@@ -185,14 +211,21 @@ app.whenReady().then(createWindow).then(installExtensions);
 
 //osX only
 app.on("window-all-closed", () => {
+  console.log("All windows closed");
   if (process.platform !== "darwin") {
     app.quit();
   }
 });
 
 app.on("activate", () => {
+  console.log("App activated");
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
 });
 //osX only ends
+
+// 当应用退出时关闭日志流
+app.on("quit", () => {
+  console.log("=== Application Exiting ===");
+});
