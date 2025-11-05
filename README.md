@@ -85,6 +85,8 @@ This project uses the [https://github.com/nasimjamshidi/LAR-IQA](https://github.
 This project is licensed under the Apache License 2.0. For details, please refer to the LICENSE file.
 
 ## 更新日志 | Changelog
+- 2025.11.06 发布a1.3版本 修正electron-forge与vite打包导致的依赖项缺失问题，修复若干 bug，并发布 electron 打包后的 release
+  ---------- Released version a1.3, Fixed missing dependencies caused by electron-forge + Vite packaging, fixed several bugs, and published the electron packaged release
 - 2025.01.06 发布a1.2版本 更新.vite文件夹，更新vite版本，添加筛选简易功能  
   ---------- Released version a1.2, updated .vite folder, updated vite version, and added simple filtering feature
 - 2025.01.06 更新a1.1版本 修复了一些bug，改进了页面布局，并添加了文件夹可用性检测功能  
