@@ -69,7 +69,7 @@ i18n.use(initReactI18next).init({
                 about: {
                     pageTitle: "About Page",
                     personalInfo: "Personal Information",
-                    toolboxDescription: "This is my personal media toolbox, version a1.1",
+                    toolboxDescription: "This is SMARK's media toolbox, version a1.2",
                     contactInfo:
                         "If you have any questions or suggestions, please feel free to contact me. Thank you for using!",
                     basedOnProject: "Based on project",
@@ -151,7 +151,7 @@ i18n.use(initReactI18next).init({
                 about: {
                     pageTitle: "关于页面",
                     personalInfo: "个人信息",
-                    toolboxDescription: "这是我的个人媒体工具箱，版本 a1.1",
+                    toolboxDescription: "这是SMARK的媒体工具箱，版本 a1.2",
                     contactInfo: "如果您有任何问题或建议，请随时联系我。 感谢您的使用！",
                     basedOnProject: "本项目基于",
                     build: "构建",

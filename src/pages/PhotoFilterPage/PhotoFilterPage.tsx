@@ -7,23 +7,23 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-    getPhotosExtendByCriteria,
-    getPhotosExtendByPhotos,
-    initializeDatabase,
-    updatePhotoEnabledStatus,
+  getPhotosExtendByCriteria,
+  getPhotosExtendByPhotos,
+  initializeDatabase,
+  updatePhotoEnabledStatus,
 } from "@/lib/db"; // getEnabledPhotosExtend 用于获取启用的照片
 import * as React from "react";
 
 import { PhotoGridEnhance } from "@/components/PhotoGrid"; // Import PhotoGrid
 import {
-    Drawer,
-    DrawerClose,
-    DrawerContent,
-    DrawerDescription,
-    DrawerFooter,
-    DrawerHeader,
-    DrawerTitle,
-    DrawerTrigger,
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
 } from "@/components/ui/drawer"; // 引入 Drawer 组件
 import { Progress } from "@/components/ui/progress"; // 引入进度条
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -489,4 +489,5 @@ export default function PhotoFilterSubpage() {
       </div>
     </div>
   );
+  
 }

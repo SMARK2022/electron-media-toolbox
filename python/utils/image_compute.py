@@ -5,18 +5,22 @@ import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List
+
 import cv2
 import numpy as np
 import torch
 from packages.LAR_IQA.scripts.utils import infer, load_model, preprocess_image
+from utils.database import (load_cache_from_db, save_cache_to_db,
+                            update_group_id_in_db)
 from utils.thumbnails import generate_thumbnails, get_thumbnail
-from utils.database import load_cache_from_db, save_cache_to_db, update_group_id_in_db
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model = load_model(".\packages\LAR_IQA\checkpoint_epoch_3.pt", False, device)
 
+
 def cv_imread(file_path):
     return cv2.imdecode(np.fromfile(file_path, dtype=np.uint8), cv2.IMREAD_COLOR)
+
 
 def compute_similarity_and_IQA(img1, img2, img1filename):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -103,13 +107,14 @@ def compute_similarity_and_IQA(img1, img2, img1filename):
 
     return similarity, IQA * 20.0
 
-def process_image_batch(worker_id, image_files, cache_data, db_path, update_progress, update_status):
+
+def process_image_batch(worker_id, image_files, cache_data, db_path, update_progress):
     previous_image = None
     total_images = len(image_files)
 
     for idx, file in enumerate(image_files):
         if idx > 0 and (file, image_files[idx - 1]) in cache_data:
-            update_progress(worker_id, idx + 1, total_images)
+            update_progress("图片分析中", worker_id, idx + 1, total_images)
             continue
         elif idx == 0:
             continue
@@ -132,8 +137,7 @@ def process_image_batch(worker_id, image_files, cache_data, db_path, update_prog
             """,
             (file,),
         )
-        result = cursor.fetchone()
-        if result:
+        if result := cursor.fetchone():
             cursor.execute(
                 """
                 UPDATE present
@@ -146,11 +150,12 @@ def process_image_batch(worker_id, image_files, cache_data, db_path, update_prog
         conn.close()
 
         previous_image = (file, img)
-        update_progress(worker_id, idx + 1, total_images)
+        update_progress("多线程分析中", worker_id, idx + 1, total_images)
 
     return cache_data
 
-def process_and_group_images(db_path, similarity_threshold, update_progress, update_status, show_disabled_photos):
+
+def process_and_group_images(db_path, similarity_threshold, update_progress, show_disabled_photos):
     start_time = time.time()
     cache_data = load_cache_from_db(db_path, show_disabled_photos)
     image_files = [key[0] for key in cache_data.keys()]
@@ -164,7 +169,7 @@ def process_and_group_images(db_path, similarity_threshold, update_progress, upd
             chunk_start = i - 1
             chunk_end = min(total_images, i + chunk_size)
             chunk_files = (
-                [image_files[-1]] + image_files[0:chunk_end]
+                [image_files[-1]] + image_files[:chunk_end]
                 if chunk_start == -1
                 else image_files[chunk_start:chunk_end]
             )
@@ -177,14 +182,13 @@ def process_and_group_images(db_path, similarity_threshold, update_progress, upd
                     cache_data,
                     db_path,
                     update_progress,
-                    update_status
                 )
             )
         similarity_data = {}
         for future in as_completed(futures):
             similarity_data.update(future.result())
 
-    update_status("空闲中")
+    update_progress("保存缓存数据中")
     save_cache_to_db(db_path, cache_data)
 
     groups = []
@@ -203,7 +207,7 @@ def process_and_group_images(db_path, similarity_threshold, update_progress, upd
 
         update_group_id_in_db(db_path, file1, len(groups))
 
-        update_progress(0, i + 1, total_images)
+        update_progress("单线程分组中", 0, i + 1, total_images)
 
     if current_group:
         groups.append(sorted(current_group, key=lambda x: x[2], reverse=True))
@@ -213,5 +217,6 @@ def process_and_group_images(db_path, similarity_threshold, update_progress, upd
 
     print(f"Total Time: {total_time:.2f} seconds")
     print(f"Average Time per Image: {average_time_per_image:.2f} seconds")
+    update_progress("已完成分析分组")
 
     return groups

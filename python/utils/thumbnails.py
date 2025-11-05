@@ -5,6 +5,7 @@ import io
 import os
 # 组合文件头、信息头和图像数据
 import struct
+import threading
 import time
 import zlib
 from concurrent.futures import ThreadPoolExecutor
@@ -205,7 +206,7 @@ def get_image_capture_time(image_path):
     return creation_time
 
 
-def generate_thumbnails(folder_path, thumbs_path, width, height):
+def generate_thumbnails(folder_path, thumbs_path, width, height, update_progress):
     """生成缩略图并保存为WEBP，同时修改文件时间"""
     os.makedirs(thumbs_path, exist_ok=True)
 
@@ -220,8 +221,12 @@ def generate_thumbnails(folder_path, thumbs_path, width, height):
         return
 
     start_time = time.time()
+    completed_count = 0
+    count_lock = threading.Lock()
+    total_files = len(image_files)
 
     def process_image(image_file):
+        nonlocal completed_count
         bmp_data = get_thumbnail(image_file, width, height)
         image = Image.open(io.BytesIO(bmp_data))
         normalized_path = image_file.replace("\\", "/").lower()
@@ -234,12 +239,18 @@ def generate_thumbnails(folder_path, thumbs_path, width, height):
         timestamp = time.mktime(time_struct)
         os.utime(output_file, (timestamp, timestamp))
 
+        with count_lock:
+            nonlocal completed_count
+            completed_count += 1
+            update_progress("缩略图生成中", worker_id=0, value=completed_count, total=total_files)
+
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.map(process_image, image_files)
 
     end_time = time.time()
-    avg_time = (end_time - start_time) / len(image_files)
+    avg_time = (end_time - start_time) / total_files
     print(f"Average loading time per image: {avg_time:.4f} seconds")
+    update_progress("缩略图生成完毕", worker_id=0, value=total_files, total=total_files)
 
 
 if __name__ == "__main__":

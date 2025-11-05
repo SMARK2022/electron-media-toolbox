@@ -3,27 +3,19 @@ import io
 import os
 import sqlite3
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Dict, List
 
-import cv2
-import numpy as np
 import torch
-import torchvision
 from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from packages.LAR_IQA.scripts.utils import infer, load_model, preprocess_image
 from PIL import Image
 from pydantic import BaseModel
+from utils.database import (load_cache_from_db, save_cache_to_db,
+                            update_group_id_in_db)
+from utils.image_compute import (compute_similarity_and_IQA, cv_imread,
+                                 process_and_group_images, process_image_batch)
 from utils.thumbnails import generate_thumbnails, get_thumbnail
-from utils.image_compute import (
-    compute_similarity_and_IQA,
-    process_image_batch,
-    process_and_group_images,
-    cv_imread
-)
-from utils.database import load_cache_from_db, save_cache_to_db, update_group_id_in_db
 
 global_state = {
     "status": "空闲中",
@@ -61,8 +53,7 @@ class TaskManager:
                     db_path=task['db_path'],
                     similarity_threshold=task['similarity_threshold'],
                     update_progress=update_progress,
-                    update_status=update_status,
-                    show_disabled_photos=task['show_disabled_photos']
+                    show_disabled_photos=task['show_disabled_photos'],
                 )
             )
             async with self.lock:
@@ -98,19 +89,17 @@ app.add_middleware(
 )
 
 
-def update_progress(workerid, value, total):
+def update_progress(status_text, worker_id=None, value=None, total=None):
     global global_state
-    progress = int(value / total * 100)
-    global_state["status"] = f"工作中 ({len(global_state['workers'])} 线程工作)"
-    for _ in range(max(workerid - len(global_state["workers"]) + 1, 0)):
-        global_state["workers"].append("0%")
-    global_state["workers"][workerid] = f"{progress}%"
-    print(global_state)
-
-
-def update_status(new_status):
-    global global_state
-    global_state['status'] = new_status
+    global_state['status'] = status_text
+    if worker_id is None:
+        global_state["workers"] = []
+    else:
+        progress = int(value / total * 100)
+        # global_state["status"] = f"工作中 ({len(global_state['workers'])} 线程工作)"
+        for _ in range(max(worker_id - len(global_state["workers"]) + 1, 0)):
+            global_state["workers"].append("0%")
+        global_state["workers"][worker_id] = f"{progress}%"
     print(global_state)
 
 
@@ -139,8 +128,7 @@ def save_cache_to_db(db_path, cache_data):
         """,
             (file1,),
         )
-        result = cursor.fetchone()
-        if result:
+        if result := cursor.fetchone():
             cursor.execute(
                 """
                 UPDATE present
@@ -187,7 +175,7 @@ async def generate_thumbnails_endpoint(request: Request):
     width = data.get("width", 128)
     height = data.get("height", 128)
 
-    generate_thumbnails(folder_path, thumbs_path, width, height)
+    generate_thumbnails(folder_path, thumbs_path, width, height, update_progress)
     return {"message": "缩略图生成任务已添加到后台"}
 
 

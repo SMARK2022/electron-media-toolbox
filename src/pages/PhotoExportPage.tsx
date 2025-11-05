@@ -132,7 +132,11 @@ export default function PhotoExportSubpage() {
                     </div>
 
                     <AlertDialogTrigger asChild>
-                        <Button variant="outline" onClick={submitPhotosCopy}>
+                        <Button 
+                            variant="outline" 
+                            onClick={submitPhotosCopy} 
+                            disabled={!folderName}
+                        >
                             {t("buttons.exportPhotos")}
                         </Button>
                     </AlertDialogTrigger>

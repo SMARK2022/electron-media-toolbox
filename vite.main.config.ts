@@ -7,5 +7,8 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     }
+  },
+  optimizeDeps: {
+    exclude: ['exif-parser'] // 确保不优化此模块
   }
 });

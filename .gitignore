@@ -36,9 +36,9 @@ thumbs/
 Thumbs.db
 
 
-*.ckpt
-*.pt
-*.pth
+# *.ckpt
+# *.pt
+# *.pth
 *.db
 
 *.pyc
