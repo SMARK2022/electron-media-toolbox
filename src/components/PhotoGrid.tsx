@@ -11,7 +11,7 @@ interface Photo {
 }
 
 interface PhotoGridProps {
-  photos: Photo[];
+  photos?: Photo[];
   aspectRatio?: "portrait" | "square";
   width?: number;
   height?: number;
@@ -19,7 +19,7 @@ interface PhotoGridProps {
 }
 
 export function PhotoGridEnhance({
-  photos,
+  photos = [],
   width = 200,
   onPhotoClick,
   highlightPhotos: initialHighlightPhotos, // 接收的 prop
@@ -27,7 +27,8 @@ export function PhotoGridEnhance({
   onPhotoClick?: (photos: Photo[], event: string) => void;
   highlightPhotos?: Photo[];
 }) {
-  // 当前焦点索引
+  // 确保 photos 是数组
+  const photosArray = Array.isArray(photos) ? photos : [];
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [highlightPhotos, setHighlightPhotos] = useState<Photo[] | undefined>(
     initialHighlightPhotos,
@@ -48,7 +49,7 @@ export function PhotoGridEnhance({
 
   // 处理键盘事件
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (photos.length === 0) return;
+    if (photosArray.length === 0) return;
 
     let newFocusedIndex = focusedIndex;
 
@@ -58,7 +59,7 @@ export function PhotoGridEnhance({
         if (focusedIndex !== null && focusedIndex - 3 >= 0 && onPhotoClick) {
           newFocusedIndex = focusedIndex - 3;
           setFocusedIndex(newFocusedIndex); // 更新焦点
-          const selectedPhoto = photos[newFocusedIndex];
+          const selectedPhoto = photosArray[newFocusedIndex];
           onPhotoClick([selectedPhoto], "Select"); // 调用选中回调
           setHighlightPhotos([selectedPhoto]); // 更新 highlightPhotos
         }
@@ -67,12 +68,12 @@ export function PhotoGridEnhance({
         // 下移
         if (
           focusedIndex !== null &&
-          focusedIndex + 3 < photos.length &&
+          focusedIndex + 3 < photosArray.length &&
           onPhotoClick
         ) {
           newFocusedIndex = focusedIndex + 3;
           setFocusedIndex(newFocusedIndex); // 更新焦点
-          const selectedPhoto = photos[newFocusedIndex];
+          const selectedPhoto = photosArray[newFocusedIndex];
           onPhotoClick([selectedPhoto], "Select"); // 调用选中回调
           setHighlightPhotos([selectedPhoto]); // 更新 highlightPhotos
         }
@@ -82,7 +83,7 @@ export function PhotoGridEnhance({
         if (focusedIndex !== null && focusedIndex - 1 >= 0 && onPhotoClick) {
           newFocusedIndex = focusedIndex - 1;
           setFocusedIndex(newFocusedIndex); // 更新焦点
-          const selectedPhoto = photos[newFocusedIndex];
+          const selectedPhoto = photosArray[newFocusedIndex];
           setHighlightPhotos([selectedPhoto]); // 更新 highlightPhotos
           onPhotoClick([selectedPhoto], "Select"); // 调用选中回调
         }
@@ -91,12 +92,12 @@ export function PhotoGridEnhance({
         // 右移
         if (
           focusedIndex !== null &&
-          focusedIndex + 1 < photos.length &&
+          focusedIndex + 1 < photosArray.length &&
           onPhotoClick
         ) {
           newFocusedIndex = focusedIndex + 1;
           setFocusedIndex(newFocusedIndex); // 更新焦点
-          const selectedPhoto = photos[newFocusedIndex];
+          const selectedPhoto = photosArray[newFocusedIndex];
           setHighlightPhotos([selectedPhoto]); // 更新 highlightPhotos
           onPhotoClick([selectedPhoto], "Select"); // 调用选中回调
         }
@@ -104,7 +105,7 @@ export function PhotoGridEnhance({
       case "Enter":
         // 空格键
         if (focusedIndex !== null && onPhotoClick) {
-          const selectedPhoto = photos[focusedIndex];
+          const selectedPhoto = photosArray[focusedIndex];
           setHighlightPhotos([selectedPhoto]); // 更新 highlightPhotos
           onPhotoClick([selectedPhoto], "Change"); // 调用更改回调
         }
@@ -120,7 +121,7 @@ export function PhotoGridEnhance({
       tabIndex={0} // 确保可以聚焦整个网格容器
       onKeyDown={handleKeyDown} // 监听键盘事件
     >
-      {photos.map((photo, index) => (
+      {photosArray.map((photo, index) => (
         <div
           key={photo.fileName}
           className="flex-none"
