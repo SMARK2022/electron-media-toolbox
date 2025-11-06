@@ -21,6 +21,9 @@
   },
   "author": "SMARK <SMARK2019@outlook.com>",
   "license": "MIT",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "devDependencies": {
     "@electron-forge/cli": "^7.7.0",
     "@electron-forge/maker-deb": "^7.7.0",
@@ -34,7 +37,7 @@
     "@electron/fuses": "^1.8.0",
     "@eslint/compat": "^1.2.7",
     "@eslint/js": "^9.18.0",
-    "@playwright/test": "^1.51.0",
+    "@playwright/test": "^1.56.1",
     "@tailwindcss/postcss": "^4.0.14",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
@@ -43,10 +46,11 @@
     "@types/electron-squirrel-startup": "^1.0.2",
     "@types/eslint-config-prettier": "^6.11.3",
     "@types/node": "^22.13.10",
+    "@types/path-browserify": "^1.0.3",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "autoprefixer": "^10.4.21",
-    "electron": "35.0.1",
+    "electron": "^35.7.5",
     "electron-devtools-installer": "^4.0.0",
     "electron-playwright-helpers": "^1.7.1",
     "eslint": "^9.22.0",
@@ -63,7 +67,7 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.26.1",
-    "vite": "^6.2.1",
+    "vite": "^6.4.1",
     "vitest": "^3.0.8"
   },
   "dependencies": {
@@ -108,6 +112,11 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
     "zod": "^3.24.2"
+  },
+  "overrides": {
+    "form-data": "^4.0.4",
+    "tar-fs": "^3.1.1",
+    "tmp": "^0.2.4"
   },
   "win": {
     "signingHashAlgorithms": []

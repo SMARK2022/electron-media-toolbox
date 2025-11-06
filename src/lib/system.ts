@@ -70,7 +70,7 @@ async function copyPhotos(
         await copyFile(photo.filePath, destPath);
 
         if (includeRaw) {
-            const rawExtensions = [".NEF", ".CR3", ".RAW"];
+            const rawExtensions = [".NEF", ".CR3", ".RAW", ".DNG"];
             const rawCopyPromises = rawExtensions.map(async (ext) => {
                 const rawFilePath = changeFileExtension(photo.filePath, ext);
                 try {
