@@ -15,7 +15,7 @@ from utils.database import (load_cache_from_db, save_cache_to_db,
 from utils.thumbnails import generate_thumbnails, get_thumbnail
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model = load_model(".\packages\LAR_IQA\checkpoint_epoch_3.pt", False, device)
+model = load_model(r".\packages\LAR_IQA\checkpoint_epoch_3.pt", False, device)
 
 
 def cv_imread(file_path):

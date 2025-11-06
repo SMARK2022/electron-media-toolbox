@@ -201,7 +201,7 @@ export default function PhotoFilterSubpage() {
     sessionStorage.setItem("submitTime", currentTime.toString());
 
     // Get the database path from the Electron API
-    const dbPath = window.ElectronDB.getDbPath();
+    const dbPath = await window.ElectronDB.getDbPath();
 
     const response = await fetch("http://127.0.0.1:8000/detect_images", {
       method: "POST",

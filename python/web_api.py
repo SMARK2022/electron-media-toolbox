@@ -44,29 +44,42 @@ class TaskManager:
 
     async def process_tasks(self):
         global global_state
-        while not self.task_queue.empty():
-            task = await self.task_queue.get()
+        try:
+            while True:
+                task = await self.task_queue.get()
+                try:
+                    async with self.lock:
+                        global_state['status'] = f"正在处理: {task['description']}"
+                    
+                    # 调用包装函数，正确传递参数
+                    result = await run_in_threadpool(
+                        run_process_and_group,
+                        task,
+                    )
+                    
+                    async with self.lock:
+                        global_state['status'] = "处理完成"
+                        
+                except Exception as e:
+                    print(f"任务执行错误: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    async with self.lock:
+                        global_state['status'] = f"错误: {str(e)}"
+                finally:
+                    async with self.lock:
+                        global_state['task_queue_length'] = self.task_queue.qsize()
+                        if global_state['status'] != "处理完成":
+                            global_state['status'] = (
+                                f"队列中剩余{self.task_queue.qsize()}个任务"
+                                if self.task_queue.qsize() > 0
+                                else "空闲中"
+                            )
+                    self.task_queue.task_done()
+        except asyncio.CancelledError:
             async with self.lock:
-                global_state['status'] = f"正在处理: {task['description']}"
-            result = await run_in_threadpool(
-                lambda: process_and_group_images(
-                    db_path=task['db_path'],
-                    similarity_threshold=task['similarity_threshold'],
-                    update_progress=update_progress,
-                    show_disabled_photos=task['show_disabled_photos'],
-                )
-            )
-            async with self.lock:
-                global_state['task_queue_length'] = self.task_queue.qsize()
-                global_state['status'] = (
-                    f"队列中剩余{self.task_queue.qsize()}个任务"
-                    if self.task_queue.qsize() > 0
-                    else "空闲中"
-                )
-            self.task_queue.task_done()
-        async with self.lock:
-            global_state['status'] = "空闲中"
-            global_state['task_queue_length'] = 0
+                global_state['status'] = "空闲中"
+                global_state['task_queue_length'] = 0
 
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -76,7 +89,7 @@ task_manager = TaskManager()
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model = load_model(".\packages\LAR_IQA\checkpoint_epoch_3.pt", False, device)
+model = load_model(r".\packages\LAR_IQA\checkpoint_epoch_3.pt", False, device)
 
 
 # 正确设置允许的 CORS 来源
@@ -103,50 +116,17 @@ def update_progress(status_text, worker_id=None, value=None, total=None):
     print(global_state)
 
 
-def load_cache_from_db(db_path):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT filePath, simRefPath, similarity, IQA
-        FROM present
-        WHERE isEnabled = 1
-    """
+def run_process_and_group(task_dict):
+    """包装函数，确保参数传递正确"""
+    print(f"DEBUG: run_process_and_group received: {type(task_dict)} = {task_dict}")
+    if isinstance(task_dict, dict):
+        print(f"DEBUG: task_dict keys: {task_dict.keys()}")
+    return process_and_group_images(
+        db_path=task_dict['db_path'],
+        similarity_threshold=task_dict['similarity_threshold'],
+        update_progress=update_progress,
+        show_disabled_photos=task_dict['show_disabled_photos'],
     )
-    cache_data = {(row[0], row[1]): (row[2], row[3]) for row in cursor.fetchall()}
-    conn.close()
-    return cache_data
-
-
-def save_cache_to_db(db_path, cache_data):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    for (file1, file2), (similarity, IQA) in cache_data.items():
-        cursor.execute(
-            """
-            SELECT id FROM present WHERE filePath = ? AND isEnabled = 1
-        """,
-            (file1,),
-        )
-        if result := cursor.fetchone():
-            cursor.execute(
-                """
-                UPDATE present
-                SET simRefPath = ?, similarity = ?, IQA = ?
-                WHERE id = ?
-            """,
-                (file2, similarity, IQA, result[0]),
-            )
-        else:
-            cursor.execute(
-                """
-                INSERT INTO present (fileName, fileUrl, filePath, info, date, groupId, simRefPath, similarity, IQA)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-                (file1, '', file1, '', '', 0, file2, similarity, IQA),
-            )
-    conn.commit()
-    conn.close()
 
 
 class StatusResponse(BaseModel):
@@ -210,9 +190,17 @@ class DetectionTask(BaseModel):
 @app.post("/detect_images")
 async def detect_images(request: Request):
     data = await request.json()
-    db_path = data.get("db_path", "../.cache/photos.db")  # Default path if not provided
+    print(f"DEBUG: detect_images received data: {data}")
+    
+    # 确保 db_path 是字符串，不是字典或其他类型
+    db_path = data.get("db_path")
+    if not isinstance(db_path, str) or db_path=="{}" or not db_path:
+        db_path = "../.cache/photos.db"
+    
     similarity_threshold = data.get("similarity_threshold", 0.8)
     show_disabled_photos = data.get("show_disabled_photos", False)
+    
+    print(f"DEBUG: processed db_path={db_path}, threshold={similarity_threshold}, show_disabled={show_disabled_photos}")
 
     detection_task = {
         "description": f"图像检测 (阈值: {similarity_threshold})",

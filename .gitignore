@@ -44,3 +44,7 @@ Thumbs.db
 *.pyc
 
 .vite/
+
+*.ipynb
+
+*.zip
