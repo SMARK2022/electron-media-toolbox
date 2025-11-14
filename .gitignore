@@ -18,6 +18,9 @@ dist/
 out/
 bak/
 
+# Vite build cache
+.vite/
+
 # Cache directories
 .cache/
 .tmp/
@@ -36,18 +39,29 @@ thumbs/
 .DS_Store
 Thumbs.db
 
-
-# *.ckpt
-# *.pt
-# *.pth
-*.db
-
+# Python
 *.pyc
-
-.vite/
-
+__pycache__/
+.ipynb_checkpoints/
 *.ipynb
+venv/
+env/
 
+# Database & Models
+*.db
+*.ckpt
+*.pt
+*.pth
+
+# Compression
 *.zip
+
+# Config files
 .prettier*
 .npmrc
+
+# Storybook
+.storybook/
+
+# Build artifacts
+.vite/build/
