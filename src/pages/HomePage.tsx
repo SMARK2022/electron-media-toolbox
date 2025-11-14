@@ -12,7 +12,7 @@ export default function HomePage() {
     const checkServerStatus = async () => {
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 2000);
+            const timeoutId = setTimeout(() => controller.abort(), 1000);
 
             const response = await fetch("http://localhost:8000/status", { signal: controller.signal });
             clearTimeout(timeoutId);
@@ -41,7 +41,12 @@ export default function HomePage() {
                 <LangToggle />
 
                 <div className="mt-4 text-center">
-                    <p>{t("instructions.importPhotos")}</p>
+                    <p
+                        className="mx-auto break-words whitespace-normal"
+                        style={{ maxWidth: "80vw" }}
+                    >
+                        {t("instructions.importPhotos")}
+                    </p>
                 </div>
                 <div className="mt-4 flex items-center space-x-2">
                     <Button onClick={checkServerStatus} className="underline">

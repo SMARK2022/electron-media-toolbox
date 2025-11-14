@@ -1,23 +1,23 @@
 import { PhotoGridEnhance } from "@/components/PhotoGrid"; // Import PhotoGrid
 import { Button } from "@/components/ui/button";
 import {
-    Drawer,
-    DrawerClose,
-    DrawerContent,
-    DrawerDescription,
-    DrawerFooter,
-    DrawerHeader,
-    DrawerTitle,
-    DrawerTrigger,
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
 } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
-    addPhotosExtend,
-    clearPhotos,
-    getPhotos,
-    initializeDatabase,
+  addPhotosExtend,
+  clearPhotos,
+  getPhotos,
+  initializeDatabase,
 } from "@/lib/db";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
@@ -53,6 +53,10 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
   const [fileNames, setFileNames] = React.useState<string[]>([]);
   const [folderName, setFolderName] = React.useState<string>("");
   const [isDropped, setIsDropped] = React.useState<boolean>(false);
+  const [hasInvalidDrop, setHasInvalidDrop] = React.useState<boolean>(false); // 是否发生无效拖入
+
+  // 保存无效拖入的定时器，避免多次快速触发
+  const invalidDropTimeoutRef = React.useRef<number | null>(null);
 
   const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -72,8 +76,31 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
       }
     }
 
-    setFileNames(fileList);
-    setIsDropped(true);
+    if (fileList.length > 0) {
+      // 至少有一个有效图片文件：正常进入「已拖入」状态
+      setFileNames(fileList);
+      setIsDropped(true);
+      setHasInvalidDrop(false);
+      if (invalidDropTimeoutRef.current !== null) {
+        window.clearTimeout(invalidDropTimeoutRef.current);
+        invalidDropTimeoutRef.current = null;
+      }
+    } else {
+      // 没有任何有效图片：保持拖拽框，红色显示约 1s 并提示无效文件
+      setFileNames([]);
+      setIsDropped(false);
+
+      // 先清掉之前的定时器
+      if (invalidDropTimeoutRef.current !== null) {
+        window.clearTimeout(invalidDropTimeoutRef.current);
+      }
+
+      setHasInvalidDrop(true);
+      invalidDropTimeoutRef.current = window.setTimeout(() => {
+        setHasInvalidDrop(false);
+        invalidDropTimeoutRef.current = null;
+      }, 1000); // 约 1s 后恢复
+    }
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
@@ -90,6 +117,11 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
     setFileNames([]);
     setFolderName("");
     setIsDropped(false);
+    setHasInvalidDrop(false);
+    if (invalidDropTimeoutRef.current !== null) {
+      window.clearTimeout(invalidDropTimeoutRef.current);
+      invalidDropTimeoutRef.current = null;
+    }
   };
 
   const handleSubmit = async () => {
@@ -185,64 +217,95 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
     handleReset();
   };
 
+  // 根据是否无效拖入，动态设置拖拽框的样式与文案
+  const dropAreaBaseClass =
+    "mx-auto flex w-full max-w-[60vw] items-center justify-center border-2 border-dashed rounded-md transition-colors duration-1000";
+  const dropAreaClass = hasInvalidDrop
+    ? `${dropAreaBaseClass} border-red-500 bg-red-500/10`
+    : `${dropAreaBaseClass} border-gray-400`;
+
+  const dropText = hasInvalidDrop
+    ? t("labels.dropInvalidFiles")
+    : t("labels.dropFilesHere");
+
+  const dropTextColor = hasInvalidDrop ? "text-red-500" : "text-gray-400";
+
   return (
     <Drawer>
       <DrawerTrigger asChild>
         <Button variant="outline">{t("buttons.importPhotos")}</Button>
       </DrawerTrigger>
+
+      {/* DrawerContent 本身由 shadcn 提供 fixed bottom 布局，这里只控制内部高度分配 */}
       <DrawerContent>
-        <div className="mx-auto mt-4 w-full max-w-sm">
-          <DrawerHeader>
-            <DrawerTitle>{t("modals.photoImport.title")}</DrawerTitle>
-            <DrawerDescription>
-              {t("modals.photoImport.description")}
-            </DrawerDescription>
-          </DrawerHeader>
-          <Input
-            type="text"
-            placeholder={t("placeholders.folderPath")}
-            value={folderName}
-            onChange={handleFolderChange}
-            className="mb-4"
-          />
-          <ScrollArea className="h-72 w-full rounded-md border">
-            <div className="p-4">
-              <h4 className="mb-4 text-sm leading-none font-medium">
-                {t("labels.fileList")} -{" "}
-                {folderName || t("placeholders.folderPath")}
-              </h4>
+        {/* 这个容器是整个抽屉的「内部布局」 */}
+        <div className="mx-auto w-full max-w-xl">
+          <div className="flex flex-col gap-4 p-4">
+            {/* 头部：标题 + 描述 */}
+            <DrawerHeader className="px-0 pb-0">
+              <DrawerTitle>{t("modals.photoImport.title")}</DrawerTitle>
+              <DrawerDescription>
+                {t("modals.photoImport.description")}
+              </DrawerDescription>
+            </DrawerHeader>
 
-              {!isDropped && (
-                <div
-                  id="drop-area"
-                  className="mx-auto flex h-48 w-full max-w-sm items-center justify-center border-2 border-dashed"
-                  onDrop={handleDrop}
-                  onDragOver={handleDragOver}
-                >
-                  <p className="text-center text-gray-500">
-                    {t("labels.dropFilesHere")}
-                  </p>
-                </div>
-              )}
-
-              {fileNames.map((filePath, index) => (
-                <React.Fragment key={index}>
-                  <div className="text-sm">
-                    {folderName}/{filePath}
-                  </div>
-                  <Separator className="my-2" />
-                </React.Fragment>
-              ))}
+            {/* 输入路径 */}
+            <div className="w-full px-0">
+              <Input
+                type="text"
+                placeholder={t("placeholders.folderPath")}
+                value={folderName}
+                onChange={handleFolderChange}
+                className="mb-2"
+              />
             </div>
-          </ScrollArea>
-          <DrawerFooter>
-            <DrawerClose asChild>
-              <Button onClick={handleSubmit}>{t("buttons.submit")}</Button>
-            </DrawerClose>
-            <Button variant="outline" onClick={handleReset}>
-              {t("buttons.reset")}
-            </Button>
-          </DrawerFooter>
+
+            {/* 主体区域：文件列表 + 拖拽区域 */}
+            <div className="min-h-0 w-full flex-1">
+              <ScrollArea className="h-full w-full rounded-md border">
+                <div className="max-h-[calc(50vh-11rem)] p-4">
+                  <h4 className="mb-4 text-sm leading-none font-medium">
+                    {t("labels.fileList")} -{" "}
+                    {folderName || t("placeholders.folderPath")}
+                  </h4>
+
+                  {!isDropped && (
+                    <div
+                      id="drop-area"
+                      className={dropAreaClass}
+                      onDrop={handleDrop}
+                      onDragOver={handleDragOver}
+                    >
+                      <p
+                        className={`px-4 text-center text-sm ${dropTextColor}`}
+                      >
+                        {dropText}
+                      </p>
+                    </div>
+                  )}
+
+                  {fileNames.map((filePath, index) => (
+                    <React.Fragment key={index}>
+                      <div className="text-sm break-all">
+                        {folderName}/{filePath}
+                      </div>
+                      <Separator className="my-2" />
+                    </React.Fragment>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+
+            {/* 底部按钮：始终占据布局的最底部，不随 ScrollArea 滚动 */}
+            <DrawerFooter className="mt-0 flex flex-row items-center justify-end gap-2 px-0 py-0">
+              <DrawerClose asChild>
+                <Button onClick={handleSubmit}>{t("buttons.submit")}</Button>
+              </DrawerClose>
+              <Button variant="outline" onClick={handleReset}>
+                {t("buttons.reset")}
+              </Button>
+            </DrawerFooter>
+          </div>
         </div>
       </DrawerContent>
     </Drawer>
@@ -280,6 +343,7 @@ export default function PhotoImportSubpage() {
           {t("labels.totalPhotosLabel")}: {photos.length}
         </div>
       </div>
+
       <div className="flex-1 overflow-hidden">
         <ScrollArea className="mx-auto h-[calc(100vh-160px)] w-full max-w-full rounded-md border p-4">
           <PhotoGridEnhance photos={photos} />

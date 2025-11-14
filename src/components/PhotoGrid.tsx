@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 
 import { Card } from "@/components/ui/card";
+import missing_icon from "@/assets/images/cat_missing.svg";
 
 interface Photo {
   fileName: string;
@@ -171,11 +172,11 @@ interface LazyImageContainerProps {
   photo: Photo;
 }
 
-
 function LazyImageContainer({ photo }: LazyImageContainerProps) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+  const [hasError, setHasError] = useState(false); // 图片加载失败时使用兜底图
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -189,7 +190,7 @@ function LazyImageContainer({ photo }: LazyImageContainerProps) {
       },
       {
         root: null, // 视口为根
-        threshold: 0.01, // 图片进入 10% 视口时触发
+        threshold: 0.01, // 图片进入 1% 视口时触发
       },
     );
 
@@ -205,9 +206,16 @@ function LazyImageContainer({ photo }: LazyImageContainerProps) {
   }, []);
 
   useEffect(() => {
-    if (isVisible && photo.fileUrl) {
-      // 直接使用 photo.fileUrl 作为缩略图的 URL
-      setThumbnailUrl(photo.fileUrl);
+    if (isVisible) {
+      if (photo.fileUrl) {
+        // 直接使用 photo.fileUrl 作为缩略图的 URL
+        setThumbnailUrl(photo.fileUrl);
+        setHasError(false); // 切换到新的图片时重置错误状态
+      } else {
+        // 如果本身就没有 URL，则直接使用兜底图
+        setThumbnailUrl(null);
+        setHasError(true);
+      }
     }
   }, [isVisible, photo.fileUrl]);
 
@@ -216,7 +224,7 @@ function LazyImageContainer({ photo }: LazyImageContainerProps) {
       <div className="flex justify-center overflow-hidden rounded-md">
         <img
           ref={imgRef}
-          src={thumbnailUrl || undefined}
+          src={hasError ? missing_icon : thumbnailUrl || missing_icon}
           alt={photo.fileName}
           loading="lazy"
           className="transform transition-transform duration-300 ease-in-out hover:scale-110"
@@ -227,6 +235,10 @@ function LazyImageContainer({ photo }: LazyImageContainerProps) {
             maxHeight: "180px",
             borderRadius: "3%",
           }}
+          onError={() => {
+            // 图片加载失败时使用兜底图
+            setHasError(true);
+          }}
         />
       </div>
       <div className="m-1 space-y-1 text-sm">
@@ -236,8 +248,12 @@ function LazyImageContainer({ photo }: LazyImageContainerProps) {
           style={{
             color: /^[0-9]+(\.[0-9]+)?$/.test(photo.info)
               ? parseFloat(photo.info) <= 50
-                ? `rgb(${255 - parseFloat(photo.info) * 5}, ${parseFloat(photo.info) * 5}, 0)` // 黄色到绿色
-                : `rgb(0, ${255 - (parseFloat(photo.info) - 50) * 5}, ${(parseFloat(photo.info) - 50) * 5})` // 绿色到蓝色
+                ? `rgb(${255 - parseFloat(photo.info) * 5}, ${
+                    parseFloat(photo.info) * 5
+                  }, 0)` // 黄色到绿色
+                : `rgb(0, ${
+                    255 - (parseFloat(photo.info) - 50) * 5
+                  }, ${(parseFloat(photo.info) - 50) * 5})` // 绿色到蓝色
               : undefined,
           }}
         >
