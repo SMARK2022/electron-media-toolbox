@@ -1,10 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 
 import { Card } from "@/components/ui/card";
 import missing_icon from "@/assets/images/cat_missing.svg";
-import {
-  Photo,
-} from "@/lib/db";
+import { Photo } from "@/lib/db";
 
 interface PhotoGridProps {
   photos?: Photo[];
@@ -20,22 +18,25 @@ export function PhotoGridEnhance({
   onPhotoClick,
   highlightPhotos: initialHighlightPhotos, // 接收的 prop
 }: PhotoGridProps & {
-  onPhotoClick?: (photos: Photo[], event: string) => void;
+  onPhotoClick?: (photos: Photo[], event: string) => void | Promise<void>;
   highlightPhotos?: Photo[];
 }) {
   // 确保 photos 是数组
   const photosArray = Array.isArray(photos) ? photos : [];
+
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [highlightPhotos, setHighlightPhotos] = useState<Photo[] | undefined>(
     initialHighlightPhotos,
   );
+
+  // 每个 item 的 DOM 引用，用来计算几何位置 + scrollIntoView
+  const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   const isPhotoHighlighted = (fileName: string): boolean => {
     const result =
       highlightPhotos?.some((photo) => photo.fileName === fileName) ||
       initialHighlightPhotos?.some((photo) => photo.fileName === fileName) ||
       false;
-    // console.log(`isPhotoHighlighted for ${fileName}: ${result}`, highlightPhotos);
     return result;
   };
 
@@ -43,69 +44,177 @@ export function PhotoGridEnhance({
     setHighlightPhotos(initialHighlightPhotos);
   }, [initialHighlightPhotos]);
 
+  /**
+   * 异步触发父组件的 onPhotoClick：
+   * - 不在当前事件回调里直接执行
+   * - 不等待其完成，避免键盘事件被重 IO 阻塞
+   */
+  const triggerOnPhotoClick = useCallback(
+    (selected: Photo[], event: string) => {
+      if (!onPhotoClick) return;
+      // 用 setTimeout 0ms 推迟到当前事件处理完之后再执行
+      setTimeout(() => {
+        void onPhotoClick(selected, event);
+      }, 0);
+    },
+    [onPhotoClick],
+  );
+
+  /**
+   * 根据当前 focusedIndex 和方向（up/down），找到“上一行/下一行”的最近元素。
+   * 算法：
+   *  1. 取当前元素中心点 (cx, cy)
+   *  2. 对所有其他元素，计算中心点 (x, y)
+   *  3. 过滤出 y 在当前元素上方/下方的候选
+   *  4. 找到“行差”最小的一行（|Δy| 最小），然后在这一行里找 |Δx| 最小的那个
+   */
+  const findVerticalNeighbor = (
+    currentIndex: number,
+    direction: "up" | "down",
+  ): number | null => {
+    const currentEl = itemRefs.current[currentIndex];
+    if (!currentEl) return null;
+
+    const currentRect = currentEl.getBoundingClientRect();
+    const currentCx = currentRect.left + currentRect.width / 2;
+    const currentCy = currentRect.top + currentRect.height / 2;
+
+    let bestIndex: number | null = null;
+    let bestRowDelta = Infinity;
+    let bestColDelta = Infinity;
+
+    // 一个小的容差，用来认为是“同一行”
+    const rowEps = 4; // px
+
+    itemRefs.current.forEach((el, index) => {
+      if (!el || index === currentIndex) return;
+
+      const rect = el.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+
+      const deltaY = cy - currentCy;
+      const deltaX = cx - currentCx;
+
+      if (direction === "up" && cy >= currentCy) return;
+      if (direction === "down" && cy <= currentCy) return;
+
+      const rowDelta = Math.abs(deltaY);
+      const colDelta = Math.abs(deltaX);
+
+      if (rowDelta + rowEps < bestRowDelta) {
+        // 明显更近的一行
+        bestRowDelta = rowDelta;
+        bestColDelta = colDelta;
+        bestIndex = index;
+      } else if (Math.abs(rowDelta - bestRowDelta) <= rowEps) {
+        // 认为在同一行，挑选 X 方向更近的
+        if (colDelta < bestColDelta) {
+          bestColDelta = colDelta;
+          bestIndex = index;
+        }
+      }
+    });
+
+    return bestIndex;
+  };
+
+  /**
+   * 焦点变化时，自动滚动到对应元素附近：
+   * - 使用 block: 'nearest' / inline: 'nearest'，尽量少移动
+   * - 适配 ScrollArea / window 的滚动容器
+   */
+  useEffect(() => {
+    if (focusedIndex == null) return;
+    const el = itemRefs.current[focusedIndex];
+    if (!el) return;
+
+    el.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [focusedIndex]);
+
   // 处理键盘事件
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (photosArray.length === 0) return;
 
     let newFocusedIndex = focusedIndex;
 
+    // 如果还没任何焦点，第一次按方向键就选中第 0 张
+    if (focusedIndex === null) {
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+        e.preventDefault();
+        newFocusedIndex = 0;
+        setFocusedIndex(0);
+        const selectedPhoto = photosArray[0];
+        setHighlightPhotos([selectedPhoto]);
+        triggerOnPhotoClick([selectedPhoto], "Select");
+        return;
+      }
+    }
+
     switch (e.key) {
-      case "ArrowUp":
-        // 上移
-        if (focusedIndex !== null && focusedIndex - 3 >= 0 && onPhotoClick) {
-          newFocusedIndex = focusedIndex - 3;
-          setFocusedIndex(newFocusedIndex); // 更新焦点
-          const selectedPhoto = photosArray[newFocusedIndex];
-          onPhotoClick([selectedPhoto], "Select"); // 调用选中回调
-          setHighlightPhotos([selectedPhoto]); // 更新 highlightPhotos
+      case "ArrowUp": {
+        e.preventDefault();
+        if (focusedIndex !== null) {
+          const targetIndex = findVerticalNeighbor(focusedIndex, "up");
+          if (targetIndex !== null) {
+            newFocusedIndex = targetIndex;
+            setFocusedIndex(newFocusedIndex);
+            const selectedPhoto = photosArray[newFocusedIndex];
+            setHighlightPhotos([selectedPhoto]);
+            triggerOnPhotoClick([selectedPhoto], "Select");
+          }
         }
         break;
-      case "ArrowDown":
-        // 下移
-        if (
-          focusedIndex !== null &&
-          focusedIndex + 3 < photosArray.length &&
-          onPhotoClick
-        ) {
-          newFocusedIndex = focusedIndex + 3;
-          setFocusedIndex(newFocusedIndex); // 更新焦点
-          const selectedPhoto = photosArray[newFocusedIndex];
-          onPhotoClick([selectedPhoto], "Select"); // 调用选中回调
-          setHighlightPhotos([selectedPhoto]); // 更新 highlightPhotos
+      }
+      case "ArrowDown": {
+        e.preventDefault();
+        if (focusedIndex !== null) {
+          const targetIndex = findVerticalNeighbor(focusedIndex, "down");
+          if (targetIndex !== null) {
+            newFocusedIndex = targetIndex;
+            setFocusedIndex(newFocusedIndex);
+            const selectedPhoto = photosArray[newFocusedIndex];
+            setHighlightPhotos([selectedPhoto]);
+            triggerOnPhotoClick([selectedPhoto], "Select");
+          }
         }
         break;
-      case "ArrowLeft":
-        // 左移
-        if (focusedIndex !== null && focusedIndex - 1 >= 0 && onPhotoClick) {
+      }
+      case "ArrowLeft": {
+        e.preventDefault();
+        if (focusedIndex !== null && focusedIndex - 1 >= 0) {
           newFocusedIndex = focusedIndex - 1;
-          setFocusedIndex(newFocusedIndex); // 更新焦点
+          setFocusedIndex(newFocusedIndex);
           const selectedPhoto = photosArray[newFocusedIndex];
-          setHighlightPhotos([selectedPhoto]); // 更新 highlightPhotos
-          onPhotoClick([selectedPhoto], "Select"); // 调用选中回调
+          setHighlightPhotos([selectedPhoto]);
+          triggerOnPhotoClick([selectedPhoto], "Select");
         }
         break;
-      case "ArrowRight":
-        // 右移
-        if (
-          focusedIndex !== null &&
-          focusedIndex + 1 < photosArray.length &&
-          onPhotoClick
-        ) {
+      }
+      case "ArrowRight": {
+        e.preventDefault();
+        if (focusedIndex !== null && focusedIndex + 1 < photosArray.length) {
           newFocusedIndex = focusedIndex + 1;
-          setFocusedIndex(newFocusedIndex); // 更新焦点
+          setFocusedIndex(newFocusedIndex);
           const selectedPhoto = photosArray[newFocusedIndex];
-          setHighlightPhotos([selectedPhoto]); // 更新 highlightPhotos
-          onPhotoClick([selectedPhoto], "Select"); // 调用选中回调
+          setHighlightPhotos([selectedPhoto]);
+          triggerOnPhotoClick([selectedPhoto], "Select");
         }
         break;
-      case "Enter":
-        // 空格键
-        if (focusedIndex !== null && onPhotoClick) {
+      }
+      case "Enter": {
+        e.preventDefault();
+        if (focusedIndex !== null) {
           const selectedPhoto = photosArray[focusedIndex];
-          setHighlightPhotos([selectedPhoto]); // 更新 highlightPhotos
-          onPhotoClick([selectedPhoto], "Change"); // 调用更改回调
+          setHighlightPhotos([selectedPhoto]);
+          triggerOnPhotoClick([selectedPhoto], "Change");
         }
         break;
+      }
       default:
         return;
     }
@@ -120,8 +229,11 @@ export function PhotoGridEnhance({
       {photosArray.map((photo, index) => (
         <div
           key={photo.fileName}
+          ref={(el) => {
+            itemRefs.current[index] = el;
+          }}
           className="flex-none"
-          tabIndex={0} // 允许每个图片项获取焦点
+          tabIndex={0} // 允许每个图片项获取焦点（方便 Tab 导航）
           style={{
             width: `${width}px`,
             background: photo.isEnabled ? "var(--card)" : "gray",
@@ -133,16 +245,14 @@ export function PhotoGridEnhance({
             opacity: photo.isEnabled ? 1 : 0.2,
           }}
           onClick={() => {
-            setHighlightPhotos([photo]); // 更新 highlightPhotos
-            onPhotoClick && onPhotoClick([photo], "Select");
-            // console.log("click", photo.fileName);
+            setHighlightPhotos([photo]);
+            triggerOnPhotoClick([photo], "Select");
           }}
           onDoubleClick={() => {
-            setHighlightPhotos([photo]); // 更新 highlightPhotos
-            onPhotoClick && onPhotoClick([photo], "Change");
-            // console.log("double click", photo.fileName);
+            setHighlightPhotos([photo]);
+            triggerOnPhotoClick([photo], "Change");
           }}
-          onFocus={() => setFocusedIndex(index)} // 聚焦时更新焦点
+          onFocus={() => setFocusedIndex(index)}
           onMouseEnter={(e) => {
             if (isPhotoHighlighted(photo.fileName)) {
               (e.currentTarget as HTMLElement).style.borderColor = "orange";
@@ -221,14 +331,13 @@ function LazyImageContainer({ photo }: LazyImageContainerProps) {
     : NaN;
   const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
 
-  const colorStyle =
-    !Number.isNaN(numericInfo)
-      ? numericInfo <= 50
-        ? `rgb(${clamp(255 - numericInfo * 5)}, ${clamp(numericInfo * 5)}, 0)` // 黄色到绿色
-        : `rgb(0, ${clamp(255 - (numericInfo - 50) * 5)}, ${clamp(
-            (numericInfo - 50) * 5,
-          )})` // 绿色到蓝色
-      : undefined;
+  const colorStyle = !Number.isNaN(numericInfo)
+    ? numericInfo <= 50
+      ? `rgb(${clamp(255 - numericInfo * 5)}, ${clamp(numericInfo * 5)}, 0)` // 黄色到绿色
+      : `rgb(0, ${clamp(255 - (numericInfo - 50) * 5)}, ${clamp(
+          (numericInfo - 50) * 5,
+        )})` // 绿色到蓝色
+    : undefined;
 
   return (
     <Card>
