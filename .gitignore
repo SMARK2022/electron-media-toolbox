@@ -49,3 +49,5 @@ Thumbs.db
 *.ipynb
 
 *.zip
+.prettier*
+.npmrc
