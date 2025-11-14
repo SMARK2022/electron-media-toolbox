@@ -11,6 +11,8 @@ import {
   getPhotosExtendByPhotos,
   initializeDatabase,
   updatePhotoEnabledStatus,
+  PhotoExtend,
+  Photo,
 } from "@/lib/db"; // getEnabledPhotosExtend 用于获取启用的照片
 import * as React from "react";
 
@@ -30,51 +32,32 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator"; // 引入分割线
 import PhotoDetailsTable from "./PhotoDetailsTable"; // Import the new component
 
-interface PhotoExtend {
-  fileName: string;
-  fileUrl: string;
-  filePath: string;
-  fileSize?: number;
-  info?: string;
-  date?: string;
-  groupId?: number;
-  simRefPath?: string;
-  similarity?: number;
-  IQA?: number;
-  isEnabled: boolean;
-}
-
-interface Photo {
-  fileName: string;
-  fileUrl: string;
-  filePath: string;
-  info: string;
-  isEnabled: boolean;
+interface ServerData {
+  status: string;
+  task_queue_length: number;
+  workers: string[];
 }
 
 export default function PhotoFilterSubpage() {
-  const [photos, setPhotos] = React.useState<Photo[][]>([]); // 2D array of Photo type
+  // 相册视图：二维数组，每个子数组是一组照片
+  const [photos, setPhotos] = React.useState<Photo[][]>([]);
+  // 服务端状态（简要字符串 + 完整数据）
   const [serverStatus, setServerStatus] =
     React.useState<string>("正在获取服务端状态...");
-  interface ServerData {
-    status: string;
-    task_queue_length: number;
-    workers: string[];
-  }
+  const [serverData, setServerData] = React.useState<ServerData | null>(null);
 
-  const [serverData, setServerData] = React.useState<ServerData | null>(null); // Store the complete server response
-
+  // 右侧预览面板的数据
   const [preview_photos, setPreviewPhotos] = React.useState<PhotoExtend[]>([]);
   const [opt_panelTabValue, setPannelTabValue] = React.useState("filter");
   const [opt_galleryTabValue, setGalleryTabValue] = React.useState("group");
 
-  const [bool_needUpdate, setUpdate] = React.useState<boolean>(true); // Flag to control server status updates
-  const [float_similarityThreshold, setSimilarityThreshold] = React.useState<number>(
-    () => {
+  // 轮询控制：检测任务进行中时为 true，空闲且超时后置 false
+  const [bool_needUpdate, setUpdate] = React.useState<boolean>(true);
+  const [float_similarityThreshold, setSimilarityThreshold] =
+    React.useState<number>(() => {
       // Retrieve the initial value from session storage or default to 0.8
       return parseFloat(sessionStorage.getItem("similarityThreshold") || "0.8");
-    },
-  );
+    });
 
   const [bool_showDisabled, setShowDisabledPhotos] =
     React.useState<boolean>(false);
@@ -82,55 +65,63 @@ export default function PhotoFilterSubpage() {
 
   const [bool_reloadAlbum, setReloadAlbum] = React.useState<boolean>(false);
 
-  const [bool_isPreviewEnabled, setIsPreviewEnabled] = React.useState(
-    preview_photos[0]?.isEnabled || false,
-  );
+  const [bool_isPreviewEnabled, setIsPreviewEnabled] =
+    React.useState<boolean>(false);
 
+  // 预览面板：当 preview_photos 变化时，同步当前预览图片的启用状态
   React.useEffect(() => {
-    setIsPreviewEnabled(preview_photos[0]?.isEnabled || false);
-  }, [preview_photos[0]?.isEnabled]);
+    setIsPreviewEnabled(preview_photos[0]?.isEnabled ?? false);
+  }, [preview_photos]);
 
-  // Initialize database and load data
+  // 初始化数据库 & 记录本次提交时间
   React.useEffect(() => {
     const currentTime = Date.now();
     sessionStorage.setItem("submitTime", currentTime.toString());
-    // setUpdate(true);
-
     initializeDatabase();
   }, []);
-  const fetchEnabledPhotos = async () => {
+
+  /**
+   * 根据当前视图模式（分组/整体）、排序方式、是否隐藏弃用照片，拉取相册数据。
+   * 使用 useCallback 保证给 setInterval 的永远是最新逻辑。
+   */
+  const fetchEnabledPhotos = React.useCallback(async () => {
     console.log("galleryTabValue", opt_galleryTabValue);
     console.log("showDisabledPhotos", bool_showDisabled);
     try {
-      const undefinedGroupPhotos = await getPhotosExtendByCriteria(
-        opt_galleryTabValue === "group" ? -1 : -2,
-        opt_sortedColumn,
-        !bool_showDisabled,
-      );
+      // group 模式：-1 表示“未分组/基础组”，total 模式：-2 表示“整体列表”
+      const undefinedGroupPhotos: PhotoExtend[] =
+        await getPhotosExtendByCriteria(
+          opt_galleryTabValue === "group" ? -1 : -2,
+          opt_sortedColumn,
+          !bool_showDisabled,
+        );
 
       let groupId = 0;
       let skippedGroup = 0;
       const groupedPhotos: { [key: number]: Photo[] } = {};
 
+      // 先放入 undefinedGroup / total 列表作为第 0 组
       if (undefinedGroupPhotos.length > 0) {
         groupedPhotos[groupId] = undefinedGroupPhotos.map(
-          (photo: PhotoExtend) => ({
+          (photo: PhotoExtend): Photo => ({
             fileName: photo.fileName,
             fileUrl: photo.fileUrl,
             filePath: photo.filePath,
-            info: (photo.IQA || 0).toString(),
-            isEnabled: photo.isEnabled,
+            info: (photo.IQA ?? 0).toString(),
+            isEnabled: photo.isEnabled ?? true,
           }),
         );
         groupId++;
       }
 
+      // 只有在“分组模式下”才继续拉后续 groupId
       while (opt_galleryTabValue === "group") {
-        const currentGroupPhotos = await getPhotosExtendByCriteria(
-          groupId + skippedGroup,
-          opt_sortedColumn,
-          !bool_showDisabled,
-        );
+        const currentGroupPhotos: PhotoExtend[] =
+          await getPhotosExtendByCriteria(
+            groupId + skippedGroup,
+            opt_sortedColumn,
+            !bool_showDisabled,
+          );
         if (currentGroupPhotos.length === 0) {
           if (skippedGroup < 20) {
             skippedGroup++;
@@ -141,12 +132,12 @@ export default function PhotoFilterSubpage() {
         }
 
         groupedPhotos[groupId] = currentGroupPhotos.map(
-          (photo: PhotoExtend) => ({
+          (photo: PhotoExtend): Photo => ({
             fileName: photo.fileName,
             fileUrl: photo.fileUrl,
             filePath: photo.filePath,
-            info: (photo.IQA || 0).toString(),
-            isEnabled: photo.isEnabled,
+            info: (photo.IQA ?? 0).toString(),
+            isEnabled: photo.isEnabled ?? true,
           }),
         );
 
@@ -154,18 +145,21 @@ export default function PhotoFilterSubpage() {
       }
 
       setPhotos(Object.values(groupedPhotos));
-      console.log("照片更新一次", bool_needUpdate);
+      console.log("照片更新一次");
     } catch (error) {
       console.error("获取启用照片失败:", error);
     }
-  };
+  }, [opt_galleryTabValue, opt_sortedColumn, bool_showDisabled]);
 
-  const fetchServerStatus = async () => {
-    console.log("更新状态", bool_needUpdate);
+  /**
+   * 拉取服务端状态
+   */
+  const fetchServerStatus = React.useCallback(async () => {
+    console.log("更新状态标志 bool_needUpdate =", bool_needUpdate);
     try {
       const response = await fetch("http://localhost:8000/status");
       if (response.ok) {
-        const data = await response.json();
+        const data: ServerData = await response.json();
         setServerStatus(`服务端状态: ${data.status || "未知状态"}`);
         setServerData(data);
 
@@ -174,6 +168,7 @@ export default function PhotoFilterSubpage() {
           const currentTime = Date.now();
           const timeDifference = (currentTime - parseInt(submitTime)) / 1000;
 
+          // 提交 6 秒后，如果状态仍然是空闲，则 5 秒后停止轮询
           if (timeDifference > 6 && data.status === "空闲中") {
             setTimeout(() => {
               if (data.status === "空闲中") {
@@ -189,7 +184,7 @@ export default function PhotoFilterSubpage() {
     } catch {
       setServerStatus("服务端状态: 请求失败");
     }
-  };
+  }, [bool_needUpdate]);
 
   const handleSliderChange = (value: number) => {
     setSimilarityThreshold(value);
@@ -226,7 +221,7 @@ export default function PhotoFilterSubpage() {
 
   const handleDisableRedundant = async () => {
     try {
-      // 并行处理所有组
+      // 并行处理所有组：每组保留第 1 张，弃用后面所有
       await Promise.all(
         photos.map(async (group) => {
           const updates = group
@@ -254,102 +249,116 @@ export default function PhotoFilterSubpage() {
     }
   };
 
-  // 添加组件卸载时的清理
+  // 组件卸载时简单清理预览数据
   React.useEffect(() => {
     return () => {
-      // 清理预览图片内存
       setPreviewPhotos([]);
-      // 取消所有进行中的请求
-      const controller = new AbortController();
-      controller.abort();
     };
   }, []);
 
+  /**
+   * 轮询相册数据：每 4 秒刷新一次，受 bool_needUpdate 控制
+   * 同时在依赖变化时（bool_needUpdate / fetchEnabledPhotos）重新建 interval，
+   * 避免使用旧闭包。
+   */
   React.useEffect(() => {
+    // 首次或依赖变化时，先拉一次
     fetchEnabledPhotos();
-    const interval_photos = setInterval(() => {
+
+    const interval_photos = window.setInterval(() => {
       if (bool_needUpdate) {
         fetchEnabledPhotos();
       }
     }, 4000);
 
-    return () => clearInterval(interval_photos);
-  }, [bool_needUpdate]);
+    return () => window.clearInterval(interval_photos);
+  }, [bool_needUpdate, fetchEnabledPhotos]);
 
+  /**
+   * 显式触发相册刷新：
+   * - bool_reloadAlbum 为 true（比如弃用/启用操作）
+   * - bool_showDisabled 切换（显示/隐藏弃用照片）
+   * - opt_galleryTabValue 切换（分组 / 整体）
+   */
   React.useEffect(() => {
     fetchEnabledPhotos();
     if (bool_reloadAlbum) {
       setReloadAlbum(false);
     }
-  }, [bool_reloadAlbum, bool_showDisabled, bool_isPreviewEnabled, opt_galleryTabValue]);
+  }, [
+    bool_reloadAlbum,
+    bool_showDisabled,
+    opt_galleryTabValue,
+    fetchEnabledPhotos,
+  ]);
 
+  /**
+   * 轮询服务端状态：每 1 秒拉一次，受 bool_needUpdate 控制
+   */
   React.useEffect(() => {
     fetchServerStatus();
-    const interval_status = setInterval(() => {
+
+    const interval_status = window.setInterval(() => {
       if (bool_needUpdate) {
         fetchServerStatus();
       }
     }, 1000);
 
-    return () => clearInterval(interval_status);
-  }, [bool_needUpdate]);
+    return () => window.clearInterval(interval_status);
+  }, [bool_needUpdate, fetchServerStatus]);
 
   return (
     <div className="min-h-screen p-4">
       <div className="flex gap-6">
+        {/* 左侧：主画廊 */}
         <div className="md:order-1">
           <div className="flex h-[85vh] max-w-[70vw] min-w-[50vw] flex-col space-y-4">
             <Tabs
               id="gallery-pannel"
-              defaultValue="group"
               value={opt_galleryTabValue}
+              onValueChange={setGalleryTabValue}
             >
               <TabsList className="grid grid-cols-2">
-                <TabsTrigger
-                  value="group"
-                  onClick={() => {
-                    setGalleryTabValue("group");
-                  }}
-                >
+                <TabsTrigger value="group">
                   <span className="sr-only">分组模式</span>
                   分组模式
                 </TabsTrigger>
-                <TabsTrigger
-                  value="total"
-                  onClick={() => {
-                    setGalleryTabValue("total");
-                  }}
-                >
+                <TabsTrigger value="total">
                   <span className="sr-only">整体模式</span>
                   整体模式
                 </TabsTrigger>
               </TabsList>
+
+              {/* 这里用一个 ScrollArea 展示当前 photos（无论是 group 还是 total） */}
               <ScrollArea className="mx-auto h-[calc(100vh-200px)] max-w-[calc((100vw-10px)*0.6)] min-w-[calc((100vw-10px)*0.6)] rounded-md border p-4">
                 {photos.map((group, index) => (
                   <React.Fragment key={index}>
                     <PhotoGridEnhance
                       photos={group}
                       onPhotoClick={async (clickphotos, event) => {
-                        // console.log("点击了照片:", clickphotos);
                         if (event === "Select") {
-                          setPreviewPhotos(
-                            getPhotosExtendByPhotos(clickphotos),
-                          );
+                          // 异步获取扩展信息
+                          const extended =
+                            await getPhotosExtendByPhotos(clickphotos);
+                          console.log("选中了照片:", extended, clickphotos);
 
-                          setPannelTabValue("preview"); // 设置 Tabs 的值为 preview
+                          setPreviewPhotos(extended);
+                          setPannelTabValue("preview");
                         } else if (event === "Change") {
                           console.log("修改了照片:", clickphotos);
-                          getPhotosExtendByPhotos(clickphotos);
+
+                          // 先更新启用状态（默认 undefined 按 true 处理）
                           await updatePhotoEnabledStatus(
                             clickphotos[0].filePath,
-                            !clickphotos[0].isEnabled,
+                            !(clickphotos[0].isEnabled ?? true),
                           );
                           setReloadAlbum(true);
 
-                          setPreviewPhotos(
-                            getPhotosExtendByPhotos(clickphotos),
-                          );
-                          setPannelTabValue("preview"); // 设置 Tabs 的值为 preview
+                          // 再获取最新的扩展信息
+                          const extended =
+                            await getPhotosExtendByPhotos(clickphotos);
+                          setPreviewPhotos(extended);
+                          setPannelTabValue("preview");
                         }
                       }}
                       highlightPhotos={
@@ -358,20 +367,22 @@ export default function PhotoFilterSubpage() {
                               fileName: photo.fileName,
                               fileUrl: photo.fileUrl,
                               filePath: photo.filePath,
-                              info: photo.info || "",
-                              isEnabled: photo.isEnabled,
+                              info: photo.info ?? "",
+                              isEnabled: photo.isEnabled ?? true,
                             }))
                           : []
                       }
                     />
+
                     {index < photos.length - 1 && (
                       <Separator className="mt-2 mb-2" />
                     )}
-                    {/* Add separator after each group */}
                   </React.Fragment>
                 ))}
               </ScrollArea>
             </Tabs>
+
+            {/* 底部：提交任务 + 服务端状态 + 显示弃用开关 */}
             <div className="flex items-center justify-between space-x-2">
               <div className="flex items-center space-x-2">
                 <Button onClick={handleSubmit}>提交任务</Button>
@@ -383,7 +394,7 @@ export default function PhotoFilterSubpage() {
                       <DrawerTitle>服务端状态</DrawerTitle>
                       <DrawerDescription>
                         当前任务队列长度:{" "}
-                        {serverData?.task_queue_length || "无"}
+                        {serverData?.task_queue_length ?? "无"}
                       </DrawerDescription>
                     </DrawerHeader>
                     <div className="space-y-4">
@@ -411,42 +422,36 @@ export default function PhotoFilterSubpage() {
               <div className="flex items-center justify-between space-x-2">
                 <Switch
                   id="disabled-display"
+                  checked={bool_showDisabled}
                   onCheckedChange={setShowDisabledPhotos}
                 />
-                <Label htmlFor="airplane-mode">显示弃用照片</Label>
+                <Label htmlFor="disabled-display">显示弃用照片</Label>
               </div>
             </div>
           </div>
         </div>
+
+        {/* 右侧：筛选 / 预览面板 */}
         <div className="hidden h-[90vh] max-w-[35vw] flex-col space-y-4 sm:flex md:order-2">
           <Tabs
             id="side-pannel"
-            defaultValue="filter"
             value={opt_panelTabValue}
+            onValueChange={setPannelTabValue}
             className="flex-1"
           >
             <div className="min-w-[35vw]">
               <TabsList className="grid grid-cols-2">
-                <TabsTrigger
-                  value="filter"
-                  onClick={() => {
-                    setPannelTabValue("filter");
-                  }}
-                >
+                <TabsTrigger value="filter">
                   <span className="sr-only">筛选</span>
                   筛选
                 </TabsTrigger>
-                <TabsTrigger
-                  value="preview"
-                  onClick={() => {
-                    setPannelTabValue("preview");
-                  }}
-                >
+                <TabsTrigger value="preview">
                   <span className="sr-only">预览</span>
                   预览
                 </TabsTrigger>
               </TabsList>
             </div>
+
             <TabsContent value="filter" className="mt-0 border-0 p-0">
               <div className="mb-4">
                 <CustomSlider
@@ -464,6 +469,7 @@ export default function PhotoFilterSubpage() {
                 <Button onClick={handleEnableAll}>启用所有</Button>
               </div>
             </TabsContent>
+
             <TabsContent value="preview" className="mt-0 border-0 p-0">
               {preview_photos.length > 0 && (
                 <div className="p-4">
@@ -489,5 +495,4 @@ export default function PhotoFilterSubpage() {
       </div>
     </div>
   );
-  
 }

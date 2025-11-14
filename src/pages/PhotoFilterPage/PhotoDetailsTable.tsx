@@ -2,26 +2,17 @@ import React from "react";
 import { Table, TableBody, TableCaption, TableCell, TableRow } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-
-// Define the Photo type if not imported
-interface Photo {
-    fileName: string;
-    filePath: string;
-    fileSize?: number;
-    info?: string;
-    date?: string;
-    groupId?: number;
-    similarity?: number;
-    IQA?: number;
-    isEnabled: boolean;
-}
+import { PhotoExtend } from "@/lib/db";
 
 interface PhotoDetailsTableProps {
-    photo: Photo; // Use the Photo type here
-    isPreviewEnabled: boolean;
-    setIsPreviewEnabled: React.Dispatch<React.SetStateAction<boolean>>;
-    updatePhotoEnabledStatus: (filePath: string, isEnabled: boolean) => Promise<void>;
-    setPhotos: React.Dispatch<React.SetStateAction<any[]>>;
+  photo: PhotoExtend; // Use the Photo type here
+  isPreviewEnabled: boolean;
+  setIsPreviewEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  updatePhotoEnabledStatus: (
+    filePath: string,
+    isEnabled: boolean,
+  ) => Promise<void>;
+  setPhotos: React.Dispatch<React.SetStateAction<any[]>>;
 }
 
 const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
@@ -74,13 +65,17 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
                                         await updatePhotoEnabledStatus(photo.filePath, !isPreviewEnabled);
 
                                         setPhotos((prevPhotos) =>
-                                            prevPhotos.map((group) =>
-                                                group.map((p: Photo) =>
-                                                    p.filePath === photo.filePath
-                                                        ? { ...p, isEnabled: !isPreviewEnabled }
-                                                        : p
-                                                )
-                                            )
+                                          prevPhotos.map((group) =>
+                                            group.map((p: PhotoExtend) =>
+                                              p.filePath === photo.filePath
+                                                ? {
+                                                    ...p,
+                                                    isEnabled:
+                                                      !isPreviewEnabled,
+                                                  }
+                                                : p,
+                                            ),
+                                          ),
                                         );
                                         setIsPreviewEnabled(!isPreviewEnabled);
                                     }}
@@ -97,4 +92,4 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
     );
 };
 
-export default PhotoDetailsTable; 
+export default PhotoDetailsTable;

@@ -18,31 +18,11 @@ import {
   clearPhotos,
   getPhotos,
   initializeDatabase,
+  PhotoExtend,
+  Photo,
 } from "@/lib/db";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-
-interface Photo {
-  fileName: string;
-  fileUrl: string;
-  filePath: string;
-  info: string;
-  isEnabled: boolean;
-}
-
-interface PhotoExtend {
-  fileName: string;
-  fileUrl: string;
-  filePath: string;
-  fileSize?: number;
-  info?: string;
-  date?: string;
-  groupId?: number;
-  simRefPath?: string;
-  similarity?: number;
-  IQA?: number;
-  isEnabled?: boolean;
-}
 
 interface FileImportDrawerProps {
   setPhotos: React.Dispatch<React.SetStateAction<Photo[]>>;
@@ -316,11 +296,15 @@ export default function PhotoImportSubpage() {
   const { t } = useTranslation();
   const [photos, setPhotos] = React.useState<Photo[]>([]);
 
-  // 初始化数据库并加载数据
+  // 初始化数据库并加载数据（异步）
   React.useEffect(() => {
-    initializeDatabase();
-    const savedPhotos = getPhotos();
-    setPhotos(savedPhotos);
+    const init = async () => {
+      initializeDatabase();
+      const savedPhotos = await getPhotos(); // ✅ 等待 Promise 结果
+      setPhotos(savedPhotos);
+    };
+
+    void init(); // 可忽略返回的 Promise
   }, []);
 
   // 组件挂载时从 sessionStorage 加载数据

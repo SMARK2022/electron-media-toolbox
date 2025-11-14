@@ -1,26 +1,5 @@
 import path from "path-browserify";
-
-interface PhotoExtend {
-    fileName: string;
-    fileUrl: string;
-    filePath: string;
-    fileSize?: number;
-    info?: string;
-    date?: string;
-    groupId?: number;
-    simRefPath?: string;
-    similarity?: number;
-    IQA?: number;
-    isEnabled: boolean;
-}
-
-interface Photo {
-    fileName: string;
-    fileUrl: string;
-    filePath: string;
-    info: string;
-    isEnabled: boolean;
-}
+import { PhotoExtend,Photo } from "@/lib/db";
 
 // 创建文件夹函数（允许文件夹已存在，文件夹存在也没问题）
 async function createFolder(folderPath: string): Promise<void> {

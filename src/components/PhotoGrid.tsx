@@ -2,14 +2,9 @@ import React, { useEffect, useRef, useState } from "react";
 
 import { Card } from "@/components/ui/card";
 import missing_icon from "@/assets/images/cat_missing.svg";
-
-interface Photo {
-  fileName: string;
-  fileUrl: string;
-  filePath: string;
-  info: string;
-  isEnabled: boolean;
-}
+import {
+  Photo,
+} from "@/lib/db";
 
 interface PhotoGridProps {
   photos?: Photo[];
@@ -145,7 +140,7 @@ export function PhotoGridEnhance({
           onDoubleClick={() => {
             setHighlightPhotos([photo]); // 更新 highlightPhotos
             onPhotoClick && onPhotoClick([photo], "Change");
-            // console.log("double click", photo.fileName)\mathrm{d};
+            // console.log("double click", photo.fileName);
           }}
           onFocus={() => setFocusedIndex(index)} // 聚焦时更新焦点
           onMouseEnter={(e) => {
@@ -219,6 +214,22 @@ function LazyImageContainer({ photo }: LazyImageContainerProps) {
     }
   }, [isVisible, photo.fileUrl]);
 
+  // 安全处理 photo.info（可能为 undefined），并预计算数值
+  const infoStr = photo.info ?? "";
+  const numericInfo = /^[0-9]+(\.[0-9]+)?$/.test(infoStr)
+    ? parseFloat(infoStr)
+    : NaN;
+  const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
+
+  const colorStyle =
+    !Number.isNaN(numericInfo)
+      ? numericInfo <= 50
+        ? `rgb(${clamp(255 - numericInfo * 5)}, ${clamp(numericInfo * 5)}, 0)` // 黄色到绿色
+        : `rgb(0, ${clamp(255 - (numericInfo - 50) * 5)}, ${clamp(
+            (numericInfo - 50) * 5,
+          )})` // 绿色到蓝色
+      : undefined;
+
   return (
     <Card>
       <div className="flex justify-center overflow-hidden rounded-md">
@@ -246,15 +257,7 @@ function LazyImageContainer({ photo }: LazyImageContainerProps) {
         <p
           className="text-xs"
           style={{
-            color: /^[0-9]+(\.[0-9]+)?$/.test(photo.info)
-              ? parseFloat(photo.info) <= 50
-                ? `rgb(${255 - parseFloat(photo.info) * 5}, ${
-                    parseFloat(photo.info) * 5
-                  }, 0)` // 黄色到绿色
-                : `rgb(0, ${
-                    255 - (parseFloat(photo.info) - 50) * 5
-                  }, ${(parseFloat(photo.info) - 50) * 5})` // 绿色到蓝色
-              : undefined,
+            color: colorStyle,
           }}
         >
           {photo.info}

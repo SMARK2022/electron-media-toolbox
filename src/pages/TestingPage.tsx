@@ -1,13 +1,6 @@
 import { PhotoGridEnhance } from "@/components/PhotoGrid";
 import React from 'react';
-
-interface Photo {
-    fileName: string;
-    fileUrl: string;
-    filePath: string;
-    info: string;
-    isEnabled: boolean;
-}
+import { Photo } from "@/lib/db";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 
