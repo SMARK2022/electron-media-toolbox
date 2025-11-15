@@ -8,7 +8,7 @@
     "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
-    "publish": "electron-forge publish",
+    "publish": "node scripts/zip-python.cjs && electron-forge make",
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
@@ -21,7 +21,7 @@
     "python:zip": "node scripts/zip-python.cjs"
   },
   "author": "SMARK <SMARK2019@outlook.com>",
-  "license": "MIT",
+  "license": "Apache License 2.0",
   "engines": {
     "node": ">=20.19.0"
   },
