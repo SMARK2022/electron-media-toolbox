@@ -1,17 +1,17 @@
 # SMARK Media Tools
 
 ## 项目简介 | Project Introduction
-本项目是一个媒体工具箱，旨在对图片进行高效的管理、筛选和处理操作。  
+本项目是一个媒体工具箱，旨在对图片进行高效的管理、筛选和处理操作。
 This project is a media toolbox designed for efficient management, filtering, and processing of images.
 
 ![alt text](assets/gui.png)
 
-用户可能在摄影过程中存在大量的连拍照片，在后期照片筛选时会遇到棘手的难以筛选的问题。因此我创建了这个工具箱，可以直接读入相机存储卡的照片文件夹，经过HSV直方图相似度分组后，根据IQA美学评分进行美观度排序，便于删除。在用户管理照片完成后，进行导出复制到指定文件夹。  
+用户可能在摄影过程中存在大量的连拍照片，在后期照片筛选时会遇到棘手的难以筛选的问题。因此我创建了这个工具箱，可以直接读入相机存储卡的照片文件夹，经过HSV直方图相似度分组后，根据IQA美学评分进行美观度排序，便于删除。在用户管理照片完成后，进行导出复制到指定文件夹。
 Users may have a large number of burst photos during photography, and it can be difficult to filter them during post-processing. Therefore, I created this toolbox, which can directly read the photo folder from the camera's storage card, group them by HSV histogram similarity, and then sort them by IQA aesthetic score for easy deletion. After users finish managing the photos, they can export and copy them to a specified folder.
 
-我们的项目能够实现：  
-- 3ms/frame 的缩略图生成能力  
-- 1s/frame 的照片推理与检测能力  
+我们的项目能够实现：
+- 3ms/frame 的缩略图生成能力
+- 1s/frame 的照片推理与检测能力
 
 ## 目前功能计划 | Current Feature Plan
 | 功能 | Feature | Progress | Info |
@@ -48,13 +48,13 @@ Users may have a large number of burst photos during photography, and it can be 
 ```
 
 ## 运行方式 | How to Run
-1. 首先运行 Python 的 `web_api.py`：  
+1. 首先运行 Python 的 `web_api.py`：
    First, run the Python `web_api.py`:
     ```bash
     python python/web_api.py
     ```
 
-2. 然后运行前端项目：  
+2. 然后运行前端项目：
    Then, run the frontend project:
     ```bash
     npm run start
@@ -73,25 +73,27 @@ Users may have a large number of burst photos during photography, and it can be 
 </table>
 
 ## 特别感谢 | Special Thanks
-本项目基于 [https://github.com/LuanRoger/electron-shadcn](https://github.com/LuanRoger/electron-shadcn) 构建。  
+本项目基于 [https://github.com/LuanRoger/electron-shadcn](https://github.com/LuanRoger/electron-shadcn) 构建。
 This project is based on [https://github.com/LuanRoger/electron-shadcn](https://github.com/LuanRoger/electron-shadcn).
 
-本项目采用了 [https://github.com/nasimjamshidi/LAR-IQA](https://github.com/nasimjamshidi/LAR-IQA) 算法。  
+本项目采用了 [https://github.com/nasimjamshidi/LAR-IQA](https://github.com/nasimjamshidi/LAR-IQA) 算法。
 This project uses the [https://github.com/nasimjamshidi/LAR-IQA](https://github.com/nasimjamshidi/LAR-IQA) algorithm.
 
 
 ## 许可证 | License
-此项目基于 Apache License 2.0 协议发布，详情请参见 LICENSE 文件。  
+此项目基于 Apache License 2.0 协议发布，详情请参见 LICENSE 文件。
 This project is licensed under the Apache License 2.0. For details, please refer to the LICENSE file.
 
 ## 更新日志 | Changelog
+- 2025.11.16 发布a1.4版本 更新依赖项，优化若干特性，且现在支持检查 GitHub releases
+  ---------- Released version a1.4, Updated dependencies , optimized several features, and now supports checking GitHub releases
 - 2025.11.06 发布a1.3版本 修正electron-forge与vite打包导致的依赖项缺失问题，修复若干 bug，并发布 electron 打包后的 release
   ---------- Released version a1.3, Fixed missing dependencies caused by electron-forge + Vite packaging, fixed several bugs, and published the electron packaged release
-- 2025.01.06 发布a1.2版本 更新.vite文件夹，更新vite版本，添加筛选简易功能  
+- 2025.01.06 发布a1.2版本 更新.vite文件夹，更新vite版本，添加筛选简易功能
   ---------- Released version a1.2, updated .vite folder, updated vite version, and added simple filtering feature
-- 2025.01.06 更新a1.1版本 修复了一些bug，改进了页面布局，并添加了文件夹可用性检测功能  
+- 2025.01.06 更新a1.1版本 修复了一些bug，改进了页面布局，并添加了文件夹可用性检测功能
   ---------- Updated version a1.1, fixed several bugs, improved page layout, and added folder existence checking feature
-- 2024.12.23 发布a1.1版本 设置全局语言翻译表，修改启动页，并整理代码  
+- 2024.12.23 发布a1.1版本 设置全局语言翻译表，修改启动页，并整理代码
   ---------- Released version a1.1, set global language translation table, modified the startup page, and organized the code
-- 2024.12.22 发布a1.0版本 初始化整个项目，基本实现预期功能  
+- 2024.12.22 发布a1.0版本 初始化整个项目，基本实现预期功能
   ---------- Released version a1.0, initialized the entire project, and basically achieved the expected functions
