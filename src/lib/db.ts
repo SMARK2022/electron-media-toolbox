@@ -16,7 +16,6 @@ export interface PhotoExtend {
   info?: string;
   date?: string;
   groupId?: number;
-  simRefPath?: string;
   similarity?: number;
   IQA?: number;
   isEnabled?: boolean;
@@ -37,7 +36,10 @@ export function initializeDatabase() {
             simRefPath TEXT,
             similarity REAL,
             IQA REAL,
-            isEnabled INTEGER DEFAULT 1
+            isEnabled INTEGER DEFAULT 1,
+            histH BLOB,
+            histS BLOB,
+            histV BLOB
         )
     `;
   const sqlPrevious = `
@@ -53,14 +55,17 @@ export function initializeDatabase() {
             simRefPath TEXT,
             similarity REAL,
             IQA REAL,
-            isEnabled INTEGER DEFAULT 1
+            isEnabled INTEGER DEFAULT 1,
+            histH BLOB,
+            histS BLOB,
+            histV BLOB
         )
     `;
   window.ElectronDB.exec(sqlPresent); // 调用 exec 执行 SQL
   window.ElectronDB.exec(sqlPrevious); // 调用 exec 执行 SQL
 }
 
-// 插入单个照片记录
+// 插入单个照片记录（简化信息）
 export function addPhoto(photo: Photo) {
   const sql = `
         INSERT INTO present (fileName, fileUrl, filePath, info, isEnabled)
@@ -69,7 +74,7 @@ export function addPhoto(photo: Photo) {
   window.ElectronDB.run(sql, photo); // 执行单条插入
 }
 
-// 批量插入照片记录
+// 批量插入照片记录（简化信息）
 export function addPhotos(photos: Photo[]) {
   const sql = `
         INSERT INTO present (fileName, fileUrl, filePath, info, isEnabled)
@@ -82,6 +87,7 @@ export function addPhotos(photos: Photo[]) {
 }
 
 // 插入单个照片记录（带可选扩展字段）
+// 注意：不再从前端写入 simRefPath / 直方图，交由 Python 后端更新
 export function addPhotoExtend(photo: PhotoExtend) {
   const columns = ["fileName", "fileUrl", "filePath"];
   const values = ["@fileName", "@fileUrl", "@filePath"];
@@ -101,10 +107,6 @@ export function addPhotoExtend(photo: PhotoExtend) {
   if (photo.groupId !== undefined) {
     columns.push("groupId");
     values.push("@groupId");
-  }
-  if (photo.simRefPath !== undefined) {
-    columns.push("simRefPath");
-    values.push("@simRefPath");
   }
   if (photo.similarity !== undefined) {
     columns.push("similarity");
@@ -135,48 +137,116 @@ export function addPhotosExtend(photos: PhotoExtend[]) {
 
 // 获取所有照片记录（简化版）
 export function getPhotos(): Promise<Photo[]> {
-  const sql = `SELECT fileName, fileUrl, filePath, info, isEnabled FROM present`;
-  return window.ElectronDB.all(sql, []); // all 方法期望传递 SQL 和参数，参数为空数组表示无附加参数
-}
-
-// 获取所有详细照片记录，包括新增列
-export function getPhotosExtend(): Promise<PhotoExtend[]> {
   const sql = `
-        SELECT *
+        SELECT
+            fileName,
+            fileUrl,
+            filePath,
+            info,
+            isEnabled
         FROM present
     `;
   return window.ElectronDB.all(sql, []); // all 方法期望传递 SQL 和参数，参数为空数组表示无附加参数
 }
 
-// 获取所有启用的照片记录
+// 获取所有详细照片记录（不包含 simRefPath / 直方图）
+export function getPhotosExtend(): Promise<PhotoExtend[]> {
+  const sql = `
+        SELECT
+            fileName,
+            fileUrl,
+            filePath,
+            fileSize,
+            info,
+            date,
+            groupId,
+            similarity,
+            IQA,
+            isEnabled
+        FROM present
+    `;
+  return window.ElectronDB.all(sql, []);
+}
+
+// 获取所有启用的照片记录（不包含 simRefPath / 直方图）
 export function getEnabledPhotosExtend(): Promise<PhotoExtend[]> {
   const sql = `
-        SELECT *
+        SELECT
+            fileName,
+            fileUrl,
+            filePath,
+            fileSize,
+            info,
+            date,
+            groupId,
+            similarity,
+            IQA,
+            isEnabled
         FROM present
         WHERE isEnabled = 1
     `;
-  return window.ElectronDB.all(sql, []); // all 方法期望传递 SQL 和参数，参数为空数组表示无附加参数
+  return window.ElectronDB.all(sql, []);
 }
 
-// 清空照片表并将内容移动到 previous 表
+// 清空照片表并将内容移动到 previous 表（包含 simRefPath 和直方图）
 export function clearPhotos() {
   const moveSql = `
-        INSERT INTO previous (fileName, fileUrl, filePath, fileSize, info, date, groupId, simRefPath, similarity, IQA, isEnabled)
-        SELECT fileName, fileUrl, filePath, fileSize, info, date, groupId, simRefPath, similarity, IQA, isEnabled FROM present
+        INSERT INTO previous (
+            fileName,
+            fileUrl,
+            filePath,
+            fileSize,
+            info,
+            date,
+            groupId,
+            simRefPath,
+            similarity,
+            IQA,
+            isEnabled,
+            histH,
+            histS,
+            histV
+        )
+        SELECT
+            fileName,
+            fileUrl,
+            filePath,
+            fileSize,
+            info,
+            date,
+            groupId,
+            simRefPath,
+            similarity,
+            IQA,
+            isEnabled,
+            histH,
+            histS,
+            histV
+        FROM present
     `;
   const deleteSql = `DELETE FROM present`;
   window.ElectronDB.run(moveSql, []); // 将 present 表的内容移动到 previous 表
   window.ElectronDB.run(deleteSql, []); // 清空 present 表
 }
 
-// 根据条件获取照片记录
+// 根据条件获取照片记录（不拉取 simRefPath / 直方图）
 export function getPhotosExtendByCriteria(
   groupId: number,
   sortColumn: string = "IQA",
   considerEnabled: boolean = true,
 ): Promise<PhotoExtend[]> {
   let sql = `
-        SELECT *
+        SELECT
+            fileName,
+            fileUrl,
+            filePath,
+            fileSize,
+            info,
+            date,
+            groupId,
+            similarity,
+            IQA,
+            isEnabled
         FROM present
         WHERE 1=1
     `;
@@ -195,20 +265,30 @@ export function getPhotosExtendByCriteria(
 
   sql += ` ORDER BY ${sortColumn} DESC`;
 
-  return window.ElectronDB.all(sql, []); // all 方法期望传递 SQL 和参数，参数为空数组表示无附加参数
+  return window.ElectronDB.all(sql, []);
 }
 
-// 获取单个照片的详细记录（异步）
+// 获取单个照片的详细记录（异步，有限列）
 export async function getPhotoExtendByPhoto(
   photo: Photo,
 ): Promise<PhotoExtend | null> {
   const sql = `
-        SELECT *
+        SELECT
+            fileName,
+            fileUrl,
+            filePath,
+            fileSize,
+            info,
+            date,
+            groupId,
+            similarity,
+            IQA,
+            isEnabled
         FROM present
         WHERE fileName = @fileName AND filePath = @filePath
     `;
   try {
-    const row = await window.ElectronDB.get(sql, photo); // get 方法返回 Promise
+    const row = await window.ElectronDB.get(sql, photo);
     return (row ?? null) as PhotoExtend | null;
   } catch (err) {
     console.error("getPhotoExtendByPhoto 查询失败:", err, photo);

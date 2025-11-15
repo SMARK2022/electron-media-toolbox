@@ -11,10 +11,7 @@ from fastapi.responses import StreamingResponse
 from packages.LAR_IQA.scripts.utils import infer, load_model, preprocess_image
 from PIL import Image
 from pydantic import BaseModel
-from utils.database import (load_cache_from_db, save_cache_to_db,
-                            update_group_id_in_db)
-from utils.image_compute import (compute_similarity_and_IQA, cv_imread,
-                                 process_and_group_images, process_image_batch)
+from utils.image_compute import (process_and_group_images)
 from utils.thumbnails import generate_thumbnails, get_thumbnail
 
 global_state = {
@@ -50,16 +47,16 @@ class TaskManager:
                 try:
                     async with self.lock:
                         global_state['status'] = f"正在处理: {task['description']}"
-                    
+
                     # 调用包装函数，正确传递参数
                     result = await run_in_threadpool(
                         run_process_and_group,
                         task,
                     )
-                    
+
                     async with self.lock:
                         global_state['status'] = "处理完成"
-                        
+
                 except Exception as e:
                     print(f"任务执行错误: {e}")
                     import traceback
@@ -191,15 +188,15 @@ class DetectionTask(BaseModel):
 async def detect_images(request: Request):
     data = await request.json()
     print(f"DEBUG: detect_images received data: {data}")
-    
+
     # 确保 db_path 是字符串，不是字典或其他类型
     db_path = data.get("db_path")
     if not isinstance(db_path, str) or db_path=="{}" or not db_path:
         db_path = "../.cache/photos.db"
-    
+
     similarity_threshold = data.get("similarity_threshold", 0.8)
     show_disabled_photos = data.get("show_disabled_photos", False)
-    
+
     print(f"DEBUG: processed db_path={db_path}, threshold={similarity_threshold}, show_disabled={show_disabled_photos}")
 
     detection_task = {
