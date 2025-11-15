@@ -20,6 +20,7 @@ bak/
 
 # Vite build cache
 .vite/
+.storybook/
 
 # Cache directories
 .cache/

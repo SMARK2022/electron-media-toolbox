@@ -1,18 +1,17 @@
 import asyncio
 import io
-import os
-import sqlite3
 import time
 
 import torch
-from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
-from packages.LAR_IQA.scripts.utils import infer, load_model, preprocess_image
+from packages.LAR_IQA.scripts.utils import load_model
 from PIL import Image
 from pydantic import BaseModel
 from utils.image_compute import (process_and_group_images)
 from utils.thumbnails import generate_thumbnails, get_thumbnail
+from fastapi.middleware.cors import CORSMiddleware
 
 global_state = {
     "status": "空闲中",
@@ -49,7 +48,7 @@ class TaskManager:
                         global_state['status'] = f"正在处理: {task['description']}"
 
                     # 调用包装函数，正确传递参数
-                    result = await run_in_threadpool(
+                    _ = await run_in_threadpool(
                         run_process_and_group,
                         task,
                     )
@@ -79,7 +78,6 @@ class TaskManager:
                 global_state['task_queue_length'] = 0
 
 
-from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 task_manager = TaskManager()
