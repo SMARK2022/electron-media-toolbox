@@ -28,6 +28,7 @@
         "resolveJsonModule": true
     },
     "include": [
-        "src/**/*"
+        "src/**/*",
+        "package.json"
     ]
 }
