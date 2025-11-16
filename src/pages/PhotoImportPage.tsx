@@ -1,6 +1,6 @@
 // renderer/pages/PhotoImportSubpage.tsx
 
-import { PhotoGridEnhance } from "@/components/PhotoGrid"; // Import PhotoGrid
+import { PhotoGridEnhance } from "@/components/PhotoGrid";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,
@@ -26,135 +26,96 @@ import {
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 
-// 拖拽进来的单个文件信息：name 必有，fullPath 在成功获取绝对路径时存在
+// ----------------- 类型与小工具函数 -----------------
+
 interface DroppedFile {
-  name: string; // 纯文件名，如 "1.jpg"
-  fullPath?: string; // 绝对路径，如 "E:/photos/1.jpg"；获取失败时为 undefined
+  name: string; // 文件名，如 "1.jpg"
+  fullPath?: string; // 绝对路径，如 "E:/photos/1.jpg"
 }
 
 interface FileImportDrawerProps {
   setPhotos: React.Dispatch<React.SetStateAction<Photo[]>>;
 }
 
-/**
- * 尝试从 ElectronAPI 获取 File 的绝对路径。
- * - 优先 ElectronAPI.getPathForFile
- * - 其次尝试 file.path（旧版 Electron）
- * - 失败则返回空字符串
- */
-function tryGetFullPathFromElectron(file: File): string {
+/** 尝试从 ElectronAPI / 旧版 file.path 获取绝对路径，失败返回空字符串 */
+function tryGetFullPath(file: File): string {
   try {
-    const anyWindow = window as any;
-    const api = anyWindow?.ElectronAPI;
-
-    if (api && typeof api.getPathForFile === "function") {
-      const p = api.getPathForFile(file);
-      if (typeof p === "string" && p.length > 0) {
-        return p;
-      }
+    const electronAPI = (window as any)?.ElectronAPI;
+    if (electronAPI?.getPathForFile) {
+      const p = electronAPI.getPathForFile(file);
+      if (typeof p === "string" && p.length > 0) return p;
     }
 
     const anyFile = file as any;
-    if (
-      anyFile &&
-      typeof anyFile.path === "string" &&
-      anyFile.path.length > 0
-    ) {
+    if (anyFile?.path && typeof anyFile.path === "string") {
       return anyFile.path;
     }
   } catch (error) {
-    console.warn("[tryGetFullPathFromElectron] error:", error);
+    console.warn("[tryGetFullPath] error:", error);
   }
-
   return "";
 }
+
+/** 规范化为正斜杠路径 */
+const normalizePath = (p: string) => p.replace(/\\/g, "/");
+
+// ----------------- 主导入 Drawer -----------------
 
 function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
   const { t } = useTranslation();
 
-  // 拖入的文件列表：包含 name 和 optional fullPath
   const [droppedFiles, setDroppedFiles] = React.useState<DroppedFile[]>([]);
+  const [folderName, setFolderName] = React.useState("");
+  const [isDropped, setIsDropped] = React.useState(false);
+  const [hasInvalidDrop, setHasInvalidDrop] = React.useState(false);
+  const [folderInputError, setFolderInputError] = React.useState(false);
 
-  // 用户输入的文件夹路径（在“文件夹模式”下使用）
-  const [folderName, setFolderName] = React.useState<string>("");
-
-  // 是否已经发生有效拖拽（控制隐藏/显示拖拽区域）
-  const [isDropped, setIsDropped] = React.useState<boolean>(false);
-
-  // 拖入了无效文件的提示状态
-  const [hasInvalidDrop, setHasInvalidDrop] = React.useState<boolean>(false);
-
-  // 文件夹输入框错误状态（用于变红）
-  const [folderInputError, setFolderInputError] =
-    React.useState<boolean>(false);
-
-  // 保存无效拖入的定时器，避免多次快速触发
   const invalidDropTimeoutRef = React.useRef<number | null>(null);
-
-  // 文件夹输入错误提示的定时器
   const folderErrorTimeoutRef = React.useRef<number | null>(null);
 
-  // 是否所有文件都成功获取了绝对路径：全路径模式判定
   const allHaveFullPaths =
     droppedFiles.length > 0 && droppedFiles.every((f) => !!f.fullPath);
+  // 决定“是否需要用户输入文件夹路径”
+  const showFolderInput = droppedFiles.length > 0 && !allHaveFullPaths;
 
-  /**
-   * 处理拖拽放入事件
-   */
-  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+  const clearTimeoutRef = (ref: React.MutableRefObject<number | null>) => {
+    if (ref.current !== null) {
+      window.clearTimeout(ref.current);
+      ref.current = null;
+    }
+  };
+
+  // ---------- 拖拽事件 ----------
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     const files = event.dataTransfer.files;
-    const validExtensions = ["png", "jpg", "jpeg", "webp"];
+    const validExt = ["png", "jpg", "jpeg", "webp"];
 
-    const nextDroppedFiles: DroppedFile[] = [];
+    const next: DroppedFile[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const fileName = file.name;
-      const fileExtension = fileName.split(".").pop()?.toLowerCase();
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      if (!ext || !validExt.includes(ext)) continue;
 
-      if (fileExtension && validExtensions.includes(fileExtension)) {
-        // 优先尝试从 Electron 拿到绝对路径
-        const rawFullPath = tryGetFullPathFromElectron(file);
+      const rawFullPath = tryGetFullPath(file);
+      const normalized = rawFullPath ? normalizePath(rawFullPath) : "";
+      const fullPath =
+        normalized && normalized !== file.name ? normalized : undefined;
 
-        // 规范化路径分隔符
-        const normalizedFullPath =
-          typeof rawFullPath === "string" && rawFullPath.length > 0
-            ? rawFullPath.replace(/\\/g, "/")
-            : "";
-
-        // 如果拿到的路径只是文件名本身，就当作没有获取到绝对路径
-        const fullPath =
-          normalizedFullPath && normalizedFullPath !== fileName
-            ? normalizedFullPath
-            : undefined;
-
-        nextDroppedFiles.push({
-          name: fileName,
-          fullPath,
-        });
-      }
+      next.push({ name: file.name, fullPath });
     }
 
-    if (nextDroppedFiles.length > 0) {
-      // 至少有一个有效图片文件：正常进入「已拖入」状态
-      setDroppedFiles(nextDroppedFiles);
+    if (next.length) {
+      setDroppedFiles(next);
       setIsDropped(true);
       setHasInvalidDrop(false);
-
-      if (invalidDropTimeoutRef.current !== null) {
-        window.clearTimeout(invalidDropTimeoutRef.current);
-        invalidDropTimeoutRef.current = null;
-      }
+      clearTimeoutRef(invalidDropTimeoutRef);
     } else {
-      // 没有任何有效图片：保持拖拽框，红色显示约 1s 并提示无效文件
       setDroppedFiles([]);
       setIsDropped(false);
-
-      if (invalidDropTimeoutRef.current !== null) {
-        window.clearTimeout(invalidDropTimeoutRef.current);
-      }
-
+      clearTimeoutRef(invalidDropTimeoutRef);
       setHasInvalidDrop(true);
       invalidDropTimeoutRef.current = window.setTimeout(() => {
         setHasInvalidDrop(false);
@@ -163,138 +124,94 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
     }
   };
 
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) =>
     event.preventDefault();
-  };
 
-  /**
-   * 手动输入文件夹路径（仅在非全路径模式下有意义）
-   */
-  const handleFolderChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const inputPath = event.target.value;
-    const normalizedPath = inputPath.replace(/\\/g, "/");
-    setFolderName(normalizedPath);
-  };
+  // ---------- 文件夹输入 ----------
 
-  /**
-   * 重置所有状态
-   */
+  const handleFolderChange = (event: React.ChangeEvent<HTMLInputElement>) =>
+    setFolderName(normalizePath(event.target.value));
+
+  // ---------- 重置 ----------
+
   const handleReset = () => {
     setDroppedFiles([]);
     setFolderName("");
     setIsDropped(false);
     setHasInvalidDrop(false);
     setFolderInputError(false);
-
-    if (invalidDropTimeoutRef.current !== null) {
-      window.clearTimeout(invalidDropTimeoutRef.current);
-      invalidDropTimeoutRef.current = null;
-    }
-    if (folderErrorTimeoutRef.current !== null) {
-      window.clearTimeout(folderErrorTimeoutRef.current);
-      folderErrorTimeoutRef.current = null;
-    }
+    clearTimeoutRef(invalidDropTimeoutRef);
+    clearTimeoutRef(folderErrorTimeoutRef);
   };
 
-  /**
-   * 提交：构造绝对路径列表，发送给后端生成缩略图，
-   * 同时构造 PhotoExtend / Photo 用于前端展示和 DB 存储。
-   */
+  // ---------- 提交 ----------
+
   const handleSubmit = async () => {
-    if (droppedFiles.length === 0) {
-      // 没有任何文件，不做处理
-      return;
-    }
+    if (!droppedFiles.length) return;
 
-    // 文件夹路径标准化
-    let normalizedFolder = folderName.replace(/\\/g, "/").trim();
+    let normalizedFolder = normalizePath(folderName).trim();
 
-    // 如果不是全路径模式，则必须要求用户填写文件夹路径
-    if (!allHaveFullPaths && !normalizedFolder) {
-      // 显示错误提示：输入框变红，内容变为“输入文件路径”约 1 秒
-      if (folderErrorTimeoutRef.current !== null) {
-        window.clearTimeout(folderErrorTimeoutRef.current);
-      }
-
+    // 仅在需要输入文件夹路径的模式下校验
+    if (showFolderInput && !normalizedFolder) {
+      clearTimeoutRef(folderErrorTimeoutRef);
       setFolderInputError(true);
-      const prevFolderName = folderName;
-      setFolderName("输入文件路径");
-
+      const prev = folderName;
+      setFolderName(t("placeholders.enterFolderPath"));
       folderErrorTimeoutRef.current = window.setTimeout(() => {
         setFolderInputError(false);
-        setFolderName(prevFolderName || "");
+        setFolderName(prev || "");
         folderErrorTimeoutRef.current = null;
       }, 1000);
-
       return;
     }
 
-    // 统一构造「绝对路径列表」
-    const absoluteFilePaths: string[] = droppedFiles.map((file) => {
+    // 构造绝对路径列表
+    const absoluteFilePaths = droppedFiles.map((file) => {
       if (allHaveFullPaths && file.fullPath) {
-        return file.fullPath.replace(/\\/g, "/");
+        return normalizePath(file.fullPath);
       }
-      // 非全路径模式：由 folderName + 文件名 拼接
-      return `${normalizedFolder}/${file.name}`.replace(/\\/g, "/");
+      return normalizePath(`${normalizedFolder}/${file.name}`);
     });
 
-    // 为了稳定性，按路径进行排序
-    const sortedAbsolutePaths = [...absoluteFilePaths].sort((a, b) =>
+    const sortedPaths = [...absoluteFilePaths].sort((a, b) =>
       a.localeCompare(b, undefined, { numeric: true }),
     );
 
-    // 从 Electron API 获取缩略图缓存目录路径（若不可用则使用默认）
+    // 获取缩略图缓存目录
     let thumbsPath = "../.cache/.thumbs";
     try {
-      const anyWindow = window as any;
-      if (anyWindow.ElectronAPI?.getThumbsCacheDir) {
-        thumbsPath = await anyWindow.ElectronAPI.getThumbsCacheDir();
+      const electronAPI = (window as any)?.ElectronAPI;
+      if (electronAPI?.getThumbsCacheDir) {
+        thumbsPath = await electronAPI.getThumbsCacheDir();
       }
     } catch (error) {
       console.warn("getThumbsCacheDir failed, using default path:", error);
     }
 
-    const url = "http://localhost:8000/generate_thumbnails";
-    const data = {
-      file_paths: sortedAbsolutePaths, // ✅ 后端现在按文件列表处理
-      thumbs_path: thumbsPath,
-      width: 128,
-      height: 128,
-    };
-
-    console.log("Generating thumbnails with data:", data);
-
-    // Fire-and-forget 方式发起缩略图生成请求
-    fetch(url, {
+    // 后端生成缩略图
+    fetch("http://localhost:8000/generate_thumbnails", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    }).catch((error) => {
-      console.error("Error generating thumbnails:", error);
-    });
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        file_paths: sortedPaths,
+        thumbs_path: thumbsPath,
+        width: 128,
+        height: 128,
+      }),
+    }).catch((error) => console.error("Error generating thumbnails:", error));
 
-    // 构造 PhotoExtend 对象，使用绝对路径 + 自定义协议
+    // 构造前端 PhotoExtend
     const photoObjects: PhotoExtend[] = await Promise.all(
-      sortedAbsolutePaths.map(async (absolutePath) => {
-        const normalizedPath = absolutePath.replace(/\\/g, "/");
-        const fileName = normalizedPath.split("/").pop() || "";
+      sortedPaths.map(async (absPath) => {
+        const normalized = normalizePath(absPath);
+        const fileName = normalized.split("/").pop() || "";
 
         let photoInfo: any = null;
         try {
-          // 直接把绝对路径拼在 scheme 后面，主进程解析时去掉前缀即可得到真实路径
-          const photoInfoResponse = await fetch(
-            `photo-info://${normalizedPath}`,
-          );
-          if (photoInfoResponse.ok) {
-            photoInfo = await photoInfoResponse.json();
-          }
+          const res = await fetch(`photo-info://${normalized}`);
+          if (res.ok) photoInfo = await res.json();
         } catch (error) {
-          console.error(
-            `Failed to get photo info for ${normalizedPath}`,
-            error,
-          );
+          console.error(`Failed to get photo info for ${normalized}`, error);
         }
 
         const captureTime = photoInfo
@@ -303,12 +220,12 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
 
         return {
           fileName,
-          fileUrl: `thumbnail-resource://${normalizedPath}`,
-          filePath: normalizedPath,
+          fileUrl: `thumbnail-resource://${normalized}`,
+          filePath: normalized,
           date: captureTime,
           fileSize: photoInfo?.tags?.fileSize,
           info:
-            photoInfo && photoInfo.tags.ExposureTime && photoInfo.tags.LensModel
+            photoInfo?.tags?.ExposureTime && photoInfo?.tags?.LensModel
               ? `1/${1 / photoInfo.tags.ExposureTime} ${photoInfo.tags.LensModel}`
               : undefined,
           isEnabled: true,
@@ -316,22 +233,22 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
       }),
     );
 
-    // 更新数据库与 UI
+    // 更新数据库 + UI
     clearPhotos();
     initializeDatabase();
     addPhotosExtend(photoObjects);
 
-    const photoObjectsForState: Photo[] = photoObjects.map((photo) => ({
-      fileName: photo.fileName,
-      fileUrl: photo.fileUrl,
-      filePath: photo.filePath,
-      info: photo.date || "Unknown",
-      isEnabled: photo.isEnabled || true,
+    const photoObjectsForState: Photo[] = photoObjects.map((p) => ({
+      fileName: p.fileName,
+      fileUrl: p.fileUrl,
+      filePath: p.filePath,
+      info: p.date || "Unknown",
+      isEnabled: p.isEnabled ?? true,
     }));
 
     setPhotos(photoObjectsForState);
 
-    // 下面这两个只作为持久化记录，当前页面并未读取使用
+    // 一些持久化记录（当前页面不读取，但保留）
     sessionStorage.setItem(
       "savedFileNames",
       JSON.stringify(droppedFiles.map((f) => f.name)),
@@ -348,12 +265,13 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
     handleReset();
   };
 
-  // 根据是否无效拖入，动态设置拖拽框的样式与文案
-  const dropAreaBaseClass =
-    "mx-auto flex h-[calc(60vh-14.7rem)] w-full max-w-[60vw] items-center justify-center border-2 border-dashed rounded-md transition-colors duration-1000";
+  // ---------- 样式 / 文案 ----------
+
+  const dropAreaBase =
+    "mx-auto flex w-full max-w-[60vw] h-[calc(70vh-14rem)] items-center justify-center rounded-md border-2 border-dashed transition-colors duration-1000";
   const dropAreaClass = hasInvalidDrop
-    ? `${dropAreaBaseClass} border-red-500 bg-red-500/10`
-    : `${dropAreaBaseClass} border-gray-400`;
+    ? `${dropAreaBase} border-red-500 bg-red-500/10`
+    : `${dropAreaBase} border-gray-400`;
 
   const dropText = hasInvalidDrop
     ? t("labels.dropInvalidFiles")
@@ -361,18 +279,30 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
 
   const dropTextColor = hasInvalidDrop ? "text-red-500" : "text-gray-400";
 
+  // 输入框样式：用于底部 Footer 内的横向布局
+  const folderInputClass = [
+    "flex-1 min-w-0",
+    folderInputError && "border-red-500 focus-visible:ring-red-500",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const listHeaderSuffix = allHaveFullPaths
+    ? t("placeholders.detectedFolder")
+    : folderName || t("placeholders.enterFolderPath");
+
+  // ---------- JSX ----------
+
   return (
     <Drawer>
       <DrawerTrigger asChild>
         <Button variant="outline">{t("buttons.importPhotos")}</Button>
       </DrawerTrigger>
 
-      {/* DrawerContent 本身由 shadcn 提供 fixed bottom 布局，这里只控制内部高度分配 */}
       <DrawerContent>
-        {/* 这个容器是整个抽屉的「内部布局」 */}
-        <div className="mx-auto h-[70vh] w-full max-w-xl">
-          <div className="flex flex-col gap-3 p-4">
-            {/* 头部：标题 + 描述 */}
+        <div className="mx-auto w-full max-w-xl">
+          <div className="flex h-[70vh] flex-col gap-3 p-4">
+            {/* 顶部标题 */}
             <DrawerHeader className="px-0 pb-0">
               <DrawerTitle>{t("modals.photoImport.title")}</DrawerTitle>
               <DrawerDescription>
@@ -380,37 +310,15 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
               </DrawerDescription>
             </DrawerHeader>
 
-            {/* 输入路径 */}
-            <div className="w-full px-0">
-              <Input
-                type="text"
-                placeholder={t("placeholders.enterFolderPath")}
-                value={
-                  // 全路径模式：禁用输入，仅展示提示文字
-                  allHaveFullPaths ? "已获取到完整路径" : folderName
-                }
-                onChange={handleFolderChange}
-                disabled={allHaveFullPaths}
-                className={`mb-2 ${
-                  folderInputError
-                    ? "border-red-500 focus-visible:ring-red-500"
-                    : ""
-                }`}
-              />
-            </div>
-
-            {/* 主体区域：文件列表 + 拖拽区域 */}
-            <div className="min-h-0 w-full flex-1">
+            {/* 中部主体：列表 / 拖拽区域 */}
+            <div className="flex min-h-0 flex-1 flex-col">
               <ScrollArea className="h-full w-full rounded-md border">
-                <div className="h-[calc(60vh-11rem)] p-4">
+                <div className="flex h-full flex-col p-4">
                   <h4 className="mb-4 text-sm leading-none font-medium">
-                    {t("labels.fileList")} -{" "}
-                    {allHaveFullPaths
-                      ? t("placeholders.detectedFolder")
-                      : folderName || t("placeholders.enterFolderPath")}
+                    {t("labels.fileList")} - {listHeaderSuffix}
                   </h4>
 
-                  {!isDropped && (
+                  {!isDropped ? (
                     <div
                       id="drop-area"
                       className={dropAreaClass}
@@ -423,35 +331,52 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
                         {dropText}
                       </p>
                     </div>
+                  ) : (
+                    <div className="flex flex-1 flex-col">
+                      {droppedFiles.map((file, idx) => {
+                        const displayPath = allHaveFullPaths
+                          ? file.fullPath || file.name
+                          : folderName
+                            ? `${folderName}/${file.name}`
+                            : file.name;
+
+                        return (
+                          <React.Fragment key={`${file.name}-${idx}`}>
+                            <div className="text-sm break-all">
+                              {displayPath}
+                            </div>
+                            <Separator className="my-2" />
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
                   )}
-
-                  {droppedFiles.map((file, index) => {
-                    // 列表展示路径：全路径模式显示 fullPath，文件夹模式显示 folderName + name
-                    const displayPath = allHaveFullPaths
-                      ? file.fullPath || file.name
-                      : folderName
-                        ? `${folderName}/${file.name}`
-                        : file.name;
-
-                    return (
-                      <React.Fragment key={index}>
-                        <div className="text-sm break-all">{displayPath}</div>
-                        <Separator className="my-2" />
-                      </React.Fragment>
-                    );
-                  })}
                 </div>
               </ScrollArea>
             </div>
 
-            {/* 底部按钮：始终占据布局的最底部，不随 ScrollArea 滚动 */}
-            <DrawerFooter className="mt-0 flex flex-row items-center justify-end gap-2 px-0 py-0">
-              <DrawerClose asChild>
-                <Button onClick={handleSubmit}>{t("buttons.submit")}</Button>
-              </DrawerClose>
-              <Button variant="outline" onClick={handleReset}>
-                {t("buttons.reset")}
-              </Button>
+            {/* 底部按钮 + 文件夹输入框（输入框在提交按钮左侧） */}
+            <DrawerFooter className="mt-0 flex flex-row items-center gap-2 px-0 py-0">
+              {/* 左侧：可选文件夹输入框 */}
+              {showFolderInput && (
+                <Input
+                  type="text"
+                  placeholder={t("placeholders.enterFolderPath")}
+                  value={folderName}
+                  onChange={handleFolderChange}
+                  className={folderInputClass}
+                />
+              )}
+
+              {/* 右侧：按钮组，始终靠右，不随输入框消失而改变布局结构 */}
+              <div className="ml-auto flex flex-row items-center gap-2">
+                <DrawerClose asChild>
+                  <Button onClick={handleSubmit}>{t("buttons.submit")}</Button>
+                </DrawerClose>
+                <Button variant="outline" onClick={handleReset}>
+                  {t("buttons.reset")}
+                </Button>
+              </div>
             </DrawerFooter>
           </div>
         </div>
@@ -460,29 +385,27 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
   );
 }
 
+// ----------------- 外层页面 -----------------
+
 export default function PhotoImportSubpage() {
   const { t } = useTranslation();
   const [photos, setPhotos] = React.useState<Photo[]>([]);
 
-  // 初始化数据库并加载数据（异步）
+  // 初始化数据库并加载数据
   React.useEffect(() => {
     const init = async () => {
       initializeDatabase();
       const savedPhotos = await getPhotos();
       setPhotos(savedPhotos);
     };
-
     void init();
   }, []);
 
-  // 组件挂载时从 sessionStorage 加载数据
+  // 从 sessionStorage 恢复 UI 状态
   React.useEffect(() => {
-    const photoObjectsForState = sessionStorage.getItem(
-      "savedPhotoObjectsForState",
-    );
-
-    if (photoObjectsForState?.length) {
-      const photoObjects: Photo[] = JSON.parse(photoObjectsForState);
+    const saved = sessionStorage.getItem("savedPhotoObjectsForState");
+    if (saved?.length) {
+      const photoObjects: Photo[] = JSON.parse(saved);
       setPhotos(photoObjects);
     }
   }, []);

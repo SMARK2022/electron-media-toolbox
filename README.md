@@ -85,6 +85,8 @@ This project uses the [https://github.com/nasimjamshidi/LAR-IQA](https://github.
 This project is licensed under the Apache License 2.0. For details, please refer to the LICENSE file.
 
 ## 更新日志 | Changelog
+- 2025.11.16 发布a1.5版本 调整照片路径输入方法，自动检测文件夹路径，优化若干特性，修复已知 bug
+  ---------- Released version a1.5, Adjusted photo path input method, automatically detected folder path, optimized several features, and fixed known bugs
 - 2025.11.16 发布a1.4版本 更新依赖项，优化若干特性，且现在支持检查 GitHub releases
   ---------- Released version a1.4, Updated dependencies , optimized several features, and now supports checking GitHub releases
 - 2025.11.06 发布a1.3版本 修正electron-forge与vite打包导致的依赖项缺失问题，修复若干 bug，并发布 electron 打包后的 release
