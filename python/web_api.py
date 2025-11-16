@@ -1,6 +1,7 @@
 import asyncio
 import io
 import time
+import os
 
 import torch
 from fastapi import FastAPI, Request
@@ -9,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from packages.LAR_IQA.scripts.utils import load_model
 from PIL import Image
 from pydantic import BaseModel
-from utils.image_compute import (process_and_group_images)
+from utils.image_compute import process_and_group_images
 from utils.thumbnails import generate_thumbnails, get_thumbnail
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -30,8 +31,8 @@ class TaskManager:
     async def add_task(self, task):
         await self.task_queue.put(task)
         async with self.lock:
-            global_state['task_queue_length'] = self.task_queue.qsize()
-            global_state['status'] = f"队列中有{self.task_queue.qsize()}个任务"
+            global_state["task_queue_length"] = self.task_queue.qsize()
+            global_state["status"] = f"队列中有{self.task_queue.qsize()}个任务"
         if not self.processing_task or self.processing_task.done():
             await self.start_processing()
 
@@ -45,7 +46,7 @@ class TaskManager:
                 task = await self.task_queue.get()
                 try:
                     async with self.lock:
-                        global_state['status'] = f"正在处理: {task['description']}"
+                        global_state["status"] = f"正在处理: {task['description']}"
 
                     # 调用包装函数，正确传递参数
                     _ = await run_in_threadpool(
@@ -54,29 +55,25 @@ class TaskManager:
                     )
 
                     async with self.lock:
-                        global_state['status'] = "处理完成"
+                        global_state["status"] = "处理完成"
 
                 except Exception as e:
                     print(f"任务执行错误: {e}")
                     import traceback
+
                     traceback.print_exc()
                     async with self.lock:
-                        global_state['status'] = f"错误: {str(e)}"
+                        global_state["status"] = f"错误: {str(e)}"
                 finally:
                     async with self.lock:
-                        global_state['task_queue_length'] = self.task_queue.qsize()
-                        if global_state['status'] != "处理完成":
-                            global_state['status'] = (
-                                f"队列中剩余{self.task_queue.qsize()}个任务"
-                                if self.task_queue.qsize() > 0
-                                else "空闲中"
-                            )
+                        global_state["task_queue_length"] = self.task_queue.qsize()
+                        if global_state["status"] != "处理完成":
+                            global_state["status"] = f"队列中剩余{self.task_queue.qsize()}个任务" if self.task_queue.qsize() > 0 else "空闲中"
                     self.task_queue.task_done()
         except asyncio.CancelledError:
             async with self.lock:
-                global_state['status'] = "空闲中"
-                global_state['task_queue_length'] = 0
-
+                global_state["status"] = "空闲中"
+                global_state["task_queue_length"] = 0
 
 
 app = FastAPI()
@@ -99,7 +96,7 @@ app.add_middleware(
 
 def update_progress(status_text, worker_id=None, value=None, total=None):
     global global_state
-    global_state['status'] = status_text
+    global_state["status"] = status_text
     if worker_id is None:
         global_state["workers"] = []
     else:
@@ -117,10 +114,10 @@ def run_process_and_group(task_dict):
     if isinstance(task_dict, dict):
         print(f"DEBUG: task_dict keys: {task_dict.keys()}")
     return process_and_group_images(
-        db_path=task_dict['db_path'],
-        similarity_threshold=task_dict['similarity_threshold'],
+        db_path=task_dict["db_path"],
+        similarity_threshold=task_dict["similarity_threshold"],
         update_progress=update_progress,
-        show_disabled_photos=task_dict['show_disabled_photos'],
+        show_disabled_photos=task_dict["show_disabled_photos"],
     )
 
 
@@ -138,13 +135,50 @@ class ThumbnailTask(BaseModel):
 
 @app.post("/generate_thumbnails")
 async def generate_thumbnails_endpoint(request: Request):
-    data = await request.json()
-    folder_path = data.get("folder_path")
-    thumbs_path = data.get("thumbs_path", "../.cache/.thumbs")  # Default path if not provided
-    width = data.get("width", 128)
-    height = data.get("height", 128)
+    """
+    接收前端请求，触发缩略图生成任务。
 
-    generate_thumbnails(folder_path, thumbs_path, width, height, update_progress)
+    请求体 JSON 支持两种格式：
+    1) 新格式（推荐）：
+       {
+         "file_paths": ["E:/photos/1.jpg", "D:/other/2.png", ...],
+         "thumbs_path": "...",
+         "width": 128,
+         "height": 128
+       }
+
+    2) 旧格式（向下兼容，不建议继续使用）：
+       {
+         "folder_path": "E:/photos",
+         "thumbs_path": "...",
+         "width": 128,
+         "height": 128
+       }
+       此时后端会在 folder_path 下扫描 .jpg/.jpeg/.png/.webp 文件，
+       将其转换为 file_paths 列表后再统一处理。
+    """
+    data = await request.json()
+
+    file_paths = data.get("file_paths")
+    thumbs_path = data.get("thumbs_path", "../.cache/.thumbs")
+    width = int(data.get("width", 128))
+    height = int(data.get("height", 128))
+
+    # 如果新格式的 file_paths 未提供，则尝试兼容旧格式的 folder_path
+    if not file_paths:
+        folder_path = data.get("folder_path")
+        if folder_path and os.path.isdir(folder_path):
+            # 从目录中收集所有图片文件
+            candidates = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))]
+            file_paths = candidates
+
+    # 如果依旧没有可用文件，直接返回提示信息
+    if not file_paths:
+        print("No image files found in the request.")
+        return {"message": "未发现可处理的图片文件"}
+
+    # 调用实际执行函数（同步执行，内部使用线程池）
+    generate_thumbnails(file_paths, thumbs_path, width, height, update_progress)
     return {"message": "缩略图生成任务已添加到后台"}
 
 
@@ -183,7 +217,7 @@ async def detect_images(request: Request):
 
     # 确保 db_path 是字符串，不是字典或其他类型
     db_path = data.get("db_path")
-    if not isinstance(db_path, str) or db_path=="{}" or not db_path:
+    if not isinstance(db_path, str) or db_path == "{}" or not db_path:
         db_path = "../.cache/photos.db"
 
     similarity_threshold = data.get("similarity_threshold", 0.8)

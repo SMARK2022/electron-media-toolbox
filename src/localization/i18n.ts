@@ -56,7 +56,8 @@ i18n.use(initReactI18next).init({
           },
         },
         placeholders: {
-          folderPath: "Enter folder path",
+          enterFolderPath: "Enter folder path",
+          detectedFolder: "Detected folder path",
         },
         labels: {
           fileList: "File List",
@@ -148,7 +149,8 @@ i18n.use(initReactI18next).init({
           },
         },
         placeholders: {
-          folderPath: "输入文件夹路径",
+          enterFolderPath: "输入文件夹路径",
+          detectedFolder: "文件夹已自动读取",
         },
         labels: {
           fileList: "文件列表",

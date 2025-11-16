@@ -1,8 +1,21 @@
+# backend/thumbnail_service.py
+
+from typing import List
+import concurrent.futures
+import io
+import os
+import threading
+import time
+import zlib
+
+from PIL import Image
+
 import asyncio
 import concurrent.futures
 import ctypes
 import io
 import os
+
 # 组合文件头、信息头和图像数据
 import struct
 import threading
@@ -44,22 +57,22 @@ class SIIGBF:
 
 # 手动定义 IShellItemImageFactory 接口
 class IShellItemImageFactory(IUnknown):
-    _iid_ = GUID('{bcc18b79-ba16-442f-80c4-8a59c30c463b}')
+    _iid_ = GUID("{bcc18b79-ba16-442f-80c4-8a59c30c463b}")
     _methods_ = [
         COMMETHOD(
             [],
             HRESULT,
-            'GetImage',
-            (['in'], SIZE, 'size'),
-            (['in'], ctypes.c_int, 'flags'),
-            (['out'], POINTER(HBITMAP), 'phbm'),
+            "GetImage",
+            (["in"], SIZE, "size"),
+            (["in"], ctypes.c_int, "flags"),
+            (["out"], POINTER(HBITMAP), "phbm"),
         )
     ]
 
 
 # 定义 IShellItem 接口
 class IShellItem(IUnknown):
-    _iid_ = GUID('{43826D1E-E718-42EE-BC55-A1E261C37BFE}')
+    _iid_ = GUID("{43826D1E-E718-42EE-BC55-A1E261C37BFE}")
     _methods_ = []
 
 
@@ -101,13 +114,13 @@ def get_thumbnail(file_path, width, height):
     # 将 HBITMAP 转换为字节数据
     class BITMAP(ctypes.Structure):
         _fields_ = [
-            ('bmType', LONG),
-            ('bmWidth', LONG),
-            ('bmHeight', LONG),
-            ('bmWidthBytes', LONG),
-            ('bmPlanes', WORD),
-            ('bmBitsPixel', WORD),
-            ('bmBits', ctypes.c_void_p),
+            ("bmType", LONG),
+            ("bmWidth", LONG),
+            ("bmHeight", LONG),
+            ("bmWidthBytes", LONG),
+            ("bmPlanes", WORD),
+            ("bmBitsPixel", WORD),
+            ("bmBits", ctypes.c_void_p),
         ]
 
     bitmap = BITMAP()
@@ -118,22 +131,22 @@ def get_thumbnail(file_path, width, height):
     # 获取位图数据
     class BITMAPINFOHEADER(ctypes.Structure):
         _fields_ = [
-            ('biSize', DWORD),
-            ('biWidth', LONG),
-            ('biHeight', LONG),
-            ('biPlanes', WORD),
-            ('biBitCount', WORD),
-            ('biCompression', DWORD),
-            ('biSizeImage', DWORD),
-            ('biXPelsPerMeter', LONG),
-            ('biYPelsPerMeter', LONG),
-            ('biClrUsed', DWORD),
-            ('biClrImportant', DWORD),
+            ("biSize", DWORD),
+            ("biWidth", LONG),
+            ("biHeight", LONG),
+            ("biPlanes", WORD),
+            ("biBitCount", WORD),
+            ("biCompression", DWORD),
+            ("biSizeImage", DWORD),
+            ("biXPelsPerMeter", LONG),
+            ("biYPelsPerMeter", LONG),
+            ("biClrUsed", DWORD),
+            ("biClrImportant", DWORD),
         ]
 
     class BITMAPINFO(ctypes.Structure):
         _fields_ = [
-            ('bmiHeader', BITMAPINFOHEADER),
+            ("bmiHeader", BITMAPINFOHEADER),
         ]
 
     bmi = BITMAPINFO()
@@ -160,11 +173,11 @@ def get_thumbnail(file_path, width, height):
     class BITMAPFILEHEADER(ctypes.Structure):
         _pack_ = 1
         _fields_ = [
-            ('bfType', WORD),
-            ('bfSize', DWORD),
-            ('bfReserved1', WORD),
-            ('bfReserved2', WORD),
-            ('bfOffBits', DWORD),
+            ("bfType", WORD),
+            ("bfSize", DWORD),
+            ("bfReserved1", WORD),
+            ("bfReserved2", WORD),
+            ("bfOffBits", DWORD),
         ]
 
     file_header_size = ctypes.sizeof(BITMAPFILEHEADER)
@@ -179,11 +192,7 @@ def get_thumbnail(file_path, width, height):
     bmfh.bfOffBits = file_header_size + info_header_size
 
     bmp_data = bytearray()
-    bmp_data.extend(
-        struct.pack(
-            '<HIHHI', bmfh.bfType, bmfh.bfSize, bmfh.bfReserved1, bmfh.bfReserved2, bmfh.bfOffBits
-        )
-    )
+    bmp_data.extend(struct.pack("<HIHHI", bmfh.bfType, bmfh.bfSize, bmfh.bfReserved1, bmfh.bfReserved2, bmfh.bfOffBits))
     bmp_data.extend(bytearray(bytes(bmi.bmiHeader)))
     bmp_data.extend(image_buffer)
 
@@ -199,25 +208,48 @@ def get_image_capture_time(image_path):
     if exif_data:
         for tag, value in exif_data.items():
             tag_name = TAGS.get(tag, tag)
-            if tag_name == 'DateTimeOriginal':
+            if tag_name == "DateTimeOriginal":
                 return value
     # 如果没有拍摄时间，返回文件的创建时间
-    creation_time = time.strftime('%Y:%m:%d %H:%M:%S', time.localtime(os.path.getctime(image_path)))
+    creation_time = time.strftime("%Y:%m:%d %H:%M:%S", time.localtime(os.path.getctime(image_path)))
     return creation_time
 
 
-def generate_thumbnails(folder_path, thumbs_path, width, height, update_progress):
-    """生成缩略图并保存为WEBP，同时修改文件时间"""
+def generate_thumbnails(
+    file_paths: List[str],
+    thumbs_path: str,
+    width: int,
+    height: int,
+    update_progress_fn,
+) -> None:
+    """
+    生成给定文件列表的缩略图并保存为 WEBP，同时根据 EXIF 修改文件时间。
+
+    :param file_paths: 需要处理的图片绝对路径列表
+    :param thumbs_path: 缩略图输出目录
+    :param width: 缩略图宽度
+    :param height: 缩略图高度
+    :param update_progress_fn: 用于更新进度的回调函数，
+                               形如 update_progress_fn(message, worker_id, value, total)
+    """
     os.makedirs(thumbs_path, exist_ok=True)
 
-    image_files = [
-        os.path.join(folder_path, f)
-        for f in os.listdir(folder_path)
-        if f.lower().endswith(('.jpg', '.png'))
-    ]
+    # 过滤出真实存在、扩展名合法的文件
+    image_files: List[str] = []
+    for p in file_paths:
+        if not isinstance(p, str):
+            continue
+        abs_path = p
+        if not os.path.isabs(abs_path):
+            abs_path = os.path.abspath(abs_path)
+        if not os.path.isfile(abs_path):
+            continue
+        if not abs_path.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+            continue
+        image_files.append(abs_path)
 
     if not image_files:
-        print("No image files found in the specified directory.")
+        print("No valid image files to process.")
         return
 
     start_time = time.time()
@@ -225,40 +257,75 @@ def generate_thumbnails(folder_path, thumbs_path, width, height, update_progress
     count_lock = threading.Lock()
     total_files = len(image_files)
 
-    def process_image(image_file):
+    def process_image(image_file: str) -> None:
+        """
+        单张图片的处理逻辑：
+        1. 调用 get_thumbnail 生成缩略图
+        2. 以归一化路径的 CRC32 命名 .webp 文件
+        3. 根据 EXIF 拍摄时间设置缩略图文件的 mtime/atime
+        4. 通过 update_progress_fn 上报进度
+        """
         nonlocal completed_count
+
+        # 生成缩略图（BMP 数据）
         bmp_data = get_thumbnail(image_file, width, height)
         image = Image.open(io.BytesIO(bmp_data))
+
+        # 使用归一化路径 (lower + '/') 生成 CRC32 作为文件名
         normalized_path = image_file.replace("\\", "/").lower()
-        crc32_hash = zlib.crc32(normalized_path.encode('utf-8'))
+        crc32_hash = zlib.crc32(normalized_path.encode("utf-8"))
         crc32_hex = f"{crc32_hash:08x}"
         output_file = os.path.join(thumbs_path, f"{crc32_hex}.webp")
+
+        # 保存为 WEBP
         image.save(output_file, "WEBP")
-        capture_time = get_image_capture_time(image_file)
-        time_struct = time.strptime(capture_time, "%Y:%m:%d %H:%M:%S")
-        timestamp = time.mktime(time_struct)
-        os.utime(output_file, (timestamp, timestamp))
 
+        # 根据原图 EXIF 拍摄时间设置缩略图文件时间戳
+        try:
+            capture_time_str = get_image_capture_time(image_file)
+            if capture_time_str:
+                # 典型格式如 "2023:10:01 12:34:56"
+                time_struct = time.strptime(capture_time_str, "%Y:%m:%d %H:%M:%S")
+                timestamp = time.mktime(time_struct)
+                os.utime(output_file, (timestamp, timestamp))
+        except Exception as e:
+            print(f"Failed to set timestamp for {output_file}: {e}")
+
+        # 更新进度
         with count_lock:
-            nonlocal completed_count
             completed_count += 1
-            update_progress("缩略图生成中", worker_id=0, value=completed_count, total=total_files)
+            try:
+                update_progress_fn(
+                    "缩略图生成中",
+                    worker_id=0,
+                    value=completed_count,
+                    total=total_files,
+                )
+            except Exception as e:
+                print(f"update_progress_fn error: {e}")
 
+    # 使用线程池并行处理图片
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.map(process_image, image_files)
 
     end_time = time.time()
     avg_time = (end_time - start_time) / total_files
     print(f"Average loading time per image: {avg_time:.4f} seconds")
-    update_progress("缩略图生成完毕", worker_id=0, value=total_files, total=total_files)
+
+    try:
+        update_progress_fn(
+            "缩略图生成完毕",
+            worker_id=0,
+            value=total_files,
+            total=total_files,
+        )
+    except Exception as e:
+        print(f"update_progress_fn error (final): {e}")
 
 
 if __name__ == "__main__":
-
     # 示例使用
-    file_path = (
-        r"G:\图谱\23.08.12双彩虹\Z30_2126-NEF_DxO_DeepPRIMEXD.jpg"  # 请将此路径替换为您的文件路径
-    )
+    file_path = r"G:\图谱\23.08.12双彩虹\Z30_2126-NEF_DxO_DeepPRIMEXD.jpg"  # 请将此路径替换为您的文件路径
 
     # 获取缩略图数据
     bmp_data = get_thumbnail(file_path, 96, 96)  # 96x96 尺寸
