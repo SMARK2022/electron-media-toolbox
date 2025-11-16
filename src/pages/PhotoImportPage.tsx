@@ -112,7 +112,7 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
 
     // 从 Electron API 获取缩略图目录路径（python生成的路径是固定的）
     // 注意：Electron IPC 的 invoke 返回 Promise，需要 await 才能拿到字符串值
-    const thumbsPath = await window.ElectronDB.getThumbsPath();
+    const thumbsPath = await window.ElectronAPI.getThumbsCacheDir();
 
     const url = "http://localhost:8000/generate_thumbnails";
     console.log("Generating thumbnails with data:", {

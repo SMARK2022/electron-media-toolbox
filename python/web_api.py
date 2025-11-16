@@ -130,12 +130,6 @@ class StatusResponse(BaseModel):
     task_queue_length: int
 
 
-class ThumbnailFolderTask(BaseModel):
-    folder_path: str
-    height: int = 256
-    width: int = 256
-
-
 class ThumbnailTask(BaseModel):
     photo_path: str
     height: int = 256

@@ -4,7 +4,7 @@ import { PhotoExtend,Photo } from "@/lib/db";
 // 创建文件夹函数（允许文件夹已存在，文件夹存在也没问题）
 async function createFolder(folderPath: string): Promise<void> {
     try {
-        await window.electronAPI.runCommand(`md "${folderPath.replace(/\//g, "\\")}"`, folderPath.split(path.sep)[0] + path.sep);
+        await window.ElectronAPI.runCommand(`md "${folderPath.replace(/\//g, "\\")}"`, folderPath.split(path.sep)[0] + path.sep);
     } catch (error) {
             console.log(`Failed to create folder: | md "${folderPath.replace(/\//g, "\\")}"`, error);
             // if ((error as any).code !== "EEXIST") {
@@ -16,7 +16,7 @@ async function createFolder(folderPath: string): Promise<void> {
 // 复制文件函数
 async function copyFile(src: string, dest: string): Promise<void> {
     try {
-        await window.electronAPI.runCommand(
+        await window.ElectronAPI.runCommand(
             `copy "${src.replace(/\//g, "\\")}" "${dest.replace(/\//g, "\\")}"`,
             path.dirname(dest)
         );
@@ -82,7 +82,7 @@ async function folderExists(folderPath: string): Promise<boolean> {
 
     try {
         const command = `if exist "${folderPath.replace(/\//g, "\\")}" (echo true) else (echo false)`;
-        const result = await window.electronAPI.runCommand(command);
+        const result = await window.ElectronAPI.runCommand(command);
         return String(result).trim() === "true";  // Convert result to string before using trim
     } catch (error) {
         console.error("Error checking folder existence:", error);

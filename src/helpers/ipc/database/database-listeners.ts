@@ -85,7 +85,7 @@ export const addDatabaseEventListeners = () => {
     });
 
     ipcMain.handle("db-get-path", () => dbPath);
-    ipcMain.handle("db-get-thumbs-path", () => thumbsDir);
+    ipcMain.handle("db-get-thumbs-cache-dir", () => thumbsDir);
 
     console.info("Database IPC handlers registered");
   } catch (error: any) {
