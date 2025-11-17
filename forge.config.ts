@@ -8,20 +8,25 @@ import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
+
 import * as path from "path";
-import { readdirSync, rmdirSync, statSync, promises as fsp } from "node:fs";
+import {
+  readdirSync,
+  rmdirSync,
+  statSync,
+  unlinkSync,
+  promises as fsp,
+} from "node:fs";
 import { normalize, join } from "node:path";
 
-// flora-colossus，用来找 native 模块依赖
+// flora-colossus：扫描 native 模块依赖
 import { Walker, DepType, type Module } from "flora-colossus";
-
-// MakerWix 对应的底层 MSICreator 类型（仅类型标注）
+// MakerWix 使用的 MSICreator 类型（只做类型标注）
 import type { MSICreator } from "electron-wix-msi";
 
-// 需要打包的外部依赖（原生模块）
-export const EXTERNAL_DEPENDENCIES = ["better-sqlite3", "exif-parser"];
+// ================== 原生依赖配置 ==================
 
-// 存储需要打包的原生模块及其依赖
+export const EXTERNAL_DEPENDENCIES = ["better-sqlite3", "exif-parser"];
 let nativeModuleDependenciesToPackage: string[] = [];
 
 type CopyClass<T> = {
@@ -36,15 +41,62 @@ type CustomWalker = CopyClass<Walker> & {
   ) => Promise<void>;
 };
 
-// 应用图标路径
+// 应用图标
 const appIcon = path.resolve(__dirname, "assets", "app.ico");
+
+// ================== 工具函数：列出目录并清理空目录 ==================
+
+type ItemInfo = {
+  path: string;
+  type: "directory" | "file";
+  empty: boolean;
+};
+
+function getItemsFromFolder(
+  folderPath: string,
+  totalCollection: ItemInfo[] = [],
+): ItemInfo[] {
+  try {
+    const normalizedPath = normalize(folderPath);
+    const childItems = readdirSync(normalizedPath);
+    const stats = statSync(normalizedPath);
+
+    if (stats.isDirectory()) {
+      totalCollection.push({
+        path: normalizedPath,
+        type: "directory",
+        empty: childItems.length === 0,
+      });
+    }
+
+    for (const child of childItems) {
+      const childPath = join(normalizedPath, child);
+      const childStats = statSync(childPath);
+      if (childStats.isDirectory()) {
+        getItemsFromFolder(childPath, totalCollection);
+      } else {
+        totalCollection.push({
+          path: childPath,
+          type: "file",
+          empty: false,
+        });
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return totalCollection;
+}
+
+// ================== Forge 配置 ==================
 
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     prune: true,
     icon: appIcon,
-    // 只保留必要文件 + 图标 + 被选中的 node_modules
+
+    // 只保留必要文件 + 图标 + 选中的 node_modules（大幅减小体积）
     ignore: (file: string) => {
       const filePath = file.toLowerCase();
       const KEEP_FILE = {
@@ -52,7 +104,7 @@ const config: ForgeConfig = {
         log: true,
       };
 
-      // 这些必须保留
+      // 根目录本身
       if (filePath === "") KEEP_FILE.keep = true;
       if (!KEEP_FILE.keep && filePath === "/package.json")
         KEEP_FILE.keep = true;
@@ -62,13 +114,13 @@ const config: ForgeConfig = {
       if (!KEEP_FILE.keep && filePath.startsWith("/.vite/"))
         KEEP_FILE.keep = true;
 
-      // 根目录或 assets 下的图标
+      // 图标 / 资源
       if (!KEEP_FILE.keep && filePath === "/app.ico") KEEP_FILE.keep = true;
       if (!KEEP_FILE.keep && filePath === "/assets") KEEP_FILE.keep = true;
       if (!KEEP_FILE.keep && filePath.startsWith("/assets/"))
         KEEP_FILE.keep = true;
 
-      // node_modules：只保留 nativeModuleDependenciesToPackage
+      // node_modules：只保留 nativeModuleDependenciesToPackage 中的模块
       if (!KEEP_FILE.keep && filePath.startsWith("/node_modules/")) {
         for (const dep of nativeModuleDependenciesToPackage) {
           if (
@@ -103,16 +155,15 @@ const config: ForgeConfig = {
   rebuildConfig: {},
 
   makers: [
-    // Windows EXE：Squirrel 一键安装版
+    // ----------------- Windows EXE：Squirrel 一键安装 -----------------
     new MakerSquirrel({
       name: "electron_media_toolbox",
-      // 不写也可以，forge 会用 package.json 里的字段，这里显式一下方便以后改
       setupIcon: appIcon,
-      // 只生成 EXE，不生成它自带的 msi，避免和 WiX 冲突
+      // 不生成 Squirrel 自带 msi，避免和 WiX 冲突
       noMsi: true,
     }),
 
-    // Windows：WiX MSI 安装包（带 Users 完全控制权限）
+    // ----------------- Windows MSI：WiX 安装包 -----------------
     new MakerWix({
       name: "Electron Media Toolbox",
       manufacturer: "SMARK",
@@ -121,28 +172,27 @@ const config: ForgeConfig = {
       programFilesFolderName: "Electron Media Toolbox",
       shortcutFolderName: "Electron Media Toolbox",
 
-      // MSI 产品语言：2052 = zh-CN
-      language: 2052,
-      // WiX UI 字符串区域：强制使用 zh-CN 资源
+      // 安装器语言：中文
+      language: 2052, // zh-CN
       cultures: "zh-CN",
 
-      // 固定 UpgradeCode，用于版本覆盖安装（不要改）
+      // 固定 UpgradeCode，用于覆盖安装（不要改）
       upgradeCode: "c5f77e4e-5b1f-4a32-8b3b-7aef8bd0fb75",
       icon: appIcon,
 
-      // 明确按机器安装，默认 Program Files
+      // 按机器安装，默认 Program Files
       defaultInstallMode: "perMachine",
 
-      // 允许用户在安装向导里选择安装目录（可以改到 D 盘等）
+      // 允许用户选择安装目录（可以改到 D 盘等）
       ui: {
         chooseDirectory: true,
       },
 
       /**
-       * 关键：在调用 msiCreator.create() 之后，patch .wxs：
-       *  1) 在 APPLICATIONROOTDIRECTORY 下新增一个 Component，
-       *     给安装目录设置 Users 组 GenericAll（完全控制）。
-       *  2) 在 MainApplication Feature 下新增 ComponentRef。
+       * WiX: 在 APPLICATIONROOTDIRECTORY 下插入一个 Component，
+       * 给安装目录设置 Users 组 GenericAll（完全控制），
+       * 并在 MainApplication Feature 下加 ComponentRef。
+       * 这样即使安装在 C:\Program Files (x86)，普通用户也可以写入 .cache。
        */
       beforeCreate: async (msiCreator: MSICreator) => {
         const originalCreate = msiCreator.create.bind(msiCreator);
@@ -154,7 +204,6 @@ const config: ForgeConfig = {
             const wxsPath = msiCreator.wxsFile;
             let wxs = await fsp.readFile(wxsPath, "utf8");
 
-            // 如果已经打过补丁，就不要重复插入
             const hasComponent = wxs.includes(
               'Component Id="AppFolderPermissions"',
             );
@@ -170,7 +219,7 @@ const config: ForgeConfig = {
               if (appDirIndex !== -1) {
                 const insertPos = wxs.indexOf(">", appDirIndex) + 1;
 
-                // 注意：这里使用一个固定 GUID，不能用 "*"
+                // 固定 GUID，不能用 "*"
                 const permissionComponent = `
         <Component Id="AppFolderPermissions" Guid="{D4C8F400-8C4A-4C28-9A3E-ABCDEF123456}">
           <CreateFolder>
@@ -233,10 +282,10 @@ const config: ForgeConfig = {
       },
     }),
 
-    // macOS：ZIP
+    // ----------------- macOS：ZIP -----------------
     new MakerZIP({}, ["darwin"]),
 
-    // Linux：deb / rpm
+    // ----------------- Linux：deb / rpm -----------------
     new MakerRpm({}),
     new MakerDeb({}),
   ],
@@ -275,7 +324,7 @@ const config: ForgeConfig = {
   ],
 
   hooks: {
-    // 打包前：收集原生依赖
+    // -------- 打包前：收集需要打进包的 native 依赖 --------
     prePackage: async () => {
       const projectRoot = normalize(__dirname);
 
@@ -295,7 +344,6 @@ const config: ForgeConfig = {
                 .filter(
                   (dep) => (dep.nativeModuleType as number) === DepType.PROD,
                 )
-                // '@scope/package' => 只保留第一段
                 .map((dep) => dep.name.split("/")[0])
                 .forEach((name) => foundModules.add(name));
             } catch (error) {
@@ -319,62 +367,70 @@ const config: ForgeConfig = {
       );
     },
 
-    // 打包后：清理空目录
-    packageAfterPrune: async (_forgeConfig, buildPath) => {
-      function getItemsFromFolder(
-        folderPath: string,
-        totalCollection: {
-          path: string;
-          type: "directory" | "file";
-          empty: boolean;
-        }[] = [],
-      ) {
-        try {
-          const normalizedPath = normalize(folderPath);
-          const childItems = readdirSync(normalizedPath);
-          const getItemStats = statSync(normalizedPath);
-          if (getItemStats.isDirectory()) {
-            totalCollection.push({
-              path: normalizedPath,
-              type: "directory",
-              empty: childItems.length === 0,
-            });
-          }
-          childItems.forEach((childItem) => {
-            const childItemNormalizedPath = join(normalizedPath, childItem);
-            const childItemStats = statSync(childItemNormalizedPath);
-            if (childItemStats.isDirectory()) {
-              getItemsFromFolder(childItemNormalizedPath, totalCollection);
-            } else {
-              totalCollection.push({
-                path: childItemNormalizedPath,
-                type: "file",
-                empty: false,
-              });
-            }
-          });
-        } catch {
-          return;
-        }
-        return totalCollection;
-      }
+    // -------- 打包后：裁剪语言包 / LICENSE 等，清理空目录 --------
+    postPackage: async (_forgeConfig, packageResult) => {
+      const { outputPaths, platform, arch } = packageResult;
 
-      const getItems = getItemsFromFolder(buildPath) ?? [];
-      for (const item of getItems) {
-        if (item.empty === true) {
-          const pathToDelete = normalize(item.path);
+      console.log(
+        `[hook:postPackage] optimizing ${platform}/${arch}, outputs:`,
+        outputPaths,
+      );
+
+      for (const outputPath of outputPaths) {
+        console.log(`  [postPackage] optimize path: ${outputPath}`);
+
+        try {
+          // 1) 只保留 zh-CN + en-US 语言文件
+          const localesDir = path.join(outputPath, "locales");
           try {
-            const stats = statSync(pathToDelete);
-            if (!stats.isDirectory()) {
-              continue;
+            const keepLocales = new Set(["zh-CN", "en-US"]);
+            const localeFiles = readdirSync(localesDir);
+
+            for (const file of localeFiles) {
+              if (!file.endsWith(".pak")) continue;
+              const base = file.replace(/\.pak$/, "");
+              if (keepLocales.has(base)) continue;
+
+              const full = path.join(localesDir, file);
+              unlinkSync(full);
+              console.log(`    ✂ removed locale: ${file}`);
             }
-            const childItems = readdirSync(pathToDelete);
-            if (childItems.length === 0) {
-              rmdirSync(pathToDelete);
-            }
-          } catch {
-            // 忽略错误
+          } catch (err) {
+            console.warn(
+              "    [postPackage] skip locales trimming (maybe no locales dir):",
+              err,
+            );
           }
+
+          // 2) 删掉超大的 Chromium 版权文件（注意：对外发布时建议保留）
+          const maybeRemove = ["LICENSES.chromium.html"];
+          for (const name of maybeRemove) {
+            const full = path.join(outputPath, name);
+            try {
+              unlinkSync(full);
+              console.log(`    ✂ removed file: ${name}`);
+            } catch {
+              // ignore
+            }
+          }
+
+          // 3) 清理删完后留下的空目录（可选）
+          const items = getItemsFromFolder(outputPath) ?? [];
+          for (const item of items) {
+            if (!item.empty || item.type !== "directory") continue;
+            const dirPath = normalize(item.path);
+            try {
+              const children = readdirSync(dirPath);
+              if (children.length === 0) {
+                rmdirSync(dirPath);
+                // console.log(`    ✂ removed empty dir: ${dirPath}`);
+              }
+            } catch {
+              // ignore
+            }
+          }
+        } catch (err) {
+          console.warn("[postPackage] optimize error:", err);
         }
       }
     },
