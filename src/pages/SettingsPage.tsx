@@ -71,8 +71,8 @@ export default function SettingsSubpage() {
   }
 
   return (
-    <div className="min-h-screen p-16 pointer-events-none">
-      <p className="text-center text-blue-500">{t('settings.notAvailable')}</p>
+    <div className="pointer-events-none min-h-screen p-16">
+      <p className="text-center text-blue-500">{t("settings.notAvailable")}</p>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
           <FormField
@@ -80,9 +80,12 @@ export default function SettingsSubpage() {
             name="cacheDirectory"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('settings.cacheDirectory')}</FormLabel>
+                <FormLabel>{t("settings.cacheDirectory")}</FormLabel>
                 <FormControl>
-                  <Input placeholder={t('settings.enterCacheDirectory')} {...field} />
+                  <Input
+                    placeholder={t("settings.enterCacheDirectory")}
+                    {...field}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -93,11 +96,11 @@ export default function SettingsSubpage() {
             name="workerThreads"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('settings.workerThreads')}</FormLabel>
+                <FormLabel>{t("settings.workerThreads")}</FormLabel>
                 <FormControl>
                   <Input
                     type="number"
-                    placeholder={t('settings.enterWorkerThreads')}
+                    placeholder={t("settings.enterWorkerThreads")}
                     {...field}
                     onChange={(e) => field.onChange(Number(e.target.value))}
                   />
@@ -106,7 +109,7 @@ export default function SettingsSubpage() {
               </FormItem>
             )}
           />
-          <Button type="submit">{t('settings.updateSettings')}</Button>
+          <Button type="submit">{t("settings.updateSettings")}</Button>
         </form>
       </Form>
     </div>

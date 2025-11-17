@@ -29,53 +29,53 @@ import PhotoExportSubpage from "../pages/PhotoExportPage";
 // 5. Add Link: <Link to="/new">New Page</Link>
 
 export const HomeRoute = createRoute({
-    getParentRoute: () => RootRoute,
-    path: "/",
-    component: HomePage,
+  getParentRoute: () => RootRoute,
+  path: "/",
+  component: HomePage,
 });
 
 export const AboutRoute = createRoute({
-    getParentRoute: () => RootRoute,
-    path: "/about",
-    component: AboutPage,
+  getParentRoute: () => RootRoute,
+  path: "/about",
+  component: AboutPage,
 });
 
 export const PhotoImportRoute = createRoute({
-    getParentRoute: () => RootRoute,
-    path: "/photo-import",
-    component: PhotoImportPage,
+  getParentRoute: () => RootRoute,
+  path: "/photo-import",
+  component: PhotoImportPage,
 });
 
 export const PhotoFilterRoute = createRoute({
-    getParentRoute: () => RootRoute,
-    path: "/photo-filter",
-    component: PhotoFilterSubpage,
+  getParentRoute: () => RootRoute,
+  path: "/photo-filter",
+  component: PhotoFilterSubpage,
 });
 
 export const SettingRoute = createRoute({
-    getParentRoute: () => RootRoute,
-    path: "/settings",
-    component: SettingPage,
+  getParentRoute: () => RootRoute,
+  path: "/settings",
+  component: SettingPage,
 });
 
 export const PhotoExportRoute = createRoute({
-    getParentRoute: () => RootRoute,
-    path: "/photo-export",
-    component: PhotoExportSubpage,
+  getParentRoute: () => RootRoute,
+  path: "/photo-export",
+  component: PhotoExportSubpage,
 });
 
 export const TestingRoute = createRoute({
-    getParentRoute: () => RootRoute,
-    path: "/testing",
-    component: TestingPage,
+  getParentRoute: () => RootRoute,
+  path: "/testing",
+  component: TestingPage,
 });
 
 export const rootTree = RootRoute.addChildren([
-    HomeRoute,
-    AboutRoute,
-    PhotoImportRoute,
-    PhotoFilterRoute,
-    SettingRoute,
-    PhotoExportRoute,
-    TestingRoute,
+  HomeRoute,
+  AboutRoute,
+  PhotoImportRoute,
+  PhotoFilterRoute,
+  SettingRoute,
+  PhotoExportRoute,
+  TestingRoute,
 ]);

@@ -26,7 +26,10 @@ type CopyClass<T> = {
 
 type CustomWalker = CopyClass<Walker> & {
   modules: Module[];
-  walkDependenciesForModule: (moduleRoot: string, depType: DepType) => Promise<void>;
+  walkDependenciesForModule: (
+    moduleRoot: string,
+    depType: DepType,
+  ) => Promise<void>;
 };
 
 const config: ForgeConfig = {
@@ -42,10 +45,13 @@ const config: ForgeConfig = {
 
       // 必须返回 false 表示保留，否则什么都不会被打包
       if (filePath === "") KEEP_FILE.keep = true;
-      if (!KEEP_FILE.keep && filePath === "/package.json") KEEP_FILE.keep = true;
-      if (!KEEP_FILE.keep && filePath === "/node_modules") KEEP_FILE.keep = true;
+      if (!KEEP_FILE.keep && filePath === "/package.json")
+        KEEP_FILE.keep = true;
+      if (!KEEP_FILE.keep && filePath === "/node_modules")
+        KEEP_FILE.keep = true;
       if (!KEEP_FILE.keep && filePath === "/.vite") KEEP_FILE.keep = true;
-      if (!KEEP_FILE.keep && filePath.startsWith("/.vite/")) KEEP_FILE.keep = true;
+      if (!KEEP_FILE.keep && filePath.startsWith("/.vite/"))
+        KEEP_FILE.keep = true;
 
       // 处理 node_modules 中的文件
       if (!KEEP_FILE.keep && filePath.startsWith("/node_modules/")) {
@@ -139,12 +145,17 @@ const config: ForgeConfig = {
               walker.modules = [];
               await walker.walkDependenciesForModule(moduleRoot, DepType.PROD);
               walker.modules
-                .filter((dep) => (dep.nativeModuleType as number) === DepType.PROD)
+                .filter(
+                  (dep) => (dep.nativeModuleType as number) === DepType.PROD,
+                )
                 // 对于 '@scope/package' 形式的包，取第一部分
                 .map((dep) => dep.name.split("/")[0])
                 .forEach((name) => foundModules.add(name));
             } catch (error) {
-              console.warn(`⚠ Failed to walk dependencies for ${external}:`, error);
+              console.warn(
+                `⚠ Failed to walk dependencies for ${external}:`,
+                error,
+              );
             }
           }
         }

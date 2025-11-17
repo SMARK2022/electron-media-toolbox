@@ -38,7 +38,7 @@ export default function HomePage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <div className="flex flex-col items-center gap-4 text-center pb-24">
+      <div className="flex flex-col items-center gap-4 pb-24 text-center">
         {/* 标题 */}
         <h1 className="text-4xl font-bold">{t("page.title")}</h1>
 

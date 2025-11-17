@@ -32,13 +32,13 @@ const fetchEXIFThumb = async (url) => {
 
     if (start && end) {
       stream = buffer.subarray(start, end); // 提取 EXIF 缩略图部分
-      reader.cancel('Thumbnail found');
+      reader.cancel("Thumbnail found");
       break;
     }
 
     // 防止加载过大图片导致卡顿，超过 80KB 就停止读取
     if (buffer.length > 80000) {
-      reader.cancel('Thumbnail not found');
+      reader.cancel("Thumbnail not found");
       break;
     }
 
@@ -59,7 +59,7 @@ onmessage = (e) => {
       postMessage({ blob }); // 返回生成的 EXIF 缩略图
     })
     .catch((error) => {
-      console.error('Error processing EXIF thumbnail:', error);
+      console.error("Error processing EXIF thumbnail:", error);
       postMessage({ error: error.message }); // 传回错误信息
     });
 };

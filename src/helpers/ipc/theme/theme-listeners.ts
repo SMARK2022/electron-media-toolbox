@@ -1,10 +1,10 @@
 import { ipcMain, nativeTheme } from "electron";
 import {
-    THEME_MODE_CURRENT_CHANNEL,
-    THEME_MODE_DARK_CHANNEL,
-    THEME_MODE_LIGHT_CHANNEL,
-    THEME_MODE_SYSTEM_CHANNEL,
-    THEME_MODE_TOGGLE_CHANNEL,
+  THEME_MODE_CURRENT_CHANNEL,
+  THEME_MODE_DARK_CHANNEL,
+  THEME_MODE_LIGHT_CHANNEL,
+  THEME_MODE_SYSTEM_CHANNEL,
+  THEME_MODE_TOGGLE_CHANNEL,
 } from "./theme-channels";
 
 export function addThemeEventListeners() {
