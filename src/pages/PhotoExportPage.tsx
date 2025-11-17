@@ -135,7 +135,7 @@ export default function PhotoExportSubpage() {
           <div className="flex flex-grow items-center space-x-2">
             <Input
               type="text"
-              placeholder={t("placeholders.folderPath")}
+              placeholder={t("placeholders.enterFolderPath")}
               value={folderName}
               onChange={handleFolderChange}
               className="flex-grow"

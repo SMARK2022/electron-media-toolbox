@@ -391,22 +391,59 @@ export default function PhotoImportSubpage() {
   const { t } = useTranslation();
   const [photos, setPhotos] = React.useState<Photo[]>([]);
 
-  // 初始化数据库并加载数据
+  // 初始化数据库并加载数据（带兜底）
   React.useEffect(() => {
     const init = async () => {
-      initializeDatabase();
-      const savedPhotos = await getPhotos();
-      setPhotos(savedPhotos);
+      try {
+        initializeDatabase();
+        const savedPhotos = await getPhotos();
+
+        if (Array.isArray(savedPhotos)) {
+          setPhotos(savedPhotos);
+        } else if (savedPhotos == null) {
+          console.warn(
+            "[PhotoImportSubpage] getPhotos() returned null/undefined, fallback to []",
+          );
+          setPhotos([]);
+        } else {
+          console.warn(
+            "[PhotoImportSubpage] getPhotos() returned non-array:",
+            savedPhotos,
+          );
+          setPhotos([]);
+        }
+      } catch (error) {
+        console.error(
+          "[PhotoImportSubpage] failed to init / load photos:",
+          error,
+        );
+        setPhotos([]);
+      }
     };
     void init();
   }, []);
 
-  // 从 sessionStorage 恢复 UI 状态
+  // 从 sessionStorage 恢复 UI 状态（带解析与类型保护）
   React.useEffect(() => {
-    const saved = sessionStorage.getItem("savedPhotoObjectsForState");
-    if (saved?.length) {
-      const photoObjects: Photo[] = JSON.parse(saved);
-      setPhotos(photoObjects);
+    try {
+      const saved = sessionStorage.getItem("savedPhotoObjectsForState");
+      if (!saved) return;
+
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) {
+        console.warn(
+          "[PhotoImportSubpage] sessionStorage savedPhotoObjectsForState is not array:",
+          parsed,
+        );
+        return;
+      }
+
+      setPhotos(parsed as Photo[]);
+    } catch (error) {
+      console.error(
+        "[PhotoImportSubpage] failed to restore photos from sessionStorage:",
+        error,
+      );
     }
   }, []);
 
