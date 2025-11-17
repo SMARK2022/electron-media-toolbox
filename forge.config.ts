@@ -124,6 +124,7 @@ const config: ForgeConfig = {
       // MSI 产品语言：2052 = zh-CN
       language: 2052,
       // WiX UI 字符串区域：强制使用 zh-CN 资源
+      cultures: "zh-CN",
 
       // 固定 UpgradeCode，用于版本覆盖安装（不要改）
       upgradeCode: "c5f77e4e-5b1f-4a32-8b3b-7aef8bd0fb75",

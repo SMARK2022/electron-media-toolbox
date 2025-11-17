@@ -20,8 +20,8 @@ const exifParser = require("exif-parser");
 // 初始化日志系统（在所有其他代码之前）
 initializeLogger();
 
-// const inDevelopment = process.env.NODE_ENV === "development";
-const inDevelopment = true;
+const inDevelopment = process.env.NODE_ENV === "development";
+// const inDevelopment = true;
 
 console.log("=== Application Starting ===");
 console.log(`Is Development: ${inDevelopment}`);
