@@ -3,11 +3,9 @@ import io
 import time
 import os
 
-import torch
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
-from packages.LAR_IQA.scripts.utils import load_model
 from PIL import Image
 from pydantic import BaseModel
 from utils.image_compute import process_and_group_images
@@ -80,8 +78,6 @@ app = FastAPI()
 task_manager = TaskManager()
 
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-model = load_model(r".\packages\LAR_IQA\checkpoint_epoch_3.pt", False, device)
 
 
 # 正确设置允许的 CORS 来源

@@ -2,7 +2,8 @@ import os
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List, Tuple
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -13,10 +14,12 @@ from utils.database import (
     save_cache_to_db,
     update_group_id_in_db,
 )
-from utils.thumbnails import generate_thumbnails, get_thumbnail
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model = load_model(r".\packages\LAR_IQA\checkpoint_epoch_3.pt", False, device)
+# load model from path relative to this file
+base_dir = Path(__file__).resolve().parent
+checkpoint = base_dir / ".." / "packages" / "LAR_IQA" / "checkpoint_epoch_3.pt"
+model = load_model(str(checkpoint), False, device)
 
 HSVHist = Tuple[np.ndarray, np.ndarray, np.ndarray]
 BINS = [90, 128, 128]
