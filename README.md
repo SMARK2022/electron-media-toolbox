@@ -1,4 +1,4 @@
-# SMARK Media Tools
+# <img src="assets/app.ico" alt="SMARK App Icon" height="32"> SMARK Media Tools
 
 > A fast, GPU-accelerated photo curation toolbox for burst shots and large image collections.
 
