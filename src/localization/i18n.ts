@@ -100,7 +100,8 @@ i18n.use(initReactI18next).init({
         },
         importPage: {
           noPhotosFoundTitle: "No photos found",
-          noPhotosFoundDesc: "Please click 'Import Photos' to import photos into the gallery for management.",
+          noPhotosFoundDesc:
+            "Please click 'Import Photos' to import photos into the gallery for management.",
         },
         exportPage: {
           folderPathPlaceholder: "Enter export folder path...",
@@ -140,7 +141,7 @@ i18n.use(initReactI18next).init({
           noPhotosFoundDesc:
             "Try adjusting filters, importing more photos, or running a new detection task.",
           filterHint:
-            "Adjust the similarity threshold before running detection. Use bulk actions to quickly organize your photo groups.",
+            "Adjust the similarity threshold before running detection. Use bulk actions to quickly organize your photo groups.\n\nDouble-click on an image in the preview pane to quickly toggle its enabled status;\nclick to preview, use keyboard ↑↓←→ to select photos within the same group.",
         },
       },
     },
@@ -275,7 +276,7 @@ i18n.use(initReactI18next).init({
           noPhotosFoundDesc:
             "尝试调整筛选条件、导入更多照片或运行新的检测任务。",
           filterHint:
-            "在运行检测之前调整相似度阈值。使用批量操作可快速整理照片分组。",
+            "在运行检测之前调整相似度阈值。使用批量操作可快速整理照片分组。\n\n在预览窗格中对图片左键双击可快速切换启用状态；\n单击以预览，使用键盘↑↓←→选择同组内照片。",
         },
       },
     },

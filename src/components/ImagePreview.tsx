@@ -23,12 +23,13 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({ src, width, height }) => {
   const containerWidth = containerRef.current?.offsetWidth || 0;
   const containerHeight = containerRef.current?.offsetHeight || 0;
 
-  // 放大缩小函数
+  // 放大缩小函数（不再调用 preventDefault，避免 passive listener 报错）
   const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
     const delta = e.deltaY < 0 ? 0.1 : -0.1;
-    const newScale = Math.min(Math.max(scale + delta, minScale), maxScale);
-    setScale(newScale);
+    setScale((prevScale) => {
+      const nextScale = prevScale + delta;
+      return Math.min(Math.max(nextScale, minScale), maxScale);
+    });
   };
 
   // 鼠标拖动函数
@@ -38,15 +39,16 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({ src, width, height }) => {
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (isDragging) {
-      const dx = e.clientX - dragStart.x;
-      const dy = e.clientY - dragStart.y;
-      setOffset({
-        x: offset.x + dx / scale / baseScale,
-        y: offset.y + dy / scale / baseScale,
-      });
-      setDragStart({ x: e.clientX, y: e.clientY });
-    }
+    if (!isDragging) return;
+
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+
+    setOffset((prevOffset) => ({
+      x: prevOffset.x + dx / scale / baseScale,
+      y: prevOffset.y + dy / scale / baseScale,
+    }));
+    setDragStart({ x: e.clientX, y: e.clientY });
   };
 
   const handleMouseUp = () => {
@@ -59,38 +61,39 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({ src, width, height }) => {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      if (imageRef.current) {
-        // 限制图片的最大偏移量，以防图片移出边界
+      if (!imageRef.current || !containerWidth || !containerHeight) return;
 
-        const imageWidthRatio = imageRef.current.width / containerWidth;
-        const imageHeightRatio = imageRef.current.height / containerHeight;
-        const maxRatio = Math.max(imageWidthRatio, imageHeightRatio);
-        if (1 / maxRatio !== baseScale) {
-          setBaseScale(1 / maxRatio);
-        }
+      // 限制图片的最大偏移量，以防图片移出边界
+      const imageWidthRatio = imageRef.current.width / containerWidth;
+      const imageHeightRatio = imageRef.current.height / containerHeight;
+      const maxRatio = Math.max(imageWidthRatio, imageHeightRatio) || 1;
 
-        const imageWidth = imageRef.current.width * scale * baseScale;
-        const imageHeight = imageRef.current.height * scale * baseScale;
-        let newX = offset.x * scale * baseScale;
-        let newY = offset.y * scale * baseScale;
+      if (1 / maxRatio !== baseScale) {
+        setBaseScale(1 / maxRatio);
+      }
 
-        if (imageWidth < containerWidth) {
-          newX = (containerWidth - imageWidth) / 2;
-        } else {
-          newX = Math.min(Math.max(newX, -(imageWidth - containerWidth)), 0);
-        }
-        if (imageHeight < containerHeight) {
-          newY = (containerHeight - imageHeight) / 2;
-        } else {
-          newY = Math.min(Math.max(newY, -(imageHeight - containerHeight)), 0);
-        }
+      const imageWidth = imageRef.current.width * scale * baseScale;
+      const imageHeight = imageRef.current.height * scale * baseScale;
+      let newX = offset.x * scale * baseScale;
+      let newY = offset.y * scale * baseScale;
 
-        newX = newX / scale / baseScale;
-        newY = newY / scale / baseScale;
+      if (imageWidth < containerWidth) {
+        newX = (containerWidth - imageWidth) / 2;
+      } else {
+        newX = Math.min(Math.max(newX, -(imageWidth - containerWidth)), 0);
+      }
 
-        if (newX !== offset.x || newY !== offset.y) {
-          setOffset({ x: newX, y: newY });
-        }
+      if (imageHeight < containerHeight) {
+        newY = (containerHeight - imageHeight) / 2;
+      } else {
+        newY = Math.min(Math.max(newY, -(imageHeight - containerHeight)), 0);
+      }
+
+      newX = newX / scale / baseScale;
+      newY = newY / scale / baseScale;
+
+      if (newX !== offset.x || newY !== offset.y) {
+        setOffset({ x: newX, y: newY });
       }
     }, 5);
 
@@ -111,28 +114,29 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({ src, width, height }) => {
       onWheel={handleWheel} // 监听滚轮缩放
       onDoubleClick={(e) => {
         if (scale !== 1) {
+          // 双击还原缩放并居中
           setScale(1);
-          setOffset({ x: 0, y: 0 }); // 双击还原缩放并居中
-        } else {
-          // 获取鼠标位置
-          const rect = containerRef.current?.getBoundingClientRect();
-          if (!rect) return;
-
-          const mouseX = e.clientX - rect.left; // 鼠标相对于容器的 X 坐标
-          const mouseY = e.clientY - rect.top; // 鼠标相对于容器的 Y 坐标
-
-          // 计算放大后的偏移量，使鼠标位置放大后居中
-          const newScale = 2; // 目标缩放倍数
-          const newOffsetX =
-            (mouseX - containerWidth / 2) / newScale / baseScale;
-          const newOffsetY =
-            (mouseY - containerHeight / 2) / newScale / baseScale;
-
-          setScale(newScale);
-          setOffset({ x: -newOffsetX, y: -newOffsetY });
+          setOffset({ x: 0, y: 0 });
+          return;
         }
+
+        // 双击放大：以鼠标位置为中心
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+
+        const mouseX = e.clientX - rect.left; // 鼠标相对于容器的 X 坐标
+        const mouseY = e.clientY - rect.top; // 鼠标相对于容器的 Y 坐标
+        const targetScale = 2; // 目标缩放倍数
+
+        const newOffsetX =
+          (mouseX - containerWidth / 2) / targetScale / baseScale;
+        const newOffsetY =
+          (mouseY - containerHeight / 2) / targetScale / baseScale;
+
+        setScale(targetScale);
+        setOffset({ x: -newOffsetX, y: -newOffsetY });
       }}
-      // 双击还原缩放
+      // 鼠标拖动
       onMouseDown={handleMouseDown} // 鼠标按下开始拖动
       onMouseMove={handleMouseMove} // 拖动中
       onMouseUp={handleMouseUp} // 鼠标松开结束拖动

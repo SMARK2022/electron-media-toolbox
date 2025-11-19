@@ -71,7 +71,7 @@ function ServerStatusMonitorDrawer({
           className="border-border bg-muted/60 text-muted-foreground hover:bg-muted flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium"
         >
           <Server className="h-3 w-3" />
-          <span className="max-w-[140px] truncate">{serverStatus}</span>
+          <span className="max-w-[19vw] truncate">{serverStatus}</span>
         </Button>
       </DrawerTrigger>
       <DrawerContent className="bg-background max-h-[80vh] max-w-xl translate-y-0 border-t sm:rounded-t-xl sm:border">
@@ -330,13 +330,13 @@ export default function PhotoFilterSubpage() {
           const timeDifference = (currentTime - parseInt(submitTime)) / 1000;
 
           // 提交 6 秒后，如果状态仍然是空闲，则 5 秒后停止轮询
-          if (timeDifference > 0.5 && (data.status === "空闲中")) {
+          if (timeDifference > 1 && (data.status === "空闲中")) {
             setTimeout(() => {
               if (data.status === "空闲中") {
                 setUpdate(false);
                 console.log("停止更新");
               }
-            }, 500);
+            }, 8000);
           }
         }
       } else {
@@ -478,7 +478,7 @@ export default function PhotoFilterSubpage() {
       <div className="flex w-full flex-1 gap-4">
         {/* 左侧：主画廊（约 65% 宽度） */}
         <div className="order-1 max-w-[65%] min-w-[55%] basis-[65%]">
-          <div className="bg-background/80 flex h-[85vh] w-full flex-col space-y-4 rounded-xl p-3 shadow-sm">
+          <div className="bg-background/80 flex h-[calc(100vh-85px)] w-full flex-col space-y-4 rounded-xl p-3 shadow-sm">
             <Tabs
               id="gallery-pannel"
               value={opt_galleryTabValue}
@@ -711,9 +711,8 @@ export default function PhotoFilterSubpage() {
                 <div className="mt-3 rounded-md bg-blue-50 p-3 text-xs text-blue-800">
                   <div className="flex items-start gap-2">
                     <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                    <p className="leading-relaxed">
-                      {t("filterPage.filterHint") ||
-                        "Adjust the similarity threshold before running detection. Use bulk actions to quickly organize your photo groups."}
+                    <p className="leading-relaxed whitespace-pre-wrap">
+                      {t("filterPage.filterHint")}
                     </p>
                   </div>
                 </div>

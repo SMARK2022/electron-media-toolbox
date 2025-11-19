@@ -333,7 +333,7 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
   const dropAreaClass = cn(
     "relative mx-auto flex w-full max-w-[60vw] h-[calc(70vh-14.8rem)]",
     "flex-col items-center justify-center rounded-xl border-2 border-dashed",
-    "transition-all duration-300 cursor-pointer",
+    "transition-all duration-200 cursor-pointer",
     "border-gray-300 bg-transparent hover:border-blue-400 hover:bg-gray-50/60",
     isDragOver && "border-blue-500 bg-blue-50/80 scale-[1.01]",
     hasInvalidDrop && "border-red-500 bg-red-50",
