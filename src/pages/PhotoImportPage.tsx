@@ -1,5 +1,6 @@
 // renderer/pages/PhotoImportSubpage.tsx
 
+import * as React from "react";
 import { PhotoGridEnhance } from "@/components/PhotoGrid";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,8 +24,11 @@ import {
   PhotoExtend,
   Photo,
 } from "@/lib/db";
-import * as React from "react";
 import { useTranslation } from "react-i18next";
+import { cn } from "@/lib/utils";
+
+// lucide icons for better visual feedback in drop zone & buttons
+import { Upload, FileWarning, Image as ImageIcon } from "lucide-react";
 
 // ----------------- 类型与小工具函数 -----------------
 
@@ -35,6 +39,15 @@ interface DroppedFile {
 
 interface FileImportDrawerProps {
   setPhotos: React.Dispatch<React.SetStateAction<Photo[]>>;
+}
+
+// 允许的扩展名（用于拖拽和文件选择公用）
+const VALID_EXTENSIONS = ["png", "jpg", "jpeg", "webp"];
+
+/** 判断是否为合法图片文件 */
+function isValidImageFile(file: File): boolean {
+  const ext = file.name.split(".").pop()?.toLowerCase();
+  return !!ext && VALID_EXTENSIONS.includes(ext);
 }
 
 /** 尝试从 ElectronAPI / 旧版 file.path 获取绝对路径，失败返回空字符串 */
@@ -69,9 +82,12 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
   const [isDropped, setIsDropped] = React.useState(false);
   const [hasInvalidDrop, setHasInvalidDrop] = React.useState(false);
   const [folderInputError, setFolderInputError] = React.useState(false);
+  const [isDragOver, setIsDragOver] = React.useState(false);
+  const [isProcessing, setIsProcessing] = React.useState(false);
 
   const invalidDropTimeoutRef = React.useRef<number | null>(null);
   const folderErrorTimeoutRef = React.useRef<number | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const allHaveFullPaths =
     droppedFiles.length > 0 && droppedFiles.every((f) => !!f.fullPath);
@@ -85,19 +101,16 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
     }
   };
 
-  // ---------- 拖拽事件 ----------
+  // ---------- 统一处理文件列表的函数（拖拽 + 文件选择公用） ----------
 
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const files = event.dataTransfer.files;
-    const validExt = ["png", "jpg", "jpeg", "webp"];
+  const handleFilesAdded = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
 
     const next: DroppedFile[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const ext = file.name.split(".").pop()?.toLowerCase();
-      if (!ext || !validExt.includes(ext)) continue;
+      if (!isValidImageFile(file)) continue;
 
       const rawFullPath = tryGetFullPath(file);
       const normalized = rawFullPath ? normalizePath(rawFullPath) : "";
@@ -124,8 +137,41 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
     }
   };
 
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) =>
+  // ---------- 拖拽事件 ----------
+
+  const handleDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    event.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragOver(false);
+
+    handleFilesAdded(event.dataTransfer.files);
+  };
+
+  // ---------- 点击打开文件选择框 ----------
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    handleFilesAdded(event.target.files);
+    // 选完之后重置 input 的 value，方便下次选择相同文件也能触发 change
+    event.target.value = "";
+  };
 
   // ---------- 文件夹输入 ----------
 
@@ -140,6 +186,8 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
     setIsDropped(false);
     setHasInvalidDrop(false);
     setFolderInputError(false);
+    setIsDragOver(false);
+    setIsProcessing(false);
     clearTimeoutRef(invalidDropTimeoutRef);
     clearTimeoutRef(folderErrorTimeoutRef);
   };
@@ -147,7 +195,7 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
   // ---------- 提交 ----------
 
   const handleSubmit = async () => {
-    if (!droppedFiles.length) return;
+    if (!droppedFiles.length || isProcessing) return;
 
     let normalizedFolder = normalizePath(folderName).trim();
 
@@ -165,138 +213,145 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
       return;
     }
 
-    // 构造绝对路径列表
-    const absoluteFilePaths = droppedFiles.map((file) => {
-      if (allHaveFullPaths && file.fullPath) {
-        return normalizePath(file.fullPath);
-      }
-      return normalizePath(`${normalizedFolder}/${file.name}`);
-    });
+    setIsProcessing(true);
 
-    const sortedPaths = [...absoluteFilePaths].sort((a, b) =>
-      a.localeCompare(b, undefined, { numeric: true }),
-    );
-
-    // 获取缩略图缓存目录
-    let thumbsPath = "../.cache/.thumbs";
     try {
-      const electronAPI = (window as any)?.ElectronAPI;
-      if (electronAPI?.getThumbsCacheDir) {
-        thumbsPath = await electronAPI.getThumbsCacheDir();
-      }
-    } catch (error) {
-      console.warn("getThumbsCacheDir failed, using default path:", error);
-    }
-
-    // 后端生成缩略图
-    fetch("http://localhost:8000/generate_thumbnails", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        file_paths: sortedPaths,
-        thumbs_path: thumbsPath,
-        width: 128,
-        height: 128,
-      }),
-    }).catch((error) => console.error("Error generating thumbnails:", error));
-
-    // 构造前端 PhotoExtend
-    const photoObjects: PhotoExtend[] = await Promise.all(
-      sortedPaths.map(async (absPath) => {
-        const normalized = normalizePath(absPath);
-        const fileName = normalized.split("/").pop() || "";
-
-        let photoInfo: any = null;
-        try {
-          const res = await fetch(`photo-info://${normalized}`);
-          if (res.ok) photoInfo = await res.json();
-        } catch (error) {
-          console.error(`Failed to get photo info for ${normalized}`, error);
+      // 构造绝对路径列表
+      const absoluteFilePaths = droppedFiles.map((file) => {
+        if (allHaveFullPaths && file.fullPath) {
+          return normalizePath(file.fullPath);
         }
+        return normalizePath(`${normalizedFolder}/${file.name}`);
+      });
 
-        const captureTime = photoInfo
-          ? new Date(photoInfo.tags.captureTime * 1000).toLocaleString()
-          : undefined;
+      const sortedPaths = [...absoluteFilePaths].sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true }),
+      );
 
-        return {
-          fileName,
-          fileUrl: `thumbnail-resource://${normalized}`,
-          filePath: normalized,
-          date: captureTime,
-          fileSize: photoInfo?.tags?.fileSize,
-          info:
-            photoInfo?.tags?.ExposureTime && photoInfo?.tags?.LensModel
-              ? `1/${1 / photoInfo.tags.ExposureTime} ${photoInfo.tags.LensModel}`
-              : undefined,
-          isEnabled: true,
-        };
-      }),
-    );
+      // 获取缩略图缓存目录
+      let thumbsPath = "../.cache/.thumbs";
+      try {
+        const electronAPI = (window as any)?.ElectronAPI;
+        if (electronAPI?.getThumbsCacheDir) {
+          thumbsPath = await electronAPI.getThumbsCacheDir();
+        }
+      } catch (error) {
+        console.warn("getThumbsCacheDir failed, using default path:", error);
+      }
 
-    // 更新数据库 + UI
-    clearPhotos();
-    initializeDatabase();
-    addPhotosExtend(photoObjects);
+      // 后端生成缩略图（fire and forget）
+      fetch("http://localhost:8000/generate_thumbnails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file_paths: sortedPaths,
+          thumbs_path: thumbsPath,
+          width: 128,
+          height: 128,
+        }),
+      }).catch((error) => console.error("Error generating thumbnails:", error));
 
-    const photoObjectsForState: Photo[] = photoObjects.map((p) => ({
-      fileName: p.fileName,
-      fileUrl: p.fileUrl,
-      filePath: p.filePath,
-      info: p.date || "Unknown",
-      isEnabled: p.isEnabled ?? true,
-    }));
+      // 构造前端 PhotoExtend
+      const photoObjects: PhotoExtend[] = await Promise.all(
+        sortedPaths.map(async (absPath) => {
+          const normalized = normalizePath(absPath);
+          const fileName = normalized.split("/").pop() || "";
 
-    setPhotos(photoObjectsForState);
+          let photoInfo: any = null;
+          try {
+            const res = await fetch(`photo-info://${normalized}`);
+            if (res.ok) photoInfo = await res.json();
+          } catch (error) {
+            console.error(`Failed to get photo info for ${normalized}`, error);
+          }
 
-    // 一些持久化记录（当前页面不读取，但保留）
-    sessionStorage.setItem(
-      "savedFileNames",
-      JSON.stringify(droppedFiles.map((f) => f.name)),
-    );
-    sessionStorage.setItem(
-      "savedFolderName",
-      allHaveFullPaths ? "" : normalizedFolder,
-    );
-    sessionStorage.setItem(
-      "savedPhotoObjectsForState",
-      JSON.stringify(photoObjectsForState),
-    );
+          const captureTime = photoInfo
+            ? new Date(photoInfo.tags.captureTime * 1000).toLocaleString()
+            : undefined;
 
-    handleReset();
+          return {
+            fileName,
+            fileUrl: `thumbnail-resource://${normalized}`,
+            filePath: normalized,
+            date: captureTime,
+            fileSize: photoInfo?.tags?.fileSize,
+            info:
+              photoInfo?.tags?.ExposureTime && photoInfo?.tags?.LensModel
+                ? `1/${1 / photoInfo.tags.ExposureTime} ${photoInfo.tags.LensModel}`
+                : undefined,
+            isEnabled: true,
+          };
+        }),
+      );
+
+      // 更新数据库 + UI
+      clearPhotos();
+      initializeDatabase();
+      addPhotosExtend(photoObjects);
+
+      const photoObjectsForState: Photo[] = photoObjects.map((p) => ({
+        fileName: p.fileName,
+        fileUrl: p.fileUrl,
+        filePath: p.filePath,
+        info: p.date || "Unknown",
+        isEnabled: p.isEnabled ?? true,
+      }));
+
+      setPhotos(photoObjectsForState);
+
+      // 一些持久化记录（当前页面不读取，但保留）
+      sessionStorage.setItem(
+        "savedFileNames",
+        JSON.stringify(droppedFiles.map((f) => f.name)),
+      );
+      sessionStorage.setItem(
+        "savedFolderName",
+        allHaveFullPaths ? "" : normalizedFolder,
+      );
+      sessionStorage.setItem(
+        "savedPhotoObjectsForState",
+        JSON.stringify(photoObjectsForState),
+      );
+
+      handleReset();
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // ---------- 样式 / 文案 ----------
-
-  const dropAreaBase =
-    "mx-auto flex w-full max-w-[60vw] h-[calc(70vh-14.1rem)] items-center justify-center rounded-md border-2 border-dashed transition-colors duration-1000";
-  const dropAreaClass = hasInvalidDrop
-    ? `${dropAreaBase} border-red-500 bg-red-500/10`
-    : `${dropAreaBase} border-gray-400`;
 
   const dropText = hasInvalidDrop
     ? t("labels.dropInvalidFiles")
     : t("labels.dropFilesHere");
 
-  const dropTextColor = hasInvalidDrop ? "text-red-500" : "text-gray-400";
-
-  // 输入框样式：用于底部 Footer 内的横向布局
-  const folderInputClass = [
-    "flex-1 min-w-0",
-    folderInputError && "border-red-500 focus-visible:ring-red-500",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
   const listHeaderSuffix = allHaveFullPaths
     ? t("placeholders.detectedFolder")
     : folderName || t("placeholders.enterFolderPath");
+
+  const dropAreaClass = cn(
+    "relative mx-auto flex w-full max-w-[60vw] h-[calc(70vh-14.8rem)]",
+    "flex-col items-center justify-center rounded-xl border-2 border-dashed",
+    "transition-all duration-300 cursor-pointer",
+    "border-gray-300 bg-transparent hover:border-blue-400 hover:bg-gray-50/60",
+    isDragOver && "border-blue-500 bg-blue-50/80 scale-[1.01]",
+    hasInvalidDrop && "border-red-500 bg-red-50",
+  );
+
+  const folderInputClass = cn(
+    "flex-1 min-w-0",
+    folderInputError && "border-red-500 focus-visible:ring-red-500",
+  );
 
   // ---------- JSX ----------
 
   return (
     <Drawer>
       <DrawerTrigger asChild>
-        <Button variant="outline">{t("buttons.importPhotos")}</Button>
+        <Button variant="outline" className="gap-2">
+          <Upload className="h-4 w-4" />
+          {t("buttons.importPhotos")}
+        </Button>
       </DrawerTrigger>
 
       <DrawerContent>
@@ -304,7 +359,12 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
           <div className="flex h-[70vh] flex-col gap-3 p-4">
             {/* 顶部标题 */}
             <DrawerHeader className="px-0 pb-0">
-              <DrawerTitle>{t("modals.photoImport.title")}</DrawerTitle>
+              <DrawerTitle className="flex items-center gap-2">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-blue-100">
+                  <ImageIcon className="h-4 w-4 text-blue-600" />
+                </span>
+                {t("modals.photoImport.title")}
+              </DrawerTitle>
               <DrawerDescription>
                 {t("modals.photoImport.description")}
               </DrawerDescription>
@@ -324,15 +384,53 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
                       className={dropAreaClass}
                       onDrop={handleDrop}
                       onDragOver={handleDragOver}
+                      onDragEnter={handleDragEnter}
+                      onDragLeave={handleDragLeave}
+                      onClick={() => fileInputRef.current?.click()}
                     >
-                      <p
-                        className={`px-4 text-center text-sm ${dropTextColor}`}
-                      >
-                        {dropText}
-                      </p>
+                      {/* 内部 icon + 文案 */}
+                      <div className="pointer-events-none flex flex-col items-center gap-3 px-4 text-center">
+                        <div
+                          className={cn(
+                            "flex h-12 w-12 items-center justify-center rounded-full border",
+                            hasInvalidDrop
+                              ? "border-red-200 bg-red-100 text-red-600"
+                              : "border-gray-200 bg-gray-100 text-gray-500",
+                          )}
+                        >
+                          {hasInvalidDrop ? (
+                            <FileWarning className="h-6 w-6" />
+                          ) : (
+                            <Upload className="h-6 w-6" />
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <p
+                            className={cn(
+                              "text-sm font-medium",
+                              hasInvalidDrop ? "text-red-600" : "text-gray-700",
+                            )}
+                          >
+                            {dropText}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {t("labels.supportedFileTypes")}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* 隐藏的多文件选择 input */}
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        accept=".jpg,.jpeg,.png,.webp"
+                        className="hidden"
+                        onChange={handleFileSelect}
+                      />
                     </div>
                   ) : (
-                    <div className="flex flex-1 flex-col">
+                    <div className="flex flex-1 flex-col gap-2">
                       {droppedFiles.map((file, idx) => {
                         const displayPath = allHaveFullPaths
                           ? file.fullPath || file.name
@@ -342,10 +440,19 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
 
                         return (
                           <React.Fragment key={`${file.name}-${idx}`}>
-                            <div className="text-sm break-all">
-                              {displayPath}
+                            <div className="flex items-center gap-3 rounded-md border bg-white px-3 py-2 shadow-sm">
+                              <div className="flex h-8 w-8 items-center justify-center rounded bg-gray-100">
+                                <ImageIcon className="h-4 w-4 text-gray-500" />
+                              </div>
+                              <div className="flex min-w-0 flex-1 flex-col">
+                                <span className="truncate text-sm font-medium text-gray-700">
+                                  {file.name}
+                                </span>
+                                <span className="truncate text-xs text-gray-400">
+                                  {displayPath}
+                                </span>
+                              </div>
                             </div>
-                            <Separator className="my-2" />
                           </React.Fragment>
                         );
                       })}
@@ -368,12 +475,21 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
                 />
               )}
 
-              {/* 右侧：按钮组，始终靠右，不随输入框消失而改变布局结构 */}
+              {/* 右侧：按钮组 */}
               <div className="ml-auto flex flex-row items-center gap-2">
                 <DrawerClose asChild>
-                  <Button onClick={handleSubmit}>{t("buttons.submit")}</Button>
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={!droppedFiles.length || isProcessing}
+                  >
+                    {t("buttons.submit")}
+                  </Button>
                 </DrawerClose>
-                <Button variant="outline" onClick={handleReset}>
+                <Button
+                  variant="outline"
+                  onClick={handleReset}
+                  disabled={isProcessing}
+                >
                   {t("buttons.reset")}
                 </Button>
               </div>

@@ -1,3 +1,4 @@
+import React from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import {
   Compass,
@@ -8,9 +9,7 @@ import {
   Import,
   Settings,
 } from "lucide-react";
-import React from "react";
 import { useTranslation } from "react-i18next";
-// import { useLocation } from "react-router-dom";
 
 import {
   NavigationMenu,
@@ -19,6 +18,8 @@ import {
   NavigationMenuList,
   navigationMenuTriggerStyle,
 } from "@/components/ui/navigation-menu";
+
+import { cn } from "@/lib/utils";
 
 export default function NavigationMenuDemo() {
   const { t } = useTranslation();
@@ -72,21 +73,28 @@ export default function NavigationMenuDemo() {
   return (
     <NavigationMenu>
       <NavigationMenuList>
-        {items.map((item) => (
-          <NavigationMenuItem key={item.url}>
-            <NavigationMenuLink
-              asChild
-              className={`${navigationMenuTriggerStyle()} ${location.pathname === item.url ? "bg-gray-200" : ""}`}
-            >
-              <Link to={item.url}>
-                <div className="flex items-center gap-2">
-                  <item.icon className="h-5 w-5" />
-                  {item.title}
-                </div>
-              </Link>
-            </NavigationMenuLink>
-          </NavigationMenuItem>
-        ))}
+        {items.map((item) => {
+          const isActive = location.pathname === item.url;
+
+          return (
+            <NavigationMenuItem key={item.url}>
+              <NavigationMenuLink
+                asChild
+                className={cn(
+                  navigationMenuTriggerStyle(),
+                  isActive && "bg-gray-100 dark:bg-gray-800 dark:text-white",
+                )}
+              >
+                <Link to={item.url}>
+                  <div className="flex items-center gap-2">
+                    <item.icon className="h-5 w-5" />
+                    {item.title}
+                  </div>
+                </Link>
+              </NavigationMenuLink>
+            </NavigationMenuItem>
+          );
+        })}
       </NavigationMenuList>
     </NavigationMenu>
   );

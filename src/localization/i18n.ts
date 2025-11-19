@@ -44,29 +44,31 @@ i18n.use(initReactI18next).init({
         },
         buttons: {
           importPhotos: "Import Photos",
-          submit: "Submit",
+          submit: "Import",
           reset: "Reset",
           exportPhotos: "Export Photos",
           close: "Close",
         },
         modals: {
           photoImport: {
-            title: "Photo Import",
-            description: "Drag and drop photos above to import them.",
+            title: "Import Photos",
+            description:
+              "Drag and drop photos here, or click the area to select files from your computer.",
           },
         },
         placeholders: {
-          enterFolderPath: "Enter folder path",
-          detectedFolder: "Detected folder path",
+          enterFolderPath: "Enter folder path...",
+          detectedFolder: "Auto-detected folder",
         },
         labels: {
           fileList: "File List",
           dropFilesHere: "Drop files here",
-          dropInvalidFiles: "Contains invalid files, please reselect",
+          dropInvalidFiles: "Invalid files detected",
           totalPhotos: "Total Photos",
           author: "Author",
           email: "Email",
           totalPhotosLabel: "Total Photos",
+          supportedFileTypes: "Supports JPG, JPEG, PNG, WEBP",
         },
         about: {
           pageTitle: "About Page",
@@ -137,29 +139,30 @@ i18n.use(initReactI18next).init({
         },
         buttons: {
           importPhotos: "导入照片",
-          submit: "提交",
+          submit: "开始导入",
           reset: "重置",
           exportPhotos: "导出照片",
           close: "关闭",
         },
         modals: {
           photoImport: {
-            title: "照片导入",
-            description: "将照片拖到上面的区域以导入它们。",
+            title: "导入照片",
+            description: "将照片拖拽到此区域，或点击区域从电脑中选择多个文件。",
           },
         },
         placeholders: {
-          enterFolderPath: "输入文件夹路径",
-          detectedFolder: "文件夹已自动读取",
+          enterFolderPath: "请输入文件夹路径...",
+          detectedFolder: "自动检测的文件夹路径",
         },
         labels: {
           fileList: "文件列表",
-          dropFilesHere: "将文件拖到这里",
-          dropInvalidFiles: "包含无效文件，请重新选择",
+          dropFilesHere: "将文件拖拽到此处",
+          dropInvalidFiles: "检测到无效文件",
           totalPhotos: "总张数",
           author: "作者",
           email: "邮箱",
           totalPhotosLabel: "总张数",
+          supportedFileTypes: "支持 JPG、JPEG、PNG、WEBP 格式",
         },
         about: {
           pageTitle: "关于页面",
