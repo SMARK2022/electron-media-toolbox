@@ -102,8 +102,8 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({ src, width, height }) => {
       ref={containerRef} // 使用ref获取容器实际尺寸
       style={{
         position: "relative",
-        width: width || "100%", // 支持CSS宽度（如百分比）
-        height: height || "100%", // 支持CSS高度（如百分比）
+        ...(width != null ? { width } : {}),
+        ...(height != null ? { height } : {}),
         overflow: "hidden",
         cursor: isDragging ? "grabbing" : "grab",
         background: "#efefef",

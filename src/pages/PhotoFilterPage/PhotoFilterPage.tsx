@@ -161,10 +161,22 @@ function ServerStatusMonitorDrawer({
   );
 }
 
-function PreviewPlaceholder() {
+const PreviewPlaceholder: React.FC<{
+  width?: string;
+  height?: string;
+}> = ({ width, height }) => {
   const { t } = useTranslation();
+
+  const style: React.CSSProperties = {
+    ...(width ? { width } : {}),
+    ...(height ? { height } : {}),
+  };
+
   return (
-    <div className="border-muted-foreground/20 bg-muted/40 m-4 flex h-full flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center">
+    <div
+      style={style}
+      className="border-muted-foreground/20 bg-muted/40 m-4 flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center"
+    >
       <div className="bg-muted mb-3 rounded-full p-3 shadow-sm">
         <ImageIcon className="text-muted-foreground/40 h-8 w-8" />
       </div>
@@ -178,7 +190,7 @@ function PreviewPlaceholder() {
       </p>
     </div>
   );
-}
+};
 
 export default function PhotoFilterSubpage() {
   const { t } = useTranslation();
@@ -318,13 +330,13 @@ export default function PhotoFilterSubpage() {
           const timeDifference = (currentTime - parseInt(submitTime)) / 1000;
 
           // 提交 6 秒后，如果状态仍然是空闲，则 5 秒后停止轮询
-          if (timeDifference > 1 && (data.status === "空闲中")) {
+          if (timeDifference > 0.5 && (data.status === "空闲中")) {
             setTimeout(() => {
               if (data.status === "空闲中") {
                 setUpdate(false);
                 console.log("停止更新");
               }
-            }, 1000);
+            }, 500);
           }
         }
       } else {
@@ -453,7 +465,7 @@ export default function PhotoFilterSubpage() {
       if (bool_needUpdate) {
         fetchServerStatus();
       }
-    }, 1000);
+    }, 500);
 
     return () => window.clearInterval(interval_status);
   }, [bool_needUpdate, fetchServerStatus]);
@@ -568,7 +580,7 @@ export default function PhotoFilterSubpage() {
                 ))}
 
                 {photos.length === 0 && (
-                  <div className="text-muted-foreground flex h-[60vh] flex-col items-center justify-center text-center">
+                  <div className="text-muted-foreground flex h-[calc(70vh-100px)] flex-col items-center justify-center text-center">
                     <div className="mb-3 rounded-full bg-white p-4 shadow-sm">
                       <ImageIcon className="h-8 w-8 opacity-30" />
                     </div>
@@ -716,7 +728,6 @@ export default function PhotoFilterSubpage() {
                 <div>
                   <ImagePreview
                     src={`local-resource://${preview_photos[0].filePath}`}
-                    width={"33vw"} // 预览控件的宽度
                     height={"calc((100vh - 200px) * 0.50)"} // 预览控件的高度
                   />
                   <div className="mt-4 space-y-1">
@@ -730,7 +741,7 @@ export default function PhotoFilterSubpage() {
                   </div>
                 </div>
               ) : (
-                <PreviewPlaceholder />
+                <PreviewPlaceholder height={"calc((100vh - 180px))"} />
               )}
             </TabsContent>
           </Tabs>

@@ -252,10 +252,15 @@ def generate_thumbnails(
         print("No valid image files to process.")
         return
 
+
     start_time = time.time()
     completed_count = 0
     count_lock = threading.Lock()
     total_files = len(image_files)
+
+    update_progress_fn(
+        "缩略图生成中",
+    )
 
     def process_image(image_file: str) -> None:
         """

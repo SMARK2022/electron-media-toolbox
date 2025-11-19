@@ -103,7 +103,7 @@ export default function PhotoExportSubpage() {
   const isExportDisabled = !folderName || photos.length === 0;
 
   return (
-    <div className="bg-background flex min-h-screen flex-col p-4">
+    <div className="bg-background flex min-h-screen flex-col bg-slate-50/60 p-4 px-4 py-2 dark:bg-gray-900">
       <AlertDialog
         open={isDialogOpen}
         onOpenChange={(open) => {

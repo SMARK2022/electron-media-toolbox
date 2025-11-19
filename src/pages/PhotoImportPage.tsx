@@ -190,6 +190,8 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
     setIsProcessing(false);
     clearTimeoutRef(invalidDropTimeoutRef);
     clearTimeoutRef(folderErrorTimeoutRef);
+    initializeDatabase();
+    clearPhotos();
   };
 
   // ---------- 提交 ----------
@@ -239,8 +241,8 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
         console.warn("getThumbsCacheDir failed, using default path:", error);
       }
 
-      // 后端生成缩略图（fire and forget）
-      fetch("http://localhost:8000/generate_thumbnails", {
+      // fire-and-forget：不等待后端返回
+      void fetch("http://localhost:8000/generate_thumbnails", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -313,7 +315,6 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
         JSON.stringify(photoObjectsForState),
       );
 
-      handleReset();
     } finally {
       setIsProcessing(false);
     }
@@ -564,7 +565,7 @@ export default function PhotoImportSubpage() {
   }, []);
 
   return (
-    <div className="flex min-h-screen flex-col p-4">
+    <div className="flex min-h-screen flex-col bg-slate-50/60 p-4 px-4 py-2 dark:bg-gray-900">
       <div className="mb-4 flex justify-between">
         <FileImportDrawer setPhotos={setPhotos} />
         <div className="bg-muted inline-flex items-center rounded-full px-3 py-1 text-sm font-medium">
@@ -580,6 +581,20 @@ export default function PhotoImportSubpage() {
       <div className="flex-1 overflow-hidden">
         <ScrollArea className="mx-auto h-[calc(100vh-160px)] w-full max-w-full rounded-md border p-4">
           <PhotoGridEnhance photos={photos} />
+          {photos.length === 0 && (
+            <div className="text-muted-foreground flex h-[calc(70vh-100px)] flex-col items-center justify-center text-center">
+              <div className="mb-3 rounded-full bg-white p-4 shadow-sm">
+                <ImageIcon className="h-8 w-8 opacity-30" />
+              </div>
+              <p className="text-sm font-medium">
+                {t("importPage.noPhotosFoundTitle") || "No photos found"}
+              </p>
+              <p className="text-muted-foreground mt-1 max-w-xs text-xs">
+                {t("importPage.noPhotosFoundDesc") ||
+                  "Try adjusting filters, importing more photos, or running a new detection task."}
+              </p>
+            </div>
+          )}
         </ScrollArea>
       </div>
     </div>

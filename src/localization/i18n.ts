@@ -12,7 +12,7 @@ i18n.use(initReactI18next).init({
         },
         instructions: {
           importPhotos:
-            "Import photos on the import page, then filter photos on the filter page, and finally select the photos you need.",
+            "Import photos on the import page, then filter photos on the filter page, and finally export the photos with RAW files you need.",
         },
         status: {
           checking: "Checking server status",
@@ -98,6 +98,10 @@ i18n.use(initReactI18next).init({
           updateAvailable: "New version available, open GitHub",
           error: "Update check failed (click to retry)",
         },
+        importPage: {
+          noPhotosFoundTitle: "No photos found",
+          noPhotosFoundDesc: "Please click 'Import Photos' to import photos into the gallery for management.",
+        },
         exportPage: {
           folderPathPlaceholder: "Enter export folder path...",
           folderExists: "Folder exists",
@@ -148,7 +152,7 @@ i18n.use(initReactI18next).init({
         },
         instructions: {
           importPhotos:
-            "在导入页面中导入照片，然后在筛选页面中进行照片筛选，最终筛选出您需要的照片。",
+            "在导入页面中导入照片，然后在筛选页面中进行照片筛选，最终导出您需要的照片 (连带RAW文件)。",
         },
         status: {
           checking: "检查服务器状态中",
@@ -230,6 +234,10 @@ i18n.use(initReactI18next).init({
           updateAvailable: "发现新版本，前往 GitHub 下载",
           error: "检查更新失败（点击重试）",
         },
+        importPage: {
+          noPhotosFoundTitle: "未找到照片",
+          noPhotosFoundDesc: "请点击导入照片以导入到图库中进行管理。",
+        },
         exportPage: {
           folderPathPlaceholder: "请输入导出文件夹路径...",
           folderExists: "文件夹存在",
@@ -261,8 +269,7 @@ i18n.use(initReactI18next).init({
           workerLabel: "Worker",
           noWorkerInfo: "暂无 worker 信息可用。",
           previewPlaceholderTitle: "从图库选择一张照片进行预览",
-          previewPlaceholderDesc:
-            "点击左侧任意缩略图查看详情并切换启用状态。",
+          previewPlaceholderDesc: "点击左侧任意缩略图查看详情并切换启用状态。",
           groupLabel: "分组",
           noPhotosFoundTitle: "未找到照片",
           noPhotosFoundDesc:
