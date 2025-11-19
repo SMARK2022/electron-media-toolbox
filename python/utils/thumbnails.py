@@ -314,7 +314,7 @@ def generate_thumbnails(
 
     try:
         update_progress_fn(
-            "缩略图生成完毕",
+            "空闲中",
             worker_id=0,
             value=total_files,
             total=total_files,

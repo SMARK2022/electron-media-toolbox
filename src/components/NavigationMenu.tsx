@@ -25,7 +25,8 @@ export default function NavigationMenuDemo() {
   const { t } = useTranslation();
   const location = useLocation();
 
-  const items = [
+  // 左侧主导航 & 右侧工具导航
+  const mainItems = [
     {
       title: t("navigation.home"),
       url: "/",
@@ -50,6 +51,8 @@ export default function NavigationMenuDemo() {
       icon: FolderUp,
       description: t("pageDescriptions.export"),
     },
+  ]; // home / import / filter / export
+  const utilItems = [
     {
       title: t("navigation.settings"),
       url: "/settings",
@@ -68,34 +71,65 @@ export default function NavigationMenuDemo() {
       icon: FlaskConical,
       description: t("pageDescriptions.testing"),
     },
-  ];
+  ]; // settings / about / testing
 
   return (
-    <NavigationMenu>
-      <NavigationMenuList>
-        {items.map((item) => {
-          const isActive = location.pathname === item.url;
+    <NavigationMenu className="w-full">
+      <div className="flex w-full items-center justify-between">
+        {/* 左侧：主导航 */}
+        <NavigationMenuList>
+          {mainItems.map((item) => {
+            const isActive = location.pathname === item.url;
 
-          return (
-            <NavigationMenuItem key={item.url}>
-              <NavigationMenuLink
-                asChild
-                className={cn(
-                  navigationMenuTriggerStyle(),
-                  isActive && "bg-gray-100 dark:bg-gray-800 dark:text-white",
-                )}
-              >
-                <Link to={item.url}>
-                  <div className="flex items-center gap-2">
-                    <item.icon className="h-5 w-5" />
-                    {item.title}
-                  </div>
-                </Link>
-              </NavigationMenuLink>
-            </NavigationMenuItem>
-          );
-        })}
-      </NavigationMenuList>
+            return (
+              <NavigationMenuItem key={item.url}>
+                <NavigationMenuLink
+                  asChild
+                  className={cn(
+                    navigationMenuTriggerStyle(),
+                    isActive && "bg-gray-100 dark:bg-gray-800 dark:text-white",
+                  )}
+                >
+                  <Link to={item.url}>
+                    <div className="flex items-center gap-2">
+                      <item.icon className="h-5 w-5" />
+                      {item.title}
+                    </div>
+                  </Link>
+                </NavigationMenuLink>
+              </NavigationMenuItem>
+            );
+          })}
+        </NavigationMenuList>
+
+        {/* 右侧：分割线 + 工具导航 */}
+          <span className="h-6 m-2 w-px bg-gray-200 dark:bg-gray-700" />
+          <NavigationMenuList>
+            {utilItems.map((item) => {
+              const isActive = location.pathname === item.url;
+
+              return (
+                <NavigationMenuItem key={item.url}>
+                  <NavigationMenuLink
+                    asChild
+                    className={cn(
+                      navigationMenuTriggerStyle(),
+                      isActive &&
+                        "bg-gray-100 dark:bg-gray-800 dark:text-white",
+                    )}
+                  >
+                    <Link to={item.url}>
+                      <div className="flex items-center gap-2">
+                        <item.icon className="h-5 w-5" />
+                        {item.title}
+                      </div>
+                    </Link>
+                  </NavigationMenuLink>
+                </NavigationMenuItem>
+              );
+            })}
+          </NavigationMenuList>
+      </div>
     </NavigationMenu>
   );
 }

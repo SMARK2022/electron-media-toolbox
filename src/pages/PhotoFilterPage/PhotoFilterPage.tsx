@@ -461,7 +461,7 @@ export default function PhotoFilterSubpage() {
   const totalPhotoCount = photos.flat().length;
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-slate-50/60 p-4">
+    <div className="flex min-h-screen w-full flex-col bg-slate-50/60 px-4 py-2 dark:bg-gray-900">
       {/* 顶层左右 65% / 35% 分栏布局 */}
       <div className="flex w-full flex-1 gap-4">
         {/* 左侧：主画廊（约 65% 宽度） */}
@@ -475,30 +475,30 @@ export default function PhotoFilterSubpage() {
             >
               {/* 顶部工具栏：模式切换 + 总数提示 */}
               <div className="flex items-center justify-between gap-3">
-                <TabsList className="bg-muted/70 grid w-[220px] grid-cols-2">
+                <TabsList className="bg-muted/70 grid w-[280px] grid-cols-2">
                   <TabsTrigger
                     value="group"
-                    className="flex items-center gap-1.5 text-xs"
+                    className="flex items-center gap-1.5 text-sm"
                   >
                     <Layers className="h-3.5 w-3.5" />
                     {t("filterPage.galleryMode")}
                   </TabsTrigger>
                   <TabsTrigger
                     value="total"
-                    className="flex items-center gap-1.5 text-xs"
+                    className="flex items-center gap-1.5 text-sm"
                   >
                     <Grid className="h-3.5 w-3.5" />
                     {t("filterPage.totalMode")}
                   </TabsTrigger>
                 </TabsList>
 
-                <div className="text-muted-foreground flex items-center gap-3 text-xs">
+                <div className="text-muted-foreground flex items-center gap-3 text-sm">
                   <div className="bg-muted flex items-center gap-1 rounded-full px-2 py-1">
                     <ImageIcon className="text-muted-foreground/80 h-3.5 w-3.5" />
-                    <span className="font-medium">
+                    <span className="font-sm">
                       {t("labels.totalPhotosLabel")}:
                     </span>
-                    <span className="rounded-full bg-blue-50 px-1.5 font-mono text-[11px] text-blue-700">
+                    <span className="rounded-full bg-blue-50 px-1.5 font-mono text-[14px] text-blue-700">
                       {totalPhotoCount}
                     </span>
                   </div>
@@ -683,6 +683,8 @@ export default function PhotoFilterSubpage() {
                     <Trash2 className="h-4 w-4" />
                     {t("filterPage.disableRedundant")}
                   </Button>
+                </div>
+                <div className="flex justify-between gap-3">
                   <Button
                     onClick={handleEnableAll}
                     variant="outline"

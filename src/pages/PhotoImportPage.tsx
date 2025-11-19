@@ -567,8 +567,13 @@ export default function PhotoImportSubpage() {
     <div className="flex min-h-screen flex-col p-4">
       <div className="mb-4 flex justify-between">
         <FileImportDrawer setPhotos={setPhotos} />
-        <div className="text-right">
-          {t("labels.totalPhotosLabel")}: {photos.length}
+        <div className="bg-muted inline-flex items-center rounded-full px-3 py-1 text-sm font-medium">
+          <span className="text-muted-foreground">
+            {t("labels.totalPhotos")}
+          </span>
+          <span className="text-m ml-1 font-semibold text-blue-600 dark:text-blue-400">
+            {photos.length}
+          </span>
         </div>
       </div>
 
