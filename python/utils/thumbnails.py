@@ -1,34 +1,23 @@
-# backend/thumbnail_service.py
-
-from typing import List
-import concurrent.futures
-import io
+from typing import List, Callable
 import os
-import threading
+import io
 import time
+import threading
+import struct
 import zlib
-
-from PIL import Image
-
-import asyncio
 import concurrent.futures
 import ctypes
-import io
-import os
 
-# 组合文件头、信息头和图像数据
-import struct
-import threading
-import time
-import zlib
-from concurrent.futures import ThreadPoolExecutor
 from ctypes import HRESULT, POINTER, WinError, byref, windll
-from ctypes.wintypes import DWORD, LONG, UINT, WORD
+from ctypes.wintypes import DWORD, LONG, WORD
 
-import aiofiles
-from comtypes import COMMETHOD, GUID, IUnknown
 from PIL import Image
 from PIL.ExifTags import TAGS
+
+from comtypes import COMMETHOD, GUID, IUnknown
+
+# 进度回调类型（可接受任意参数签名以兼容现有调用）
+ProgressFn = Callable[..., None]
 
 # 手动定义缺少的类型
 LPCWSTR = ctypes.c_wchar_p
@@ -251,7 +240,6 @@ def generate_thumbnails(
     if not image_files:
         print("No valid image files to process.")
         return
-
 
     start_time = time.time()
     completed_count = 0

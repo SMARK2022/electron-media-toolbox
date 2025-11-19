@@ -3,9 +3,6 @@ from PIL import Image
 import numpy as np
 import argparse
 import torch
-import timm
-import sys
-import os
 import cv2
 from ..models.mobilenet_merged_with_kan import MobileNetMergedWithKAN
 from ..models.mobilenet_merged import MobileNetMerged

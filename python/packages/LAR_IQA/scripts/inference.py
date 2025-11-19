@@ -3,7 +3,6 @@ from PIL import Image
 import numpy as np
 import argparse
 import torch
-import timm
 import sys
 import os
 import cv2
@@ -29,7 +28,7 @@ def preprocess_image(image_path, color_space, device):
         image = Image.fromarray(cv2.cvtColor(np.array(image), cv2.COLOR_RGB2LAB))
     elif color_space == "YUV":
         image = Image.fromarray(cv2.cvtColor(np.array(image), cv2.COLOR_RGB2YUV))
-    
+
     transform_authentic = transforms.Compose([
         transforms.Resize((384, 384)),
         transforms.ToTensor(),
@@ -56,14 +55,14 @@ def main():
     parser.add_argument("--model_path", type=str, required=True, help="Path to the trained model")
     parser.add_argument("--use_kan", action="store_true", help="Use MobileNetMergedWithKAN model")
     parser.add_argument("--color_space", type=str, choices=["RGB", "HSV", "LAB", "YUV"], default="RGB", help="Color space to use for inference")
-    
+
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = load_model(args.model_path, args.use_kan, device)
     image_authentic, image_synthetic = preprocess_image(args.image_path, args.color_space, device)
     score = infer(model, image_authentic, image_synthetic)
-    
+
     print(f"Predicted quality score: {score}")
 
 if __name__ == "__main__":

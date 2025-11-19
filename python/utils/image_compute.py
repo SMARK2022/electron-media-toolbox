@@ -1,4 +1,3 @@
-import os
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed

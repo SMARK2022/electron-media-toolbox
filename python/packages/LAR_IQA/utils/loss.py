@@ -1,13 +1,12 @@
 import torch.nn as nn
-from scipy.stats import pearsonr
 import torch
 
-class Neg_Pearson_Loss(nn.Module):   
+class Neg_Pearson_Loss(nn.Module):
     #Taken from https://stackoverflow.com/a/19710598/11170350
     def __init__(self):
         super(Neg_Pearson_Loss,self).__init__()
         return
-    def forward(self, X, Y):       
+    def forward(self, X, Y):
         assert not torch.any(torch.isnan(X))
         assert not torch.any(torch.isnan(Y))
         # Normalise X and Y

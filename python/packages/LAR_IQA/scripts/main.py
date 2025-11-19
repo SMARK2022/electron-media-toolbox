@@ -1,4 +1,3 @@
-import torch
 import sys
 import os
 import wandb

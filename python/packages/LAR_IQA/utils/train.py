@@ -47,20 +47,18 @@ def build_optimizer_and_scheduler(network, config, train_loaders):
     )
 
 
-    warmup_epochs = config.warmup_epochs
     warmup_iter = 0
     for train_loader in train_loaders.values():
         warmup_iter += int(config.warmup_epochs * len(train_loader))
     max_iter = int((config.num_epochs + config.l_num_epochs) * len(train_loader))
-    
-    lr_lambda = (
-        lambda cur_iter: cur_iter / warmup_iter
-        if cur_iter <= warmup_iter
-        else 0.5 * (1 + torch.cos(torch.pi * (cur_iter - warmup_iter) / (max_iter - warmup_iter)))
-    )
-    
+
+    def lr_lambda(cur_iter):
+        return (cur_iter / warmup_iter
+            if cur_iter <= warmup_iter
+            else 0.5 * (1 + torch.cos(torch.pi * (cur_iter - warmup_iter) / (max_iter - warmup_iter))))
+
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
-    
+
     return optimizer, scheduler
 
 def train_epoch(network, loader, optimizer, scheduler, l2loss, plccloss, weights, color_space):
@@ -76,21 +74,21 @@ def train_epoch(network, loader, optimizer, scheduler, l2loss, plccloss, weights
         outputs = outputs.view(outputs.size()[0], 1, 1)
 
         optimizer.zero_grad()
-        
+
         NR_msel = l2loss(labels.flatten(), outputs.flatten())
-        
+
         if torch.isnan(outputs).any() or torch.isnan(labels).any():
-            print(f"NaNs found in outputs or labels for task {task_id}")
+            print("NaNs found in outputs or labels for task.")
             NR_crl = torch.tensor(0.0, device=outputs.device)
         else:
             NR_crl = plccloss(outputs.flatten()[None, :], labels.flatten()[None, :])
-        
-        
+
+
         loss = weights['NR_crl'] * NR_crl + weights['NR_msel'] * NR_msel
 
         loss.backward()
         optimizer.step()
-        scheduler.step()  
+        scheduler.step()
 
         cumu_loss += loss.item()
         wandb.log({"batch_loss": loss.item(), "NR_msel": NR_msel.item(), "NR_crl": NR_crl.item()})
@@ -132,11 +130,11 @@ def train(config=None):
             model = MobileNetMergedWithKAN()
         else:
             model = MobileNetMerged(
-                        authentic_weights_path="./pretrained/single_branch_pretrained/Authentic.pth", 
+                        authentic_weights_path="./pretrained/single_branch_pretrained/Authentic.pth",
                         synthetic_weights_path="./pretrained/single_branch_pretrained/Synthetic.pth"
                     )
-            
-            
+
+
         model.to(device)
 
         optimizer, scheduler = build_optimizer_and_scheduler(model, config, {"train_loader": train_loader})
