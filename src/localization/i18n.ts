@@ -98,6 +98,12 @@ i18n.use(initReactI18next).init({
           updateAvailable: "New version available, open GitHub",
           error: "Update check failed (click to retry)",
         },
+        exportPage: {
+          folderPathPlaceholder: "Enter export folder path...",
+          folderExists: "Folder exists",
+          folderNotExists: "Folder does not exist",
+          folderToCheck: "To check",
+        },
       },
     },
     zh: {
@@ -189,6 +195,12 @@ i18n.use(initReactI18next).init({
           upToDate: "当前已是最新版本",
           updateAvailable: "发现新版本，前往 GitHub 下载",
           error: "检查更新失败（点击重试）",
+        },
+        exportPage: {
+          folderPathPlaceholder: "请输入导出文件夹路径...",
+          folderExists: "文件夹存在",
+          folderNotExists: "文件夹不存在",
+          folderToCheck: "待检查",
         },
       },
     },

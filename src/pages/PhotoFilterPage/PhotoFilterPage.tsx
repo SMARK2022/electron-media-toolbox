@@ -15,6 +15,23 @@ import {
   Photo,
 } from "@/lib/db"; // getEnabledPhotosExtend 用于获取启用的照片
 import * as React from "react";
+import {
+  Settings2,
+  Image as ImageIcon,
+  Play,
+  RotateCcw,
+  CheckCircle2,
+  AlertCircle,
+  Server,
+  Layers,
+  Grid,
+  Filter,
+  Loader2,
+  Trash2,
+  Eye,
+  EyeOff,
+  Activity,
+} from "lucide-react";
 
 import { PhotoGridEnhance } from "@/components/PhotoGrid"; // Import PhotoGrid
 import {
@@ -320,11 +337,11 @@ export default function PhotoFilterSubpage() {
             >
               <TabsList className="grid grid-cols-2">
                 <TabsTrigger value="group">
-                  <span className="sr-only">分组模式</span>
+                  <Layers className="mr-1.5 h-3.5 w-3.5" />
                   分组模式
                 </TabsTrigger>
                 <TabsTrigger value="total">
-                  <span className="sr-only">整体模式</span>
+                  <Grid className="mr-1.5 h-3.5 w-3.5" />
                   整体模式
                 </TabsTrigger>
               </TabsList>
