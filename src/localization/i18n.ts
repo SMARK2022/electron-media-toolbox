@@ -10,14 +10,22 @@ i18n.use(initReactI18next).init({
           title: "Home Page",
           description: "This is an example of translation in en",
         },
+        homePage: {
+          backendService: "Backend Service",
+          responseTime: "Response Time",
+          endpoint: "Endpoint",
+          statusOnline: "Online",
+          statusOffline: "Offline",
+          statusConnecting: "Connecting",
+        },
         instructions: {
           importPhotos:
             "Import photos on the import page, then filter photos on the filter page, and finally export the photos with RAW files you need.",
         },
         status: {
           checking: "Checking server status",
-          backendRunning: "Python backend is running",
-          backendNotRunning: "Python backend is not running",
+          backendRunning: "Python is running",
+          backendNotRunning: "Python is not running",
           exportingPhotos: "Exporting Photos",
           exportComplete: "Export Complete",
           exportInProgress:
@@ -151,14 +159,22 @@ i18n.use(initReactI18next).init({
           title: "主页",
           description: "这是一个中文翻译示例",
         },
+        homePage: {
+          backendService: "后端服务",
+          responseTime: "响应时间",
+          endpoint: "接口地址",
+          statusOnline: "在线",
+          statusOffline: "离线",
+          statusConnecting: "连接中",
+        },
         instructions: {
           importPhotos:
             "在导入页面中导入照片，然后在筛选页面中进行照片筛选，最终导出您需要的照片 (连带RAW文件)。",
         },
         status: {
           checking: "检查服务器状态中",
-          backendRunning: "Python后端已启动",
-          backendNotRunning: "Python后端未启动",
+          backendRunning: "Python已启动",
+          backendNotRunning: "Python未启动",
           exportingPhotos: "正在导出照片",
           exportComplete: "导出完成",
           exportInProgress: "程序正在保存中，将会耗时较长未响应，请耐心等待。",
