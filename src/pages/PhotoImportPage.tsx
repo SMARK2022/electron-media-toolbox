@@ -268,7 +268,7 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
   // ---------- 样式 / 文案 ----------
 
   const dropAreaBase =
-    "mx-auto flex w-full max-w-[60vw] h-[calc(70vh-14rem)] items-center justify-center rounded-md border-2 border-dashed transition-colors duration-1000";
+    "mx-auto flex w-full max-w-[60vw] h-[calc(70vh-14.1rem)] items-center justify-center rounded-md border-2 border-dashed transition-colors duration-1000";
   const dropAreaClass = hasInvalidDrop
     ? `${dropAreaBase} border-red-500 bg-red-500/10`
     : `${dropAreaBase} border-gray-400`;
