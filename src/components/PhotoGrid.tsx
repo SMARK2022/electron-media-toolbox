@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import missing_icon from "@/assets/images/cat_missing.svg";
 import { Photo } from "@/lib/db";
+import { cn } from "@/lib/utils";
 
 interface PhotoGridProps {
   photos?: Photo[];
@@ -12,16 +13,39 @@ interface PhotoGridProps {
   columns?: number;
 }
 
+// 中间省略文件名，保留开头 + 后缀（尽量显示完整）
+function ellipsizeMiddle(name: string, maxLength = 36): string {
+  if (!name || name.length <= maxLength) return name;
+
+  const dotIndex = name.lastIndexOf(".");
+  let base = name;
+  let ext = "";
+
+  if (dotIndex > 0 && dotIndex < name.length - 1) {
+    base = name.slice(0, dotIndex);
+    ext = name.slice(dotIndex);
+  }
+
+  const remain = maxLength - 3 - ext.length;
+  if (remain <= 0) return name.slice(0, maxLength - 3) + "...";
+
+  const front = Math.ceil(remain / 2);
+  const back = Math.floor(remain / 2);
+
+  return `${base.slice(0, front)}...${base.slice(
+    Math.max(base.length - back, front),
+  )}${ext}`;
+}
+
 export function PhotoGridEnhance({
   photos = [],
   width = 200,
   onPhotoClick,
-  highlightPhotos: initialHighlightPhotos, // 接收的 prop
+  highlightPhotos: initialHighlightPhotos,
 }: PhotoGridProps & {
   onPhotoClick?: (photos: Photo[], event: string) => void | Promise<void>;
   highlightPhotos?: Photo[];
 }) {
-  // 确保 photos 是数组
   const photosArray = Array.isArray(photos) ? photos : [];
 
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
@@ -32,27 +56,22 @@ export function PhotoGridEnhance({
   // 每个 item 的 DOM 引用，用来计算几何位置 + scrollIntoView
   const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
 
-  const isPhotoHighlighted = (fileName: string): boolean => {
-    const result =
+  const isPhotoHighlighted = (fileName: string): boolean =>
+    !!(
       highlightPhotos?.some((photo) => photo.fileName === fileName) ||
-      initialHighlightPhotos?.some((photo) => photo.fileName === fileName) ||
-      false;
-    return result;
-  };
+      initialHighlightPhotos?.some((photo) => photo.fileName === fileName)
+    );
 
   useEffect(() => {
     setHighlightPhotos(initialHighlightPhotos);
   }, [initialHighlightPhotos]);
 
   /**
-   * 异步触发父组件的 onPhotoClick：
-   * - 不在当前事件回调里直接执行
-   * - 不等待其完成，避免键盘事件被重 IO 阻塞
+   * 异步触发父组件的 onPhotoClick
    */
   const triggerOnPhotoClick = useCallback(
     (selected: Photo[], event: string) => {
       if (!onPhotoClick) return;
-      // 用 setTimeout 0ms 推迟到当前事件处理完之后再执行
       setTimeout(() => {
         void onPhotoClick(selected, event);
       }, 0);
@@ -62,11 +81,6 @@ export function PhotoGridEnhance({
 
   /**
    * 根据当前 focusedIndex 和方向（up/down），找到“上一行/下一行”的最近元素。
-   * 算法：
-   *  1. 取当前元素中心点 (cx, cy)
-   *  2. 对所有其他元素，计算中心点 (x, y)
-   *  3. 过滤出 y 在当前元素上方/下方的候选
-   *  4. 找到“行差”最小的一行（|Δy| 最小），然后在这一行里找 |Δx| 最小的那个
    */
   const findVerticalNeighbor = (
     currentIndex: number,
@@ -82,9 +96,7 @@ export function PhotoGridEnhance({
     let bestIndex: number | null = null;
     let bestRowDelta = Infinity;
     let bestColDelta = Infinity;
-
-    // 一个小的容差，用来认为是“同一行”
-    const rowEps = 4; // px
+    const rowEps = 4; // px，认为是同一行的容差
 
     itemRefs.current.forEach((el, index) => {
       if (!el || index === currentIndex) return;
@@ -103,12 +115,10 @@ export function PhotoGridEnhance({
       const colDelta = Math.abs(deltaX);
 
       if (rowDelta + rowEps < bestRowDelta) {
-        // 明显更近的一行
         bestRowDelta = rowDelta;
         bestColDelta = colDelta;
         bestIndex = index;
       } else if (Math.abs(rowDelta - bestRowDelta) <= rowEps) {
-        // 认为在同一行，挑选 X 方向更近的
         if (colDelta < bestColDelta) {
           bestColDelta = colDelta;
           bestIndex = index;
@@ -119,11 +129,7 @@ export function PhotoGridEnhance({
     return bestIndex;
   };
 
-  /**
-   * 焦点变化时，自动滚动到对应元素附近：
-   * - 使用 block: 'nearest' / inline: 'nearest'，尽量少移动
-   * - 适配 ScrollArea / window 的滚动容器
-   */
+  // 焦点变化时，自动滚动到对应元素附近
   useEffect(() => {
     if (focusedIndex == null) return;
     const el = itemRefs.current[focusedIndex];
@@ -136,23 +142,27 @@ export function PhotoGridEnhance({
     });
   }, [focusedIndex]);
 
-  // 处理键盘事件
+  const selectPhotoByIndex = (index: number, event: "Select" | "Change") => {
+    const photo = photosArray[index];
+    if (!photo) return;
+    setFocusedIndex(index);
+    setHighlightPhotos([photo]);
+    triggerOnPhotoClick([photo], event);
+  };
+
+  // 键盘导航
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (photosArray.length === 0) return;
 
     let newFocusedIndex = focusedIndex;
 
-    // 如果还没任何焦点，第一次按方向键就选中第 0 张
+    // 第一次按方向键时，选中第 0 张
     if (focusedIndex === null) {
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
         e.preventDefault();
-        newFocusedIndex = 0;
-        setFocusedIndex(0);
-        const selectedPhoto = photosArray[0];
-        setHighlightPhotos([selectedPhoto]);
-        triggerOnPhotoClick([selectedPhoto], "Select");
-        return;
+        selectPhotoByIndex(0, "Select");
       }
+      return;
     }
 
     switch (e.key) {
@@ -162,10 +172,7 @@ export function PhotoGridEnhance({
           const targetIndex = findVerticalNeighbor(focusedIndex, "up");
           if (targetIndex !== null) {
             newFocusedIndex = targetIndex;
-            setFocusedIndex(newFocusedIndex);
-            const selectedPhoto = photosArray[newFocusedIndex];
-            setHighlightPhotos([selectedPhoto]);
-            triggerOnPhotoClick([selectedPhoto], "Select");
+            selectPhotoByIndex(newFocusedIndex, "Select");
           }
         }
         break;
@@ -176,10 +183,7 @@ export function PhotoGridEnhance({
           const targetIndex = findVerticalNeighbor(focusedIndex, "down");
           if (targetIndex !== null) {
             newFocusedIndex = targetIndex;
-            setFocusedIndex(newFocusedIndex);
-            const selectedPhoto = photosArray[newFocusedIndex];
-            setHighlightPhotos([selectedPhoto]);
-            triggerOnPhotoClick([selectedPhoto], "Select");
+            selectPhotoByIndex(newFocusedIndex, "Select");
           }
         }
         break;
@@ -188,10 +192,7 @@ export function PhotoGridEnhance({
         e.preventDefault();
         if (focusedIndex !== null && focusedIndex - 1 >= 0) {
           newFocusedIndex = focusedIndex - 1;
-          setFocusedIndex(newFocusedIndex);
-          const selectedPhoto = photosArray[newFocusedIndex];
-          setHighlightPhotos([selectedPhoto]);
-          triggerOnPhotoClick([selectedPhoto], "Select");
+          selectPhotoByIndex(newFocusedIndex, "Select");
         }
         break;
       }
@@ -199,19 +200,14 @@ export function PhotoGridEnhance({
         e.preventDefault();
         if (focusedIndex !== null && focusedIndex + 1 < photosArray.length) {
           newFocusedIndex = focusedIndex + 1;
-          setFocusedIndex(newFocusedIndex);
-          const selectedPhoto = photosArray[newFocusedIndex];
-          setHighlightPhotos([selectedPhoto]);
-          triggerOnPhotoClick([selectedPhoto], "Select");
+          selectPhotoByIndex(newFocusedIndex, "Select");
         }
         break;
       }
       case "Enter": {
         e.preventDefault();
         if (focusedIndex !== null) {
-          const selectedPhoto = photosArray[focusedIndex];
-          setHighlightPhotos([selectedPhoto]);
-          triggerOnPhotoClick([selectedPhoto], "Change");
+          selectPhotoByIndex(focusedIndex, "Change");
         }
         break;
       }
@@ -222,52 +218,37 @@ export function PhotoGridEnhance({
 
   return (
     <div
-      className="flex flex-wrap gap-1"
-      tabIndex={0} // 确保可以聚焦整个网格容器
-      onKeyDown={handleKeyDown} // 监听键盘事件
+      className="flex flex-wrap gap-3 outline-none"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
     >
-      {photosArray.map((photo, index) => (
-        <div
-          key={photo.fileName}
-          ref={(el) => {
-            itemRefs.current[index] = el;
-          }}
-          className="flex-none"
-          tabIndex={0} // 允许每个图片项获取焦点（方便 Tab 导航）
-          style={{
-            width: `${width}px`,
-            background: photo.isEnabled ? "var(--card)" : "gray",
-            borderRadius: "3%",
-            border: `2px solid ${
-              isPhotoHighlighted(photo.fileName) ? "orange" : "transparent"
-            }`,
-            transition: "border-color 0.3s ease-in-out",
-            opacity: photo.isEnabled ? 1 : 0.2,
-          }}
-          onClick={() => {
-            setHighlightPhotos([photo]);
-            triggerOnPhotoClick([photo], "Select");
-          }}
-          onDoubleClick={() => {
-            setHighlightPhotos([photo]);
-            triggerOnPhotoClick([photo], "Change");
-          }}
-          onFocus={() => setFocusedIndex(index)}
-          onMouseEnter={(e) => {
-            if (isPhotoHighlighted(photo.fileName)) {
-              (e.currentTarget as HTMLElement).style.borderColor = "orange";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!isPhotoHighlighted(photo.fileName)) {
-              (e.currentTarget as HTMLElement).style.borderColor =
-                "transparent";
-            }
-          }}
-        >
-          <LazyImageContainer key={photo.fileName} photo={photo} />
-        </div>
-      ))}
+      {photosArray.map((photo, index) => {
+        const highlighted = isPhotoHighlighted(photo.fileName);
+
+        return (
+          <div
+            key={photo.fileName}
+            ref={(el) => {
+              itemRefs.current[index] = el;
+            }}
+            tabIndex={0}
+            style={{ width: `${width}px` }}
+            className={cn(
+              "group bg-card text-card-foreground flex-none rounded-lg border shadow-sm transition-all duration-200",
+              "focus-visible:ring-ring hover:shadow-md focus-visible:ring-2 focus-visible:outline-none",
+              highlighted
+                ? "border-orange-400 ring-1 ring-orange-300"
+                : "border-border",
+              !photo.isEnabled && "opacity-40 grayscale",
+            )}
+            onClick={() => selectPhotoByIndex(index, "Select")}
+            onDoubleClick={() => selectPhotoByIndex(index, "Change")}
+            onFocus={() => setFocusedIndex(index)}
+          >
+            <LazyImageContainer photo={photo} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -281,54 +262,50 @@ function LazyImageContainer({ photo }: LazyImageContainerProps) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
-  const [hasError, setHasError] = useState(false); // 图片加载失败时使用兜底图
+  const [hasError, setHasError] = useState(false);
 
+  // 进入视口后再加载
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             setIsVisible(true);
-            observer.unobserve(entry.target); // 图片加载后停止观察
+            observer.unobserve(entry.target);
           }
         });
       },
       {
-        root: null, // 视口为根
-        threshold: 0.01, // 图片进入 1% 视口时触发
+        root: null,
+        threshold: 0.01,
       },
     );
 
-    if (imgRef.current) {
-      observer.observe(imgRef.current);
-    }
+    if (imgRef.current) observer.observe(imgRef.current);
 
     return () => {
-      if (imgRef.current) {
-        observer.unobserve(imgRef.current);
-      }
+      if (imgRef.current) observer.unobserve(imgRef.current);
     };
   }, []);
 
   useEffect(() => {
-    if (isVisible) {
-      if (photo.fileUrl) {
-        // 直接使用 photo.fileUrl 作为缩略图的 URL
-        setThumbnailUrl(photo.fileUrl);
-        setHasError(false); // 切换到新的图片时重置错误状态
-      } else {
-        // 如果本身就没有 URL，则直接使用兜底图
-        setThumbnailUrl(null);
-        setHasError(true);
-      }
+    if (!isVisible) return;
+
+    if (photo.fileUrl) {
+      setThumbnailUrl(photo.fileUrl);
+      setHasError(false);
+    } else {
+      setThumbnailUrl(null);
+      setHasError(true);
     }
   }, [isVisible, photo.fileUrl]);
 
-  // 安全处理 photo.info（可能为 undefined），并预计算数值
+  // 安全处理 photo.info，并格式化到 4 位小数
   const infoStr = photo.info ?? "";
   const numericInfo = /^[0-9]+(\.[0-9]+)?$/.test(infoStr)
     ? parseFloat(infoStr)
     : NaN;
+
   const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
 
   const colorStyle = !Number.isNaN(numericInfo)
@@ -339,38 +316,45 @@ function LazyImageContainer({ photo }: LazyImageContainerProps) {
         )})` // 绿色到蓝色
     : undefined;
 
+  const formattedInfo = !Number.isNaN(numericInfo)
+    ? numericInfo.toFixed(6)
+    : infoStr;
+
+  const showInfo = formattedInfo !== "";
+
+  const displayName = ellipsizeMiddle(photo.fileName);
+
   return (
-    <Card>
-      <div className="flex justify-center overflow-hidden rounded-md">
+    <Card className="h-full border-0 bg-transparent shadow-none">
+      <div className="bg-muted flex items-center justify-center overflow-hidden rounded-md">
         <img
           ref={imgRef}
           src={hasError ? missing_icon : thumbnailUrl || missing_icon}
           alt={photo.fileName}
           loading="lazy"
-          className="transform transition-transform duration-300 ease-in-out hover:scale-110"
-          style={{
-            display: "block",
-            objectFit: "contain",
-            maxWidth: "200px",
-            maxHeight: "180px",
-            borderRadius: "3%",
-          }}
+          className="h-[160px] max-w-full transform object-contain transition-transform duration-300 ease-in-out group-hover:scale-105"
           onError={() => {
-            // 图片加载失败时使用兜底图
             setHasError(true);
           }}
         />
       </div>
-      <div className="m-1 space-y-1 text-sm">
-        <h3 className="text-xs leading-none">{photo.fileName}</h3>
+      <div className="space-y-1 px-2 pt-1 pb-2 text-[12px]">
         <p
-          className="text-xs"
-          style={{
-            color: colorStyle,
-          }}
+          className="max-w-full truncate leading-tight font-medium"
+          title={photo.fileName}
         >
-          {photo.info}
+          {displayName}
         </p>
+        {showInfo && (
+          <p
+            className="font-mono"
+            style={{
+              color: colorStyle,
+            }}
+          >
+            {formattedInfo}
+          </p>
+        )}
       </div>
     </Card>
   );

@@ -1,7 +1,7 @@
 // "use client";
 
-import { CustomSlider } from "@/components/CustomSlider"; // 引入通用滑动条组件
-import ImagePreview from "@/components/ImagePreview"; // 引入图片预览组件
+import { CustomSlider } from "@/components/CustomSlider";
+import ImagePreview from "@/components/ImagePreview";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -13,28 +13,24 @@ import {
   updatePhotoEnabledStatus,
   PhotoExtend,
   Photo,
-} from "@/lib/db"; // getEnabledPhotosExtend 用于获取启用的照片
+} from "@/lib/db";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Settings2,
-  Image as ImageIcon,
-  Play,
-  RotateCcw,
-  CheckCircle2,
-  AlertCircle,
-  Server,
   Layers,
   Grid,
-  Filter,
-  Loader2,
+  Play,
+  RotateCcw,
   Trash2,
   Eye,
   EyeOff,
-  Activity,
+  Server,
+  Loader2,
+  AlertCircle,
+  Image as ImageIcon,
 } from "lucide-react";
 
-import { PhotoGridEnhance } from "@/components/PhotoGrid"; // Import PhotoGrid
+import { PhotoGridEnhance } from "@/components/PhotoGrid";
 import {
   Drawer,
   DrawerClose,
@@ -44,11 +40,12 @@ import {
   DrawerHeader,
   DrawerTitle,
   DrawerTrigger,
-} from "@/components/ui/drawer"; // 引入 Drawer 组件
-import { Progress } from "@/components/ui/progress"; // 引入进度条
+} from "@/components/ui/drawer";
+import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator"; // 引入分割线
-import PhotoDetailsTable from "./PhotoDetailsTable"; // Import the new component
+import { Separator } from "@/components/ui/separator";
+import PhotoDetailsTable from "./PhotoDetailsTable";
+import { cn } from "@/lib/utils";
 
 interface ServerData {
   status: string;
@@ -56,15 +53,144 @@ interface ServerData {
   workers: string[];
 }
 
+function ServerStatusMonitorDrawer({
+  serverStatus,
+  serverData,
+}: {
+  serverStatus: string;
+  serverData: ServerData | null;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <Drawer>
+      <DrawerTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="border-border bg-muted/60 text-muted-foreground hover:bg-muted flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium"
+        >
+          <Server className="h-3 w-3" />
+          <span className="max-w-[140px] truncate">{serverStatus}</span>
+        </Button>
+      </DrawerTrigger>
+      <DrawerContent className="bg-background max-h-[80vh] max-w-xl translate-y-0 border-t sm:rounded-t-xl sm:border">
+        <DrawerHeader className="border-b pb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <DrawerTitle className="text-base font-semibold">
+                {t("filterPage.serverTitle")}
+              </DrawerTitle>
+              <DrawerDescription className="text-muted-foreground text-xs">
+                {t("filterPage.serverQueueLength", {
+                  len: serverData?.task_queue_length ?? 0,
+                })}
+              </DrawerDescription>
+            </div>
+            <div
+              className={cn(
+                "rounded-full px-2 py-1 text-[12px] font-semibold",
+                serverData?.status === "空闲中"
+                  ? "bg-gray-100 text-gray-600"
+                  : "bg-emerald-100 text-emerald-700",
+              )}
+            >
+              {serverData?.status ?? t("filterPage.unknownStatus")}
+            </div>
+          </div>
+        </DrawerHeader>
+
+        <div className="space-y-4 p-4">
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="bg-muted rounded-lg p-3">
+              <p className="text-muted-foreground mb-1 text-[11px] font-medium">
+                {t("filterPage.serverQueueTitle")}
+              </p>
+              <p className="font-mono text-2xl font-bold text-blue-600">
+                {serverData?.task_queue_length ?? 0}
+              </p>
+            </div>
+            <div className="bg-muted rounded-lg p-3">
+              <p className="text-muted-foreground mb-1 text-[11px] font-medium">
+                {t("filterPage.serverWorkerCount") || "Workers"}
+              </p>
+              <p className="text-foreground font-mono text-2xl font-bold">
+                {serverData?.workers.length ?? 0}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+              {t("filterPage.workerLabelPlural") || "Workers Progress"}
+            </p>
+            <div className="space-y-2">
+              {serverData?.workers?.map(
+                (workerStatus: string, index: number) => (
+                  <div key={index} className="space-y-1">
+                    <div className="text-muted-foreground flex items-center justify-between text-[11px]">
+                      <span>
+                        {t("filterPage.workerLabel")} {index + 1}
+                      </span>
+                      <span className="text-foreground font-mono text-xs">
+                        {workerStatus}
+                      </span>
+                    </div>
+                    <Progress value={parseFloat(workerStatus)} />
+                  </div>
+                ),
+              )}
+              {!serverData?.workers?.length && (
+                <p className="text-muted-foreground text-center text-xs">
+                  {t("filterPage.noWorkerInfo") || "No worker info available."}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <DrawerFooter className="bg-muted/40 border-t px-4 py-3">
+          <DrawerClose asChild>
+            <Button variant="outline" size="sm" className="ml-auto">
+              {t("buttons.close")}
+            </Button>
+          </DrawerClose>
+        </DrawerFooter>
+      </DrawerContent>
+    </Drawer>
+  );
+}
+
+function PreviewPlaceholder() {
+  const { t } = useTranslation();
+  return (
+    <div className="border-muted-foreground/20 bg-muted/40 m-4 flex h-full flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center">
+      <div className="bg-muted mb-3 rounded-full p-3 shadow-sm">
+        <ImageIcon className="text-muted-foreground/40 h-8 w-8" />
+      </div>
+      <p className="text-foreground text-sm font-medium">
+        {t("filterPage.previewPlaceholderTitle") ||
+          "Select a photo from the gallery to preview"}
+      </p>
+      <p className="text-muted-foreground mt-1 max-w-xs text-xs">
+        {t("filterPage.previewPlaceholderDesc") ||
+          "Click any thumbnail on the left to view details and toggle its enabled status."}
+      </p>
+    </div>
+  );
+}
+
 export default function PhotoFilterSubpage() {
   const { t } = useTranslation();
+
   // 相册视图：二维数组，每个子数组是一组照片
   const [photos, setPhotos] = React.useState<Photo[][]>([]);
   // 服务端状态（简要字符串 + 完整数据）
-  const [serverStatus, setServerStatus] =
-    React.useState<string>(
-      t("filterPage.serverStatusPrefix", { status: t("filterPage.serverStatusFetching") }),
-    );
+  const [serverStatus, setServerStatus] = React.useState<string>(
+    t("filterPage.serverStatusPrefix", {
+      status: t("filterPage.serverStatusFetching"),
+    }),
+  );
   const [serverData, setServerData] = React.useState<ServerData | null>(null);
 
   // 右侧预览面板的数据
@@ -75,17 +201,14 @@ export default function PhotoFilterSubpage() {
   // 轮询控制：检测任务进行中时为 true，空闲且超时后置 false
   const [bool_needUpdate, setUpdate] = React.useState<boolean>(true);
   const [float_similarityThreshold, setSimilarityThreshold] =
-    React.useState<number>(() => {
-      // Retrieve the initial value from session storage or default to 0.8
-      return parseFloat(sessionStorage.getItem("similarityThreshold") || "0.8");
-    });
+    React.useState<number>(() =>
+      parseFloat(sessionStorage.getItem("similarityThreshold") || "0.8"),
+    );
 
   const [bool_showDisabled, setShowDisabledPhotos] =
     React.useState<boolean>(false);
   const [opt_sortedColumn, setSortedColumn] = React.useState("IQA");
-
   const [bool_reloadAlbum, setReloadAlbum] = React.useState<boolean>(false);
-
   const [bool_isPreviewEnabled, setIsPreviewEnabled] =
     React.useState<boolean>(false);
 
@@ -106,8 +229,9 @@ export default function PhotoFilterSubpage() {
    * 使用 useCallback 保证给 setInterval 的永远是最新逻辑。
    */
   const fetchEnabledPhotos = React.useCallback(async () => {
-    console.log("galleryTabValue", opt_galleryTabValue);
-    console.log("showDisabledPhotos", bool_showDisabled);
+    // console.log("galleryTabValue", opt_galleryTabValue);
+    // console.log("showDisabledPhotos", bool_showDisabled);
+
     try {
       // group 模式：-1 表示“未分组/基础组”，total 模式：-2 表示“整体列表”
       const undefinedGroupPhotos: PhotoExtend[] =
@@ -194,37 +318,40 @@ export default function PhotoFilterSubpage() {
           const timeDifference = (currentTime - parseInt(submitTime)) / 1000;
 
           // 提交 6 秒后，如果状态仍然是空闲，则 5 秒后停止轮询
-          if (timeDifference > 6 && data.status === "空闲中") {
+          if (timeDifference > 1 && (data.status === "空闲中")) {
             setTimeout(() => {
               if (data.status === "空闲中") {
                 setUpdate(false);
                 console.log("停止更新");
               }
-            }, 5000);
+            }, 1000);
           }
         }
       } else {
         setServerStatus(
-          t("filterPage.serverStatusPrefix", { status: t("filterPage.serverUnreachable") }),
+          t("filterPage.serverStatusPrefix", {
+            status: t("filterPage.serverUnreachable"),
+          }),
         );
       }
     } catch {
       setServerStatus(
-        t("filterPage.serverStatusPrefix", { status: t("filterPage.serverRequestFailed") }),
+        t("filterPage.serverStatusPrefix", {
+          status: t("filterPage.serverRequestFailed"),
+        }),
       );
     }
-  }, [bool_needUpdate]);
+  }, [bool_needUpdate, t]);
 
   const handleSliderChange = (value: number) => {
     setSimilarityThreshold(value);
-    sessionStorage.setItem("similarityThreshold", value.toString()); // Store value in session storage
+    sessionStorage.setItem("similarityThreshold", value.toString());
   };
 
   const handleSubmit = async () => {
     const currentTime = Date.now();
     sessionStorage.setItem("submitTime", currentTime.toString());
 
-    // Get the database path from the Electron API
     const dbPath = await window.ElectronDB.getDbPath();
 
     const response = await fetch("http://127.0.0.1:8000/detect_images", {
@@ -234,8 +361,8 @@ export default function PhotoFilterSubpage() {
       },
       body: JSON.stringify({
         similarity_threshold: float_similarityThreshold,
-        db_path: dbPath, // Include the database path in the request
-        show_disabled_photos: bool_showDisabled, // Include the showDisabledPhotos parameter
+        db_path: dbPath,
+        show_disabled_photos: bool_showDisabled,
       }),
     });
 
@@ -287,8 +414,6 @@ export default function PhotoFilterSubpage() {
 
   /**
    * 轮询相册数据：每 4 秒刷新一次，受 bool_needUpdate 控制
-   * 同时在依赖变化时（bool_needUpdate / fetchEnabledPhotos）重新建 interval，
-   * 避免使用旧闭包。
    */
   React.useEffect(() => {
     // 首次或依赖变化时，先拉一次
@@ -305,9 +430,6 @@ export default function PhotoFilterSubpage() {
 
   /**
    * 显式触发相册刷新：
-   * - bool_reloadAlbum 为 true（比如弃用/启用操作）
-   * - bool_showDisabled 切换（显示/隐藏弃用照片）
-   * - opt_galleryTabValue 切换（分组 / 整体）
    */
   React.useEffect(() => {
     fetchEnabledPhotos();
@@ -336,32 +458,66 @@ export default function PhotoFilterSubpage() {
     return () => window.clearInterval(interval_status);
   }, [bool_needUpdate, fetchServerStatus]);
 
+  const totalPhotoCount = photos.flat().length;
+
   return (
-    <div className="min-h-screen p-4">
-      <div className="flex gap-6">
-        {/* 左侧：主画廊 */}
-        <div className="md:order-1">
-          <div className="flex h-[85vh] max-w-[70vw] min-w-[50vw] flex-col space-y-4">
+    <div className="flex min-h-screen w-full flex-col bg-slate-50/60 p-4">
+      {/* 顶层左右 65% / 35% 分栏布局 */}
+      <div className="flex w-full flex-1 gap-4">
+        {/* 左侧：主画廊（约 65% 宽度） */}
+        <div className="order-1 max-w-[65%] min-w-[55%] basis-[65%]">
+          <div className="bg-background/80 flex h-[85vh] w-full flex-col space-y-4 rounded-xl p-3 shadow-sm">
             <Tabs
               id="gallery-pannel"
               value={opt_galleryTabValue}
               onValueChange={setGalleryTabValue}
+              className="space-y-3"
             >
-              <TabsList className="grid grid-cols-2">
-                <TabsTrigger value="group">
-                  <Layers className="mr-1.5 h-3.5 w-3.5" />
+              {/* 顶部工具栏：模式切换 + 总数提示 */}
+              <div className="flex items-center justify-between gap-3">
+                <TabsList className="bg-muted/70 grid w-[220px] grid-cols-2">
+                  <TabsTrigger
+                    value="group"
+                    className="flex items-center gap-1.5 text-xs"
+                  >
+                    <Layers className="h-3.5 w-3.5" />
                     {t("filterPage.galleryMode")}
-                </TabsTrigger>
-                <TabsTrigger value="total">
-                  <Grid className="mr-1.5 h-3.5 w-3.5" />
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="total"
+                    className="flex items-center gap-1.5 text-xs"
+                  >
+                    <Grid className="h-3.5 w-3.5" />
                     {t("filterPage.totalMode")}
-                </TabsTrigger>
-              </TabsList>
+                  </TabsTrigger>
+                </TabsList>
 
-              {/* 这里用一个 ScrollArea 展示当前 photos（无论是 group 还是 total） */}
-              <ScrollArea className="mx-auto h-[calc(100vh-200px)] max-w-[calc((100vw-10px)*0.6)] min-w-[calc((100vw-10px)*0.6)] rounded-md border p-4">
+                <div className="text-muted-foreground flex items-center gap-3 text-xs">
+                  <div className="bg-muted flex items-center gap-1 rounded-full px-2 py-1">
+                    <ImageIcon className="text-muted-foreground/80 h-3.5 w-3.5" />
+                    <span className="font-medium">
+                      {t("labels.totalPhotosLabel")}:
+                    </span>
+                    <span className="rounded-full bg-blue-50 px-1.5 font-mono text-[11px] text-blue-700">
+                      {totalPhotoCount}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Scrollable Gallery：宽度随左侧 65% 容器自适应 */}
+              <ScrollArea className="mx-auto h-[calc(100vh-220px)] w-full rounded-xl border bg-slate-50 p-3">
                 {photos.map((group, index) => (
                   <React.Fragment key={index}>
+                    {opt_galleryTabValue === "group" && (
+                      <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                        <span>
+                          {t("filterPage.groupLabel") || "Group"} {index + 1}
+                        </span>
+                        <div className="h-px flex-1 bg-slate-200" />
+                      </div>
+                    )}
+
                     <PhotoGridEnhance
                       photos={group}
                       onPhotoClick={async (clickphotos, event) => {
@@ -369,12 +525,12 @@ export default function PhotoFilterSubpage() {
                           // 异步获取扩展信息
                           const extended =
                             await getPhotosExtendByPhotos(clickphotos);
-                          console.log("选中了照片:", extended, clickphotos);
+                          // console.log("选中了照片:", extended, clickphotos);
 
                           setPreviewPhotos(extended);
                           setPannelTabValue("preview");
                         } else if (event === "Change") {
-                          console.log("修改了照片:", clickphotos);
+                          // console.log("修改了照片:", clickphotos);
 
                           // 先更新启用状态（默认 undefined 按 true 处理）
                           await updatePhotoEnabledStatus(
@@ -404,88 +560,109 @@ export default function PhotoFilterSubpage() {
                     />
 
                     {index < photos.length - 1 && (
-                      <Separator className="mt-2 mb-2" />
+                      <div className="my-3">
+                        <Separator className="bg-slate-200" />
+                      </div>
                     )}
                   </React.Fragment>
                 ))}
+
+                {photos.length === 0 && (
+                  <div className="text-muted-foreground flex h-[60vh] flex-col items-center justify-center text-center">
+                    <div className="mb-3 rounded-full bg-white p-4 shadow-sm">
+                      <ImageIcon className="h-8 w-8 opacity-30" />
+                    </div>
+                    <p className="text-sm font-medium">
+                      {t("filterPage.noPhotosFoundTitle") || "No photos found"}
+                    </p>
+                    <p className="text-muted-foreground mt-1 max-w-xs text-xs">
+                      {t("filterPage.noPhotosFoundDesc") ||
+                        "Try adjusting filters, importing more photos, or running a new detection task."}
+                    </p>
+                  </div>
+                )}
               </ScrollArea>
             </Tabs>
 
             {/* 底部：提交任务 + 服务端状态 + 显示弃用开关 */}
-            <div className="flex items-center justify-between space-x-2">
-              <div className="flex items-center space-x-2">
-                <Button onClick={handleSubmit}>{t("filterPage.submitTask")}</Button>
-                {/* 使用 Drawer 显示详细的服务端状态 */}
-                <Drawer>
-                  <DrawerTrigger>{serverStatus}</DrawerTrigger>
-                  <DrawerContent>
-                    <DrawerHeader>
-                      <DrawerTitle>{t("filterPage.serverTitle")}</DrawerTitle>
-                      <DrawerDescription>
-                        {t("filterPage.serverQueueLength", {
-                          len: serverData?.task_queue_length ?? t("placeholders.detectedFolder"),
-                        })}
-                      </DrawerDescription>
-                    </DrawerHeader>
-                    <div className="space-y-4">
-                      {/* 展示每个 worker 的进度 */}
-                      {serverData?.workers?.map(
-                        (workerStatus: string, index: number) => (
-                          <div key={index} className="mx-auto w-1/4">
-                            <div className="flex justify-between">
-                                <span>
-                                  {t("filterPage.workerLabel")} {index + 1}
-                                </span>
-                              <span>{workerStatus}</span>
-                            </div>
-                            <Progress value={parseFloat(workerStatus)} />
-                          </div>
-                        ),
-                      )}
-                    </div>
-                    <DrawerFooter>
-                      <DrawerClose>
-                          <Button variant="outline">{t("buttons.close")}</Button>
-                      </DrawerClose>
-                    </DrawerFooter>
-                  </DrawerContent>
-                </Drawer>
+            <div className="bg-background flex items-center justify-between rounded-lg border px-3 py-2 text-xs shadow-sm">
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleSubmit}
+                  size="sm"
+                  className="flex items-center gap-1.5 bg-blue-600 text-xs font-medium text-white shadow-sm hover:bg-blue-700"
+                >
+                  {bool_needUpdate ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5 fill-current" />
+                  )}
+                  <span>{t("filterPage.submitTask")}</span>
+                </Button>
+
+                <ServerStatusMonitorDrawer
+                  serverStatus={serverStatus}
+                  serverData={serverData}
+                />
               </div>
-              <div className="flex items-center justify-between space-x-2">
+
+              <div className="bg-muted/80 text-muted-foreground flex items-center gap-2 rounded-md border px-2 py-1 text-[11px]">
+                <Label
+                  htmlFor="disabled-display"
+                  className="text-muted-foreground flex cursor-pointer items-center gap-1.5 text-[11px] font-normal"
+                >
+                  {bool_showDisabled ? (
+                    <Eye className="h-3.5 w-3.5" />
+                  ) : (
+                    <EyeOff className="h-3.5 w-3.5" />
+                  )}
+                  <span>
+                    {t("filterPage.showDisabledPhotos") || "Show disabled"}
+                  </span>
+                </Label>
                 <Switch
                   id="disabled-display"
                   checked={bool_showDisabled}
                   onCheckedChange={setShowDisabledPhotos}
+                  className="scale-90"
                 />
-                  <Label htmlFor="disabled-display">{t("filterPage.showDisabledPhotos")}</Label>
               </div>
             </div>
           </div>
         </div>
 
-        {/* 右侧：筛选 / 预览面板 */}
-        <div className="hidden h-[90vh] max-w-[35vw] flex-col space-y-4 sm:flex md:order-2">
+        {/* 右侧：筛选 / 预览面板（约 35% 宽度） */}
+        <div className="hidden max-w-[35%] basis-[35%] flex-col space-y-4 sm:flex md:order-2">
           <Tabs
             id="side-pannel"
             value={opt_panelTabValue}
             onValueChange={setPannelTabValue}
-            className="flex-1"
+            className="bg-background/80 flex-1 rounded-xl p-3 shadow-sm"
           >
-            <div className="min-w-[35vw]">
-              <TabsList className="grid grid-cols-2">
-                <TabsTrigger value="filter">
-                  <span className="sr-only">筛选</span>
+            <div className="mb-3 w-full">
+              <TabsList className="bg-muted/70 grid grid-cols-2">
+                <TabsTrigger
+                  value="filter"
+                  className="flex items-center gap-1.5 text-xs"
+                >
+                  <AlertCircle className="h-3.5 w-3.5" />
                   {t("filterPage.filterTab")}
                 </TabsTrigger>
-                <TabsTrigger value="preview">
-                  <span className="sr-only">预览</span>
+                <TabsTrigger
+                  value="preview"
+                  className="flex items-center gap-1.5 text-xs"
+                >
+                  <ImageIcon className="h-3.5 w-3.5" />
                   {t("filterPage.previewTab")}
                 </TabsTrigger>
               </TabsList>
             </div>
 
-            <TabsContent value="filter" className="mt-0 border-0 p-0">
-              <div className="mb-4">
+            <TabsContent
+              value="filter"
+              className="mt-0 border-0 bg-transparent p-0"
+            >
+              <div className="space-y-4">
                 <CustomSlider
                   label={t("filterPage.similarityThresholdLabel")}
                   description={t("filterPage.similarityThresholdDesc")}
@@ -495,16 +672,46 @@ export default function PhotoFilterSubpage() {
                   value={float_similarityThreshold}
                   onChange={handleSliderChange}
                 />
-              </div>
-              <div className="flex justify-between">
-                <Button onClick={handleDisableRedundant}>{t("filterPage.disableRedundant")}</Button>
-                <Button onClick={handleEnableAll}>{t("filterPage.enableAll")}</Button>
+
+                <div className="flex justify-between gap-3">
+                  <Button
+                    onClick={handleDisableRedundant}
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 justify-start gap-2 text-red-600 hover:bg-red-50 hover:text-red-700"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {t("filterPage.disableRedundant")}
+                  </Button>
+                  <Button
+                    onClick={handleEnableAll}
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 justify-start gap-2"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    {t("filterPage.enableAll")}
+                  </Button>
+                </div>
+
+                <div className="mt-3 rounded-md bg-blue-50 p-3 text-xs text-blue-800">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                    <p className="leading-relaxed">
+                      {t("filterPage.filterHint") ||
+                        "Adjust the similarity threshold before running detection. Use bulk actions to quickly organize your photo groups."}
+                    </p>
+                  </div>
+                </div>
               </div>
             </TabsContent>
 
-            <TabsContent value="preview" className="mt-0 border-0 p-0">
-              {preview_photos.length > 0 && (
-                <div className="p-4">
+            <TabsContent
+              value="preview"
+              className="mt-0 border-0 bg-transparent p-0"
+            >
+              {preview_photos.length > 0 ? (
+                <div>
                   <ImagePreview
                     src={`local-resource://${preview_photos[0].filePath}`}
                     width={"33vw"} // 预览控件的宽度
@@ -520,6 +727,8 @@ export default function PhotoFilterSubpage() {
                     />
                   </div>
                 </div>
+              ) : (
+                <PreviewPlaceholder />
               )}
             </TabsContent>
           </Tabs>

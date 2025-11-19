@@ -123,7 +123,20 @@ i18n.use(initReactI18next).init({
           unknownStatus: "unknown",
           serverTitle: "Server Status",
           serverQueueLength: "Current task queue length: {{len}}",
+          serverQueueTitle: "Task Queue",
+          serverWorkerCount: "Worker Count",
+          workerLabelPlural: "Workers Progress",
           workerLabel: "Worker",
+          noWorkerInfo: "No worker info available.",
+          previewPlaceholderTitle: "Select a photo from the gallery to preview",
+          previewPlaceholderDesc:
+            "Click any thumbnail on the left to view details and toggle its enabled status.",
+          groupLabel: "Group",
+          noPhotosFoundTitle: "No photos found",
+          noPhotosFoundDesc:
+            "Try adjusting filters, importing more photos, or running a new detection task.",
+          filterHint:
+            "Adjust the similarity threshold before running detection. Use bulk actions to quickly organize your photo groups.",
         },
       },
     },
@@ -242,7 +255,20 @@ i18n.use(initReactI18next).init({
           unknownStatus: "未知状态",
           serverTitle: "服务端状态",
           serverQueueLength: "当前任务队列长度: {{len}}",
+          serverQueueTitle: "任务队列",
+          serverWorkerCount: "Worker 数量",
+          workerLabelPlural: "Worker 进度",
           workerLabel: "Worker",
+          noWorkerInfo: "暂无 worker 信息可用。",
+          previewPlaceholderTitle: "从图库选择一张照片进行预览",
+          previewPlaceholderDesc:
+            "点击左侧任意缩略图查看详情并切换启用状态。",
+          groupLabel: "分组",
+          noPhotosFoundTitle: "未找到照片",
+          noPhotosFoundDesc:
+            "尝试调整筛选条件、导入更多照片或运行新的检测任务。",
+          filterHint:
+            "在运行检测之前调整相似度阈值。使用批量操作可快速整理照片分组。",
         },
       },
     },

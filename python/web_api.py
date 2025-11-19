@@ -53,7 +53,7 @@ class TaskManager:
                     )
 
                     async with self.lock:
-                        global_state["status"] = "处理完成"
+                        global_state["status"] = "空闲中"
 
                 except Exception as e:
                     print(f"任务执行错误: {e}")
@@ -65,7 +65,7 @@ class TaskManager:
                 finally:
                     async with self.lock:
                         global_state["task_queue_length"] = self.task_queue.qsize()
-                        if global_state["status"] != "处理完成":
+                        if global_state["status"] != "空闲中":
                             global_state["status"] = f"队列中剩余{self.task_queue.qsize()}个任务" if self.task_queue.qsize() > 0 else "空闲中"
                     self.task_queue.task_done()
         except asyncio.CancelledError:
