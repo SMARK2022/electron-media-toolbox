@@ -15,6 +15,7 @@ import {
   Photo,
 } from "@/lib/db"; // getEnabledPhotosExtend 用于获取启用的照片
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import {
   Settings2,
   Image as ImageIcon,
@@ -56,11 +57,14 @@ interface ServerData {
 }
 
 export default function PhotoFilterSubpage() {
+  const { t } = useTranslation();
   // 相册视图：二维数组，每个子数组是一组照片
   const [photos, setPhotos] = React.useState<Photo[][]>([]);
   // 服务端状态（简要字符串 + 完整数据）
   const [serverStatus, setServerStatus] =
-    React.useState<string>("正在获取服务端状态...");
+    React.useState<string>(
+      t("filterPage.serverStatusPrefix", { status: t("filterPage.serverStatusFetching") }),
+    );
   const [serverData, setServerData] = React.useState<ServerData | null>(null);
 
   // 右侧预览面板的数据
@@ -177,7 +181,11 @@ export default function PhotoFilterSubpage() {
       const response = await fetch("http://localhost:8000/status");
       if (response.ok) {
         const data: ServerData = await response.json();
-        setServerStatus(`服务端状态: ${data.status || "未知状态"}`);
+        setServerStatus(
+          t("filterPage.serverStatusPrefix", {
+            status: data.status || t("filterPage.unknownStatus"),
+          }),
+        );
         setServerData(data);
 
         const submitTime = sessionStorage.getItem("submitTime");
@@ -196,10 +204,14 @@ export default function PhotoFilterSubpage() {
           }
         }
       } else {
-        setServerStatus("服务端状态: 无法连接");
+        setServerStatus(
+          t("filterPage.serverStatusPrefix", { status: t("filterPage.serverUnreachable") }),
+        );
       }
     } catch {
-      setServerStatus("服务端状态: 请求失败");
+      setServerStatus(
+        t("filterPage.serverStatusPrefix", { status: t("filterPage.serverRequestFailed") }),
+      );
     }
   }, [bool_needUpdate]);
 
@@ -338,11 +350,11 @@ export default function PhotoFilterSubpage() {
               <TabsList className="grid grid-cols-2">
                 <TabsTrigger value="group">
                   <Layers className="mr-1.5 h-3.5 w-3.5" />
-                  分组模式
+                    {t("filterPage.galleryMode")}
                 </TabsTrigger>
                 <TabsTrigger value="total">
                   <Grid className="mr-1.5 h-3.5 w-3.5" />
-                  整体模式
+                    {t("filterPage.totalMode")}
                 </TabsTrigger>
               </TabsList>
 
@@ -402,16 +414,17 @@ export default function PhotoFilterSubpage() {
             {/* 底部：提交任务 + 服务端状态 + 显示弃用开关 */}
             <div className="flex items-center justify-between space-x-2">
               <div className="flex items-center space-x-2">
-                <Button onClick={handleSubmit}>提交任务</Button>
+                <Button onClick={handleSubmit}>{t("filterPage.submitTask")}</Button>
                 {/* 使用 Drawer 显示详细的服务端状态 */}
                 <Drawer>
                   <DrawerTrigger>{serverStatus}</DrawerTrigger>
                   <DrawerContent>
                     <DrawerHeader>
-                      <DrawerTitle>服务端状态</DrawerTitle>
+                      <DrawerTitle>{t("filterPage.serverTitle")}</DrawerTitle>
                       <DrawerDescription>
-                        当前任务队列长度:{" "}
-                        {serverData?.task_queue_length ?? "无"}
+                        {t("filterPage.serverQueueLength", {
+                          len: serverData?.task_queue_length ?? t("placeholders.detectedFolder"),
+                        })}
                       </DrawerDescription>
                     </DrawerHeader>
                     <div className="space-y-4">
@@ -420,7 +433,9 @@ export default function PhotoFilterSubpage() {
                         (workerStatus: string, index: number) => (
                           <div key={index} className="mx-auto w-1/4">
                             <div className="flex justify-between">
-                              <span>Worker {index + 1}</span>
+                                <span>
+                                  {t("filterPage.workerLabel")} {index + 1}
+                                </span>
                               <span>{workerStatus}</span>
                             </div>
                             <Progress value={parseFloat(workerStatus)} />
@@ -430,7 +445,7 @@ export default function PhotoFilterSubpage() {
                     </div>
                     <DrawerFooter>
                       <DrawerClose>
-                        <Button variant="outline">关闭</Button>
+                          <Button variant="outline">{t("buttons.close")}</Button>
                       </DrawerClose>
                     </DrawerFooter>
                   </DrawerContent>
@@ -442,7 +457,7 @@ export default function PhotoFilterSubpage() {
                   checked={bool_showDisabled}
                   onCheckedChange={setShowDisabledPhotos}
                 />
-                <Label htmlFor="disabled-display">显示弃用照片</Label>
+                  <Label htmlFor="disabled-display">{t("filterPage.showDisabledPhotos")}</Label>
               </div>
             </div>
           </div>
@@ -460,11 +475,11 @@ export default function PhotoFilterSubpage() {
               <TabsList className="grid grid-cols-2">
                 <TabsTrigger value="filter">
                   <span className="sr-only">筛选</span>
-                  筛选
+                  {t("filterPage.filterTab")}
                 </TabsTrigger>
                 <TabsTrigger value="preview">
                   <span className="sr-only">预览</span>
-                  预览
+                  {t("filterPage.previewTab")}
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -472,8 +487,8 @@ export default function PhotoFilterSubpage() {
             <TabsContent value="filter" className="mt-0 border-0 p-0">
               <div className="mb-4">
                 <CustomSlider
-                  label="相似度阈值"
-                  description="调整图像检测的相似度阈值。值越高，表示相似度标准越严格。"
+                  label={t("filterPage.similarityThresholdLabel")}
+                  description={t("filterPage.similarityThresholdDesc")}
                   min={0}
                   max={1}
                   step={0.01}
@@ -482,8 +497,8 @@ export default function PhotoFilterSubpage() {
                 />
               </div>
               <div className="flex justify-between">
-                <Button onClick={handleDisableRedundant}>弃用冗余</Button>
-                <Button onClick={handleEnableAll}>启用所有</Button>
+                <Button onClick={handleDisableRedundant}>{t("filterPage.disableRedundant")}</Button>
+                <Button onClick={handleEnableAll}>{t("filterPage.enableAll")}</Button>
               </div>
             </TabsContent>
 
