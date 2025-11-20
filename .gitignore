@@ -44,7 +44,6 @@ Thumbs.db
 *.pyc
 __pycache__/
 .ipynb_checkpoints/
-*.ipynb
 venv/
 env/
 
