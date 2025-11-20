@@ -53,14 +53,6 @@ _IQA_SESSION = ort.InferenceSession(
 
 _IQA_INPUT_NAMES = [inp.name for inp in _IQA_SESSION.get_inputs()]
 
-# 仅用于日志 / 兼容；HSV 直方图本身只用 CPU
-if "CUDAExecutionProvider" in _IQA_SESSION.get_providers():
-    device: str = "cuda"
-elif "DmlExecutionProvider" in _IQA_SESSION.get_providers():
-    device = "dml"
-else:
-    device = "cpu"
-
 HSVHist = Tuple[np.ndarray, np.ndarray, np.ndarray]
 BINS: List[int] = [90, 128, 128]
 
@@ -86,7 +78,6 @@ def cv_imread(file_path: str) -> np.ndarray:
 def compute_centered_hsv_histogram(
     img_bgr: np.ndarray,
     bins: List[int],
-    device_str: Optional[str] = None,  # 保留参数以兼容旧签名，内部不使用
 ) -> HSVHist:
     """
     计算图像的 HSV 直方图，并做归一化 + 去均值。
@@ -156,7 +147,7 @@ def ensure_hist_cached(
     start_time = time.time()
     if img_bgr is None:
         img_bgr = cv_imread(file_path)
-    hist_cache[file_path] = compute_centered_hsv_histogram(img_bgr, BINS, device)
+    hist_cache[file_path] = compute_centered_hsv_histogram(img_bgr, BINS)
     elapsed = time.time() - start_time
     print(f"[ensure_hist_cached] {file_path} histogram computed in {elapsed:.3f}s")
 
