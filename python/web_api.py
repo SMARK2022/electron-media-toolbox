@@ -8,7 +8,8 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
-from utils.image_compute import process_and_group_images
+from utils.image_compute_onnx import process_and_group_images  # 使用 ONNX 版本的图像处理函数
+# from utils.image_compute import process_and_group_images  # 使用 ONNX 版本的图像处理函数
 from utils.thumbnails import generate_thumbnails, get_thumbnail
 from fastapi.middleware.cors import CORSMiddleware
 

@@ -1,31 +1,76 @@
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Callable, Optional, Any
 from pathlib import Path
 
 import cv2
 import numpy as np
-import torch
-from packages.LAR_IQA.scripts.utils import infer, load_model, preprocess_image
+import onnxruntime as ort
+
 from utils.database import (
     load_cache_from_db,
     save_cache_to_db,
     update_group_id_in_db,
 )
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-# load model from path relative to this file
-base_dir = Path(__file__).resolve().parent
-checkpoint = base_dir / ".." / "packages" / "LAR_IQA" / "checkpoint_epoch_3.pt"
-model = load_model(str(checkpoint), False, device)
+# ---------------------------------------------------------------------------
+# ONNX Runtime session initialization
+# ---------------------------------------------------------------------------
+
+
+def _select_ort_providers() -> List[str]:
+    """选择最合适的 ONNX Runtime 执行后端。
+
+    优先级：
+    1. CUDAExecutionProvider
+    2. DmlExecutionProvider (DirectML, 适合 Windows + DX12 显卡)
+    3. CPUExecutionProvider
+    """
+    providers = ort.get_available_providers()
+    if "CUDAExecutionProvider" in providers:
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    if "DmlExecutionProvider" in providers:
+        return ["DmlExecutionProvider", "CPUExecutionProvider"]
+    return ["CPUExecutionProvider"]
+
+
+# ONNX IQA 模型路径（由原来的 .pt 导出的 .onnx）
+# 如果你的 onnx 文件名不同，请改这里
+_base_dir = Path(__file__).resolve().parent
+_checkpoint_onnx = _base_dir / ".." / "checkpoint" / "lar_iqa.onnx"
+
+_session_options = ort.SessionOptions()
+# 根据需要可以微调线程数；0 表示由 ORT 自己决定
+_session_options.intra_op_num_threads = 0
+_session_options.inter_op_num_threads = 0
+
+_IQA_SESSION = ort.InferenceSession(
+    str(_checkpoint_onnx),
+    sess_options=_session_options,
+    providers=_select_ort_providers(),
+)
+
+_IQA_INPUT_NAMES = [inp.name for inp in _IQA_SESSION.get_inputs()]
+
+# 仅用于日志 / 兼容；HSV 直方图本身只用 CPU
+if "CUDAExecutionProvider" in _IQA_SESSION.get_providers():
+    device: str = "cuda"
+elif "DmlExecutionProvider" in _IQA_SESSION.get_providers():
+    device = "dml"
+else:
+    device = "cpu"
 
 HSVHist = Tuple[np.ndarray, np.ndarray, np.ndarray]
-BINS = [90, 128, 128]
+BINS: List[int] = [90, 128, 128]
+
+# ---------------------------------------------------------------------------
+# 图像读取
+# ---------------------------------------------------------------------------
 
 
 def cv_imread(file_path: str) -> np.ndarray:
-    """Robust cv2 imread that supports non-ASCII paths."""
+    """支持中文路径的 cv2 读取."""
     data = np.fromfile(file_path, dtype=np.uint8)
     img = cv2.imdecode(data, cv2.IMREAD_COLOR)
     if img is None:
@@ -33,74 +78,48 @@ def cv_imread(file_path: str) -> np.ndarray:
     return img
 
 
-def rgb_channel_to_hsv_channel(
-    r: torch.Tensor,
-    g: torch.Tensor,
-    b: torch.Tensor,
-    device: torch.device,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Convert RGB channels to HSV channels (all in [0, 1])."""
-    maxc = torch.max(torch.stack([r, g, b], dim=0), dim=0)[0]
-    minc = torch.min(torch.stack([r, g, b], dim=0), dim=0)[0]
-    diff = maxc - minc
-
-    v = maxc
-    s = torch.zeros_like(maxc, device=device)
-    nonzero_mask = maxc != 0
-    s[nonzero_mask] = diff[nonzero_mask] / maxc[nonzero_mask]
-
-    h = torch.zeros_like(maxc, device=device)
-    mask = diff != 0
-
-    idx = (maxc == r) & mask
-    h[idx] = ((g[idx] - b[idx]) / diff[idx]) % 6
-
-    idx = (maxc == g) & mask
-    h[idx] = ((b[idx] - r[idx]) / diff[idx]) + 2
-
-    idx = (maxc == b) & mask
-    h[idx] = ((r[idx] - g[idx]) / diff[idx]) + 4
-
-    h = (h / 6.0) % 1.0
-    return h, s, v
+# ---------------------------------------------------------------------------
+# HSV 直方图（NumPy + OpenCV，CPU）
+# ---------------------------------------------------------------------------
 
 
 def compute_centered_hsv_histogram(
-    img: np.ndarray,
+    img_bgr: np.ndarray,
     bins: List[int],
-    device_str: str,
+    device_str: Optional[str] = None,  # 保留参数以兼容旧签名，内部不使用
 ) -> HSVHist:
     """
-    Compute normalized, mean-centered HSV histograms for an image.
+    计算图像的 HSV 直方图，并做归一化 + 去均值。
 
-    Returns (h_hist_centered, s_hist_centered, v_hist_centered) as numpy.float32
-    arrays, which can be cached to the database.
+    返回 (h_hist_centered, s_hist_centered, v_hist_centered)，类型为 np.float32。
     """
-    dev = torch.device(device_str)
+    # BGR -> HSV，OpenCV 范围: H in [0,180], S/V in [0,255]
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
 
-    # OpenCV loads BGR; here we just keep channel order consistent with previous code.
-    r, g, b = [torch.tensor(img[..., i], dtype=torch.float32, device=dev) / 255.0 for i in range(3)]
+    h_channel = hsv[:, :, 0].astype(np.float32)  # [0,180]
+    s_channel = hsv[:, :, 1].astype(np.float32)  # [0,255]
+    v_channel = hsv[:, :, 2].astype(np.float32)  # [0,255]
 
-    h, s, v = rgb_channel_to_hsv_channel(r, g, b, dev)
-    hsv_channels = [h, s, v]
+    # 映射到 [0,1]，保持和原先 torch 版本 histc(min=0,max=1) 一致
+    h_norm = h_channel / 180.0
+    s_norm = s_channel / 255.0
+    v_norm = v_channel / 255.0
 
+    channels = [h_norm, s_norm, v_norm]
     centered_hists: List[np.ndarray] = []
 
-    # 为每个通道统计归一化直方图并做中心化
-    for ch, bin_size in zip(hsv_channels, bins):
-        channel_flat = ch.flatten()
-        hist = torch.histc(channel_flat, bins=bin_size, min=0.0, max=1.0)
-        if hist.sum() > 0:
-            hist = hist / hist.sum()
+    for ch, bin_size in zip(channels, bins):
+        ch_flat = ch.reshape(-1)
+        hist, _ = np.histogram(ch_flat, bins=bin_size, range=(0.0, 1.0))
 
-        hist_mean = hist.mean()
-        centered = (hist - hist_mean).cpu().numpy().astype(np.float32)
+        hist = hist.astype(np.float32)
+        total = float(hist.sum())
+        if total > 0.0:
+            hist /= total
+
+        hist_mean = float(hist.mean())
+        centered = (hist - hist_mean).astype(np.float32)
         centered_hists.append(centered)
-
-    # 手动释放中间张量
-    del r, g, b, h, s, v, hsv_channels, channel_flat, hist  # type: ignore[name-defined]
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
 
     return centered_hists[0], centered_hists[1], centered_hists[2]
 
@@ -110,11 +129,7 @@ def calculate_similarity_from_hist(
     hist2: HSVHist,
 ) -> float:
     """
-    Compute similarity between two images from their centered HSV histograms.
-
-    等价于原先的相关系数：
-        (Σ (h1-μ1)(h2-μ2)) / sqrt(Σ(h1-μ1)^2 * Σ(h2-μ2)^2)
-    这里只是用 dot(centered1, centered2) 的形式实现。
+    根据中心化后的 HSV 直方图计算相似度（相关系数形式）。
     """
     similarities: List[float] = []
     for ch1, ch2 in zip(hist1, hist2):
@@ -128,43 +143,155 @@ def calculate_similarity_from_hist(
 def ensure_hist_cached(
     file_path: str,
     hist_cache: Dict[str, HSVHist],
+    img_bgr: Optional[np.ndarray] = None,
 ) -> None:
     """
-    Ensure HSV histogram for an image is present in the in-memory cache.
-    Only read the image & compute histogram if it's missing.
+    确保某张图的 HSV 直方图已缓存。
+    img_bgr:
+        可选的预加载 BGR 图像（用于和 IQA 复用 IO）。
     """
     if file_path in hist_cache:
         return
 
     start_time = time.time()
-    img = cv_imread(file_path)
-    hist_cache[file_path] = compute_centered_hsv_histogram(img, BINS, device)
+    if img_bgr is None:
+        img_bgr = cv_imread(file_path)
+    hist_cache[file_path] = compute_centered_hsv_histogram(img_bgr, BINS, device)
     elapsed = time.time() - start_time
     print(f"[ensure_hist_cached] {file_path} histogram computed in {elapsed:.3f}s")
+
+
+# ---------------------------------------------------------------------------
+# IQA：ONNX Runtime 前处理 + 推理
+# ---------------------------------------------------------------------------
+
+# 与原 PyTorch 版本一致的 ImageNet 归一化参数
+_IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+_IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+
+
+def _preprocess_image_from_bgr(
+    img_bgr: np.ndarray,
+    color_space: str = "RGB",
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    IQA 模型前处理（对应原来的 torchvision pipeline），仅用 OpenCV + NumPy：
+
+      - BGR -> RGB
+      - 仅支持 RGB color_space（移除 LAB/YUV 等不会用到的分支）
+      - authentic 分支: Resize 到 384x384
+      - synthetic 分支: CenterCrop 到 1280x1280
+      - /255 -> [0,1] -> Normalize -> HWC->NCHW -> 加 batch 维
+    """
+    # BGR -> RGB
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+
+    # 当前调用只会传 "RGB"，保留参数是为了不改函数形式
+    if color_space == "RGB":
+        working = img_rgb
+    else:
+        # 如果以后要扩展 HSV/LAB/YUV，请在这里显式添加
+        raise ValueError(f"Unsupported color_space: {color_space}. Only 'RGB' is supported in ONNX pipeline.")
+
+    # authentic 分支：Resize 到 384x384
+    authentic = cv2.resize(
+        working,
+        (384, 384),
+        interpolation=cv2.INTER_AREA,
+    )
+
+    # synthetic 分支：CenterCrop 到 1280x1280（先对原图操作）
+    h, w, _ = working.shape
+    crop_size = 1280
+    if h < crop_size or w < crop_size:
+        # 模拟 torchvision CenterCrop 对“小图”的行为：
+        # 先将短边缩放到 1280，再中心裁剪
+        scale = crop_size / min(h, w)
+        new_w = int(round(w * scale))
+        new_h = int(round(h * scale))
+        resized = cv2.resize(working, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        h, w, _ = resized.shape
+        y0 = max((h - crop_size) // 2, 0)
+        x0 = max((w - crop_size) // 2, 0)
+        synthetic = resized[y0 : y0 + crop_size, x0 : x0 + crop_size]
+    else:
+        y0 = (h - crop_size) // 2
+        x0 = (w - crop_size) // 2
+        synthetic = working[y0 : y0 + crop_size, x0 : x0 + crop_size]
+
+    def _to_nchw_normalized(img: np.ndarray) -> np.ndarray:
+        # HWC uint8 -> float32 [0,1]
+        arr = img.astype(np.float32) / 255.0
+        # Normalize
+        arr = (arr - _IMAGENET_MEAN) / _IMAGENET_STD
+        # HWC -> NCHW
+        arr = np.transpose(arr, (2, 0, 1))
+        # [1, C, H, W]
+        return arr[None, :, :, :].astype(np.float32)
+
+    image_authentic = _to_nchw_normalized(authentic)
+    image_synthetic = _to_nchw_normalized(synthetic)
+    return image_authentic, image_synthetic
+
+
+def preprocess_image(
+    image_path: str,
+    color_space: str = "RGB",
+) -> Tuple[np.ndarray, np.ndarray]:
+    """兼容旧接口：从路径读图，再调用基于 BGR 的前处理."""
+    img_bgr = cv_imread(image_path)
+    return _preprocess_image_from_bgr(img_bgr, color_space=color_space)
+
+
+def infer_iqa(
+    image_authentic: np.ndarray,
+    image_synthetic: np.ndarray,
+) -> float:
+    """用 ONNX Runtime 跑 IQA 推理，返回标量评分."""
+    if len(_IQA_INPUT_NAMES) != 2:
+        raise RuntimeError(f"Expected IQA ONNX model with 2 inputs, got {_IQA_INPUT_NAMES}")
+
+    inputs: Dict[str, np.ndarray] = {
+        _IQA_INPUT_NAMES[0]: image_authentic,
+        _IQA_INPUT_NAMES[1]: image_synthetic,
+    }
+    outputs = _IQA_SESSION.run(None, inputs)
+    # 假定第一个输出是标量或 [1,1] 形式
+    score_array = outputs[0]
+    score = float(np.asarray(score_array).reshape(-1)[0])
+    return score
 
 
 def ensure_iqa_cached(
     file_path: str,
     iqa_cache: Dict[str, float],
+    img_bgr: Optional[np.ndarray] = None,
 ) -> None:
     """
-    Ensure IQA score for an image is present in the in-memory cache.
-    Only run the IQA model if it's missing.
+    确保某张图的 IQA 已缓存。
+    img_bgr:
+        可选的预加载 BGR 图像（用于和 HSV 复用 IO）。
     """
     if file_path in iqa_cache:
         return
 
     start_time = time.time()
-    image_authentic, image_synthetic = preprocess_image(file_path, "RGB", device)
-    score = infer(model, image_authentic, image_synthetic)
-    iqa_value = float(score) * 20.0
+
+    if img_bgr is None:
+        img_bgr = cv_imread(file_path)
+
+    image_authentic, image_synthetic = _preprocess_image_from_bgr(img_bgr, color_space="RGB")
+    score = infer_iqa(image_authentic, image_synthetic)
+    iqa_value = float(score) * 20.0  # 保留原来的 *20 缩放
     iqa_cache[file_path] = iqa_value
 
     elapsed = time.time() - start_time
     print(f"[ensure_iqa_cached] {file_path} IQA computed in {elapsed:.3f}s")
 
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+
+# ---------------------------------------------------------------------------
+# 单对图片：相似度 + IQA
+# ---------------------------------------------------------------------------
 
 
 def compute_similarity_and_IQA(
@@ -174,22 +301,45 @@ def compute_similarity_and_IQA(
     iqa_cache: Dict[str, float],
 ) -> Tuple[float, float]:
     """
-    Compute similarity between file_path and ref_path (from cached HSV hist)
-    and IQA for file_path (per-image IQA).
+    计算 (file_path, ref_path) 这对图片的相似度 + file_path 的 IQA。
+
+    为减少 IO：
+      - 对于未在缓存中的图片，仅调用一次 cv_imread，
+        同时用于 HSV 直方图与 IQA 预处理。
     """
-    ensure_hist_cached(ref_path, hist_cache)
-    ensure_hist_cached(file_path, hist_cache)
+    # --- 参考图：只需要 HSV 直方图 ---
+    if ref_path in hist_cache:
+        img_ref: Optional[np.ndarray] = None
+    else:
+        img_ref = cv_imread(ref_path)
+        ensure_hist_cached(ref_path, hist_cache, img_ref)
+
+    # --- 当前图：可能需要直方图，也可能需要 IQA，可能都需要 ---
+    img_curr: Optional[np.ndarray] = None
+    need_hist = file_path not in hist_cache
+    need_iqa = file_path not in iqa_cache
+
+    if need_hist or need_iqa:
+        img_curr = cv_imread(file_path)
+
+    if need_hist:
+        ensure_hist_cached(file_path, hist_cache, img_curr)
+    if need_iqa:
+        ensure_iqa_cached(file_path, iqa_cache, img_curr)
 
     similarity = calculate_similarity_from_hist(
         hist_cache[file_path],
         hist_cache[ref_path],
     )
-
-    ensure_iqa_cached(file_path, iqa_cache)
     iqa_value = iqa_cache[file_path]
 
     print(f"[compute_similarity_and_IQA] pair=({file_path}, {ref_path}) similarity={similarity:.4f}, IQA={iqa_value:.4f}")
     return similarity, iqa_value
+
+
+# ---------------------------------------------------------------------------
+# 多线程批处理 + 分组逻辑（基本保持不变，仅调用新的 ensure_*）
+# ---------------------------------------------------------------------------
 
 
 def process_pair_batch(
@@ -199,19 +349,19 @@ def process_pair_batch(
     hist_cache: Dict[str, HSVHist],
     iqa_cache: Dict[str, float],
     db_path: str,
-    update_progress,
+    update_progress: Callable[[str, int, int, int], Any],
     include_first_self_pair: bool = False,
-    first_enabled_file: str | None = None,
+    first_enabled_file: Optional[str] = None,
 ) -> None:
     """
-    Worker to process a batch of (file, ref_file) pairs in parallel.
+    Worker：处理一段 (file, ref_file) pair。
 
     只负责：
       - 对还未在 cache_data 中的 pair 计算 similarity + IQA；
       - 结果写回 cache_data 和 DB；
       - 不负责分组。
     若 include_first_self_pair=True，则额外确保首个启用图片 first_enabled_file
-    的 IQA 一定被计算（以自身作为 ref），避免“首张图 IQA 缺失”的情况。
+    的 IQA 一定被计算。
     """
     total_pairs = len(pairs)
     if total_pairs == 0 and not include_first_self_pair:
@@ -225,9 +375,9 @@ def process_pair_batch(
         if include_first_self_pair and first_enabled_file is not None:
             if first_enabled_file not in iqa_cache:
                 print(f"[process_pair_batch] worker {worker_id} pre-computing IQA for first enabled: {first_enabled_file}")
-                # 直方图 / IQA 都缓存一份
-                ensure_hist_cached(first_enabled_file, hist_cache)
-                ensure_iqa_cached(first_enabled_file, iqa_cache)
+                img_first = cv_imread(first_enabled_file)
+                ensure_hist_cached(first_enabled_file, hist_cache, img_first)
+                ensure_iqa_cached(first_enabled_file, iqa_cache, img_first)
 
                 # 同步一次 IQA 到 DB（后续 save_cache_to_db 也会再次覆盖一次）
                 cursor.execute(
@@ -284,16 +434,11 @@ def process_pair_batch(
 def process_and_group_images(
     db_path: str,
     similarity_threshold: float,
-    update_progress,
+    update_progress: Callable[[str, int, int, int], Any],
     show_disabled_photos: bool,
 ):
     """
-    Process images, compute similarity & IQA, then group them.
-
-    - 所有图片（启用 / 未启用）都从 DB 读出；
-    - 相似度 & IQA 计算仅在启用图片上进行（按启用图片顺序：与前一张启用图片成对）；
-    - 启用图片根据 similarity_threshold 分组，并写回 groupId；
-    - 未启用图片不做相似度/IQA 计算，只根据“文件顺序上最近的启用图片”继承其组号。
+    主流程：读取 DB、计算相似度 & IQA、完成分组并写回 groupId。
     """
     start_time = time.time()
 
@@ -307,13 +452,13 @@ def process_and_group_images(
 
     total_images = len(image_files)
 
-    # 只保留启用图片的顺序列表
+    # 启用图片列表
     enabled_files: List[str] = [f for f in image_files if enabled_map.get(f, True)]
     total_enabled = len(enabled_files)
 
-    # 构造“当前启用图 vs 前一张启用图”的 pair 列表（只对缺失的 pair 计算）
+    # 构造 “当前启用图 vs 前一张启用图” 的 pair（如果不在 cache_data 中才计算）
     pairs_to_compute: List[Tuple[str, str]] = []
-    prev_enabled: str | None = None
+    prev_enabled: Optional[str] = None
     for file_path in enabled_files:
         if prev_enabled is None:
             prev_enabled = file_path
@@ -335,7 +480,7 @@ def process_and_group_images(
             futures = []
 
             # 首个启用图片路径（用于首段强制计算 IQA）
-            first_enabled_file: str | None = enabled_files[0] if enabled_files else None
+            first_enabled_file: Optional[str] = enabled_files[0] if enabled_files else None
 
             for worker_id in range(num_threads):
                 start_idx = worker_id * chunk_size
@@ -364,14 +509,14 @@ def process_and_group_images(
             for future in as_completed(futures):
                 future.result()
 
-    # === 兜底：确保首个启用图片一定有 IQA（覆盖“只有一张启用图片”或其它极端情况） ===
+    # 兜底：确保首个启用图片一定有 IQA
     if enabled_files:
         first_enabled = enabled_files[0]
         if first_enabled not in iqa_cache:
             print(f"[process_and_group_images] fallback IQA computation for first enabled: {first_enabled}")
-            # 可以顺带把直方图也缓存下来
-            ensure_hist_cached(first_enabled, hist_cache)
-            ensure_iqa_cached(first_enabled, iqa_cache)
+            img_first = cv_imread(first_enabled)
+            ensure_hist_cached(first_enabled, hist_cache, img_first)
+            ensure_iqa_cached(first_enabled, iqa_cache, img_first)
 
     # 将 per-image 直方图 & IQA 写回 DB
     update_progress("保存缓存数据中", 0, 0, 1)
@@ -384,7 +529,7 @@ def process_and_group_images(
 
     for idx, file_path in enumerate(enabled_files):
         if idx == 0:
-            # 第一张启用图片没有前驱，相似度可视为 1.0
+            # 第一张启用图片没有前驱，相似度视为 1.0
             similarity = 1.0
             iqa_value = iqa_cache.get(file_path, 0.0)
         else:
@@ -408,13 +553,13 @@ def process_and_group_images(
     if current_group:
         groups.append(sorted(current_group, key=lambda x: x[2], reverse=True))
 
-    # 建立启用图片 filePath -> groupId 的映射
+    # 建立启用图片 filePath -> groupId 映射
     file_to_group: Dict[str, int] = {}
     for gid, group in enumerate(groups):
         for file_path, _, _ in group:
             file_to_group[file_path] = gid
 
-    # ====== 未启用图片：挂载到最近的启用图片的组 ======
+    # ====== 未启用图片：挂到最近的启用图片组 ======
     index_map: Dict[str, int] = {path: i for i, path in enumerate(image_files)}
 
     if enabled_files:
@@ -425,10 +570,10 @@ def process_and_group_images(
 
             idx = index_map[file_path]
 
-            nearest_group: int | None = None
-            nearest_distance: int | None = None
+            nearest_group: Optional[int] = None
+            nearest_distance: Optional[int] = None
 
-            # 向左寻找最近的启用图片
+            # 向左找最近启用图片
             for j in range(idx - 1, -1, -1):
                 neighbor = image_files[j]
                 if enabled_map.get(neighbor, True) and neighbor in file_to_group:
@@ -436,7 +581,7 @@ def process_and_group_images(
                     nearest_distance = idx - j
                     break
 
-            # 向右寻找是否有更近的启用图片
+            # 向右看是否有更近的启用图片
             for j in range(idx + 1, len(image_files)):
                 neighbor = image_files[j]
                 if enabled_map.get(neighbor, True) and neighbor in file_to_group:
@@ -446,19 +591,19 @@ def process_and_group_images(
                         nearest_distance = dist
                     break
 
-            # 若实在没有启用图片（极端情况），统一挂到 0 组
+            # 实在没有启用图片（极端情况） -> 统一挂到组 0
             if nearest_group is None:
                 nearest_group = 0
 
             update_group_id_in_db(db_path, file_path, nearest_group)
 
-            # 未启用图片不强制计算 IQA，只使用已有缓存（若无则为 0）
+            # 未启用图片不强制计算 IQA，只用已有缓存（若无则为 0）
             iqa_value = iqa_cache.get(file_path, 0.0)
             while len(groups) <= nearest_group:
                 groups.append([])
             groups[nearest_group].append((file_path, 0.0, iqa_value))
     else:
-        # 没有任何启用图片：把所有图片都放到组 0
+        # 没有任何启用图片：全部挂到组 0
         if image_files:
             groups = [[]]
             for idx, file_path in enumerate(image_files):
@@ -469,7 +614,7 @@ def process_and_group_images(
         else:
             groups = []
 
-    # 最后保证每个组内部按 IQA 降序
+    # 每个组内部按 IQA 降序
     groups = [sorted(group, key=lambda x: x[2], reverse=True) for group in groups if group]
 
     total_time = time.time() - start_time
