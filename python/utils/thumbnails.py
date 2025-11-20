@@ -12,7 +12,6 @@ from ctypes import HRESULT, POINTER, WinError, byref, windll
 from ctypes.wintypes import DWORD, LONG, WORD
 
 from PIL import Image
-from PIL.ExifTags import TAGS
 
 from comtypes import COMMETHOD, GUID, IUnknown
 
@@ -190,20 +189,6 @@ def get_thumbnail(file_path, width, height):
     return bmp_data
 
 
-def get_image_capture_time(image_path):
-    """获取图片的拍摄时间，如果没有则使用文件的创建时间"""
-    image = Image.open(image_path)
-    exif_data = image._getexif()
-    if exif_data:
-        for tag, value in exif_data.items():
-            tag_name = TAGS.get(tag, tag)
-            if tag_name == "DateTimeOriginal":
-                return value
-    # 如果没有拍摄时间，返回文件的创建时间
-    creation_time = time.strftime("%Y:%m:%d %H:%M:%S", time.localtime(os.path.getctime(image_path)))
-    return creation_time
-
-
 def generate_thumbnails(
     file_paths: List[str],
     thumbs_path: str,
@@ -272,17 +257,6 @@ def generate_thumbnails(
 
         # 保存为 WEBP
         image.save(output_file, "WEBP")
-
-        # 根据原图 EXIF 拍摄时间设置缩略图文件时间戳
-        try:
-            capture_time_str = get_image_capture_time(image_file)
-            if capture_time_str:
-                # 典型格式如 "2023:10:01 12:34:56"
-                time_struct = time.strptime(capture_time_str, "%Y:%m:%d %H:%M:%S")
-                timestamp = time.mktime(time_struct)
-                os.utime(output_file, (timestamp, timestamp))
-        except Exception as e:
-            print(f"Failed to set timestamp for {output_file}: {e}")
 
         # 更新进度
         with count_lock:
