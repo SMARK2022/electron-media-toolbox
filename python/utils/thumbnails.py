@@ -1,22 +1,41 @@
 from typing import List, Callable
 import os
-import io
-import time
 import threading
 import struct
 import zlib
 import concurrent.futures
 import ctypes
+import numpy as np
+import cv2
 
 from ctypes import HRESULT, POINTER, WinError, byref, windll
 from ctypes.wintypes import DWORD, LONG, WORD
-
-from PIL import Image
 
 from comtypes import COMMETHOD, GUID, IUnknown
 
 # 进度回调类型（可接受任意参数签名以兼容现有调用）
 ProgressFn = Callable[..., None]
+
+
+# 支持中文路径的 OpenCV 函数
+def cv_imread(file_path: str) -> np.ndarray:
+    """支持中文路径的 cv2 读取."""
+    data = np.fromfile(file_path, dtype=np.uint8)
+    img = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    if img is None:
+        raise RuntimeError(f"Failed to read image: {file_path}")
+    return img
+
+
+def cv_imwrite(file_path: str, img: np.ndarray) -> bool:
+    """支持中文路径的 cv2 写入 WEBP."""
+    success, buffer = cv2.imencode('.webp', img)
+    if not success:
+        raise RuntimeError(f"Failed to encode image: {file_path}")
+    with open(file_path, 'wb') as f:
+        f.write(buffer)
+    return True
+
 
 # 手动定义缺少的类型
 LPCWSTR = ctypes.c_wchar_p
@@ -226,7 +245,6 @@ def generate_thumbnails(
         print("No valid image files to process.")
         return
 
-    start_time = time.time()
     completed_count = 0
     count_lock = threading.Lock()
     total_files = len(image_files)
@@ -247,7 +265,13 @@ def generate_thumbnails(
 
         # 生成缩略图（BMP 数据）
         bmp_data = get_thumbnail(image_file, width, height)
-        image = Image.open(io.BytesIO(bmp_data))
+
+        # 使用 OpenCV 处理 BMP 数据
+        img_array = np.frombuffer(bmp_data, dtype=np.uint8)
+        image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+        if image is None:
+            raise RuntimeError(f"Failed to decode thumbnail for {image_file}")
 
         # 使用归一化路径 (lower + '/') 生成 CRC32 作为文件名
         normalized_path = image_file.replace("\\", "/").lower()
@@ -255,8 +279,8 @@ def generate_thumbnails(
         crc32_hex = f"{crc32_hash:08x}"
         output_file = os.path.join(thumbs_path, f"{crc32_hex}.webp")
 
-        # 保存为 WEBP
-        image.save(output_file, "WEBP")
+        # 保存为 WEBP（使用支持中文路径的函数）
+        cv_imwrite(output_file, image)
 
         # 更新进度
         with count_lock:
@@ -274,10 +298,6 @@ def generate_thumbnails(
     # 使用线程池并行处理图片
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.map(process_image, image_files)
-
-    end_time = time.time()
-    avg_time = (end_time - start_time) / total_files
-    print(f"Average loading time per image: {avg_time:.4f} seconds")
 
     try:
         update_progress_fn(

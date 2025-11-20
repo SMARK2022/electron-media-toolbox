@@ -2,11 +2,12 @@ import asyncio
 import io
 import time
 import os
+import numpy as np
+import cv2
 
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
-from PIL import Image
 from pydantic import BaseModel
 from utils.image_compute_onnx import process_and_group_images  # 使用 ONNX 版本的图像处理函数
 # from utils.image_compute import process_and_group_images  # 使用 ONNX 版本的图像处理函数
@@ -184,10 +185,19 @@ def get_thumbnail_endpoint(task: ThumbnailTask):
     start_time = time.time()
     img_bytes = get_thumbnail(task.photo_path, task.width, task.height)
 
-    # Convert image to webp format
-    image = Image.open(io.BytesIO(img_bytes))
-    webp_io = io.BytesIO()
-    image.save(webp_io, format="WEBP")
+    # Convert BMP bytes to numpy array and decode using OpenCV
+    img_array = np.frombuffer(img_bytes, dtype=np.uint8)
+    image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+    if image is None:
+        raise RuntimeError(f"Failed to decode thumbnail for {task.photo_path}")
+
+    # Encode to WEBP format
+    success, buffer = cv2.imencode('.webp', image)
+    if not success:
+        raise RuntimeError("Failed to encode image to WEBP format")
+
+    webp_io = io.BytesIO(buffer)
     webp_io.seek(0)
 
     total_time = time.time() - start_time

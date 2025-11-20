@@ -1,32 +1,33 @@
 @echo off
+chcp 65001 >nul 2>&1
 setlocal ENABLEDELAYEDEXPANSION
 
 REM ============================
-REM ÅäÖÃÇø£º°´ÐèÐÞ¸Ä
+REM é…ç½®åŒºï¼šæŒ‰éœ€ä¿®æ”¹
 REM ============================
 
-REM 1) Python ½âÊÍÆ÷£¨µ±Ç°ÐéÄâ»·¾³ÀïÄÇ¸ö£©
+REM 1) Python è§£é‡Šå™¨ï¼ˆå½“å‰è™šæ‹ŸçŽ¯å¢ƒé‡Œé‚£ä¸ªï¼‰
 set "PYTHON_EXE=python"
 
-REM 2) Ö÷Èë¿ÚÎÄ¼þ
+REM 2) ä¸»å…¥å£æ–‡ä»¶
 set "MAIN_FILE=web_api.py"
 
-REM 3) Êä³öÄ¿Â¼
+REM 3) è¾“å‡ºç›®å½•
 set "OUTPUT_DIR=out"
 
-REM 4) ONNX Ä£ÐÍÎÄ¼þ£¨.onnx + .onnx.data£©
+REM 4) ONNX æ¨¡åž‹æ–‡ä»¶ï¼ˆ.onnx + .onnx.dataï¼‰
 set "MODEL_DIR=checkpoint"
 set "MODEL_NAME=lar_iqa.onnx"
 
-REM 5) ²¢ÐÐ C ±àÒë job Êý
+REM 5) å¹¶è¡Œ C ç¼–è¯‘ job æ•°
 set "JOBS=%NUMBER_OF_PROCESSORS%"
 
-REM 6) Nuitka »º´æÄ¿Â¼£¨·ÅÔÚÏîÄ¿ÅÔ±ß£¬·½±ã³Ö¾Ã»¯£©
+REM 6) Nuitka ç¼“å­˜ç›®å½•ï¼ˆæ”¾åœ¨é¡¹ç›®æ—è¾¹ï¼Œæ–¹ä¾¿æŒä¹…åŒ–ï¼‰
 if not defined NUITKA_CACHE_DIR (
   set "NUITKA_CACHE_DIR=%~dp0.nuitka-cache"
 )
 
-REM ¿ÉÑ¡£ºÎª clcache/ccache µ¥¶ÀÖ¸¶¨»º´æÎ»ÖÃ
+REM å¯é€‰ï¼šä¸º clcache/ccache å•ç‹¬æŒ‡å®šç¼“å­˜ä½ç½®
 if not defined NUITKA_CACHE_DIR_CLCACHE (
   set "NUITKA_CACHE_DIR_CLCACHE=%NUITKA_CACHE_DIR%\clcache"
 )
@@ -34,7 +35,7 @@ if not defined NUITKA_CACHE_DIR_CCACHE (
   set "NUITKA_CACHE_DIR_CCACHE=%NUITKA_CACHE_DIR%\ccache"
 )
 
-REM ¿ÉÑ¡£ºÈç¹ûÄãÖªµÀ Nuitka ÏÂÔØµÄ ccache.exe ÔÚÄÄ£¬¿ÉÒÔÏÔÊ½Ö¸¶¨
+REM å¯é€‰ï¼šå¦‚æžœä½ çŸ¥é“ Nuitka ä¸‹è½½çš„ ccache.exe åœ¨å“ªï¼Œå¯ä»¥æ˜¾å¼æŒ‡å®š
 REM set "NUITKA_CCACHE_BINARY=%LOCALAPPDATA%\Nuitka\Nuitka\Cache\ccache\ccache.exe"
 
 echo [*] NUITKA_CACHE_DIR=%NUITKA_CACHE_DIR%
@@ -42,24 +43,19 @@ echo [*] NUITKA_CACHE_DIR_CLCACHE=%NUITKA_CACHE_DIR_CLCACHE%
 echo [*] NUITKA_CACHE_DIR_CCACHE=%NUITKA_CACHE_DIR_CCACHE%
 
 REM ============================
-REM ¿ªÊ¼Ö´ÐÐ
+REM å¼€å§‹æ‰§è¡Œ
 REM ============================
 
-echo [*] ÇÐ»»µ½½Å±¾ËùÔÚÄ¿Â¼...
+echo [*] åˆ‡æ¢åˆ°è„šæœ¬æ‰€åœ¨ç›®å½•...
 cd /d "%~dp0"
 
-REM Èç¹ûÄãÈ·ÈÏ out Ä¿Â¼ÀïµÄ¾ÉÎÄ¼þÃ»ÓÃ£¬¿ÉÒÔÅ¼¶ûÊÖ¶¯ÇåÒ»´Î
-REM echo [*] ÇåÀí¾ÉÊä³öÄ¿Â¼ "%OUTPUT_DIR%" ...
-REM if exist "%OUTPUT_DIR%" rmdir /s /q "%OUTPUT_DIR%"
-
-echo [*] Ê¹ÓÃ Nuitka ±àÒë %MAIN_FILE% Îª¶ÀÁ¢ exe (standalone) ...
+echo [*] ä½¿ç”¨ Nuitka ç¼–è¯‘ %MAIN_FILE% ä¸ºç‹¬ç«‹ exe (standalone) ...
 
 "%PYTHON_EXE%" -m nuitka ^
   --mode=standalone ^
   --output-dir="%OUTPUT_DIR%" ^
   --jobs=%JOBS% ^
   --assume-yes-for-downloads ^
-  --include-package-data=onnxruntime ^
   --windows-console-mode=attach ^
   --lto=no ^
   --include-data-file="%MODEL_DIR%\%MODEL_NAME%=%MODEL_DIR%\%MODEL_NAME%" ^
@@ -67,8 +63,8 @@ echo [*] Ê¹ÓÃ Nuitka ±àÒë %MAIN_FILE% Îª¶ÀÁ¢ exe (standalone) ...
   "%MAIN_FILE%"
 
 echo.
-echo [*] ±àÒëÍê³É£¬Êä³öÄ¿Â¼£º%OUTPUT_DIR%
-echo [*] ÄãÓ¦¸ÃÄÜÔÚ "%OUTPUT_DIR%" ÏÂ¿´µ½ web_api.exe ÒÔ¼°ÒÀÀµÎÄ¼þ¼Ð¡£
+echo [*] ç¼–è¯‘å®Œæˆï¼Œè¾“å‡ºç›®å½•ï¼š%OUTPUT_DIR%
+echo [*] ä½ åº”è¯¥èƒ½åœ¨ "%OUTPUT_DIR%" ä¸‹çœ‹åˆ° web_api.exe ä»¥åŠä¾èµ–æ–‡ä»¶å¤¹ã€‚
 echo.
 pause
 endlocal

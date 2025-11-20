@@ -7,6 +7,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import onnxruntime as ort
+import os
 
 from utils.database import (
     load_cache_from_db,
@@ -462,7 +463,7 @@ def process_and_group_images(
         prev_enabled = file_path
 
     # 多线程计算相似度 & IQA
-    num_threads = 4
+    num_threads = max(1, os.cpu_count() or 1)
     total_pairs = len(pairs_to_compute)
 
     if total_pairs > 0:

@@ -335,9 +335,13 @@ export default function PhotoFilterSubpage() {
               if (data.status === "空闲中") {
                 setUpdate(false);
                 fetchEnabledPhotos();
-                console.log("停止更新");
+                console.log("[STATUS] Server idle, stopping updates.");
+              } else {
+                setUpdate(true);
               }
             }, 1000);
+          } else {
+            setUpdate(true);
           }
         }
       } else {
