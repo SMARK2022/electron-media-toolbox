@@ -330,13 +330,14 @@ export default function PhotoFilterSubpage() {
           const timeDifference = (currentTime - parseInt(submitTime)) / 1000;
 
           // 提交 6 秒后，如果状态仍然是空闲，则 5 秒后停止轮询
-          if (timeDifference > 1 && (data.status === "空闲中")) {
+          if (timeDifference > 3 && data.status === "空闲中") {
             setTimeout(() => {
               if (data.status === "空闲中") {
                 setUpdate(false);
+                fetchEnabledPhotos();
                 console.log("停止更新");
               }
-            }, 8000);
+            }, 1000);
           }
         }
       } else {
