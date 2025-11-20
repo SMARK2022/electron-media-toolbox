@@ -9,8 +9,19 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "node scripts/zip-python.cjs && electron-forge make",
+<<<<<<< HEAD
     "format": "prettier --check .",
     "format:write": "prettier --write .",
+=======
+    // "lint": "eslint .",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    // "test": "vitest run",
+    // "test:watch": "vitest watch",
+    // "test:unit": "vitest",
+    // "test:e2e": "playwright test",
+    // "test:all": "vitest run && playwright test",
+>>>>>>> 731ee66c943fe78ec6a3b0f7850008b959a36780
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "python:zip": "node scripts/zip-python.cjs"
   },
