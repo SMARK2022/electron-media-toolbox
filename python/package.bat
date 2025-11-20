@@ -2,54 +2,51 @@
 setlocal ENABLEDELAYEDEXPANSION
 
 REM ============================
-REM é…ç½®åŒºï¼šæŒ‰éœ€ä¿®æ”¹
+REM ÅäÖÃÇø£º°´ĞèĞŞ¸Ä
 REM ============================
 
-REM ä½ çš„ Python è§£é‡Šå™¨ï¼ˆå»ºè®®ç”¨ä½ å½“å‰è·‘ web_api çš„é‚£ä¸ªç¯å¢ƒï¼‰
+REM ÄãµÄ Python ½âÊÍÆ÷£¨½¨ÒéÊÇµ±Ç°ÔËĞĞ web_api.py µÄ»·¾³£©
 set PYTHON_EXE=python
 
-REM ä¸»æ–‡ä»¶ï¼ˆç›¸å¯¹æœ¬ bat æ‰€åœ¨ç›®å½•ï¼‰
+REM Ö÷ÎÄ¼ş£¨Ïà¶Ô±¾ bat ËùÔÚÄ¿Â¼£©
 set MAIN_FILE=web_api.py
 
-REM è¾“å‡ºç›®å½•ï¼šä¼šåœ¨ python\out-web_api ä¸‹ç”Ÿæˆ exe
+REM Êä³öÄ¿Â¼£º»áÔÚ python\out-web_api ÏÂÉú³É exe
 set OUTPUT_DIR=out-web_api
 
+REM ONNX Ä£ĞÍÎÄ¼şÃû£¨Î»ÓÚ ./checkpoint/ ÏÂ£©
+set MODEL_DIR=checkpoint
+set MODEL_NAME=lar_iqa.onnx
+
 REM ============================
-REM å¼€å§‹æ‰§è¡Œ
+REM ¿ªÊ¼Ö´ĞĞ
 REM ============================
 
-echo [*] åˆ‡æ¢åˆ°è„šæœ¬æ‰€åœ¨ç›®å½•...
+echo [*] ÇĞ»»µ½½Å±¾ËùÔÚÄ¿Â¼...
 cd /d "%~dp0"
 
-echo [*] æ¸…ç†æ—§è¾“å‡ºç›®å½• "%OUTPUT_DIR%" ...
-if exist "%OUTPUT_DIR%" rmdir /s /q "%OUTPUT_DIR%"
+echo [*] ÇåÀí¾ÉÊä³öÄ¿Â¼ "%OUTPUT_DIR%" ...
+if exist "%OUTPUT_DIR%" (
+  rmdir /s /q "%OUTPUT_DIR%"
+)
 
-echo [*] ä½¿ç”¨ Nuitka ç¼–è¯‘ %MAIN_FILE% ä¸ºç‹¬ç«‹ exe ...
+echo [*] Ê¹ÓÃ Nuitka ±àÒë %MAIN_FILE% Îª¶ÀÁ¢ exe ...
+
 "%PYTHON_EXE%" -m nuitka ^
-  "%MAIN_FILE%" ^
-  --standalone ^
   --onefile ^
+  --standalone ^
   --follow-imports ^
   --assume-yes-for-downloads ^
   --output-dir="%OUTPUT_DIR%" ^
   --remove-output ^
-  --enable-plugin=numpy ^
-  --enable-plugin=multiprocessing ^
   --windows-console-mode=disable ^
-  ^
-  REM åŒæ—¶æ‰“åŒ… ONNX ä¸»æ–‡ä»¶å’Œ .data åˆ†ç‰‡ï¼Œä¿æŒ checkpoint\xxx è·¯å¾„ä¸å˜ ^
-  --include-data-file="checkpoint\lar_iqa.onnx=checkpoint\lar_iqa.onnx" ^
-  --include-data-file="checkpoint\lar_iqa.onnx.data=checkpoint\lar_iqa.onnx.data" ^
-  ^
-  REM å¯é€‰ï¼šå¦‚æœè¿è¡Œæ—¶ä¼šè¯»è®­ç»ƒ/éªŒè¯ CSVï¼Œå°±æŠŠ dataset ç›®å½•ä¹Ÿæ‰“è¿›å» ^
-  --include-data-dir="packages\LAR_IQA\dataset=packages\LAR_IQA\dataset" ^
-  ^
-  REM å¯é€‰ï¼šå¦‚æœ utils é‡Œæœ‰é .py èµ„æºæ–‡ä»¶ï¼ˆé…ç½®ç­‰ï¼‰ä¹Ÿä¸€èµ·å¸¦ä¸Š ^
-  --include-data-dir="utils=utils"
+  --include-data-file="%MODEL_DIR%\%MODEL_NAME%=%MODEL_DIR%\%MODEL_NAME%" ^
+  --include-data-file="%MODEL_DIR%\%MODEL_NAME%.data=%MODEL_DIR%\%MODEL_NAME%.data" ^
+  "%MAIN_FILE%"
 
 echo.
-echo [*] ç¼–è¯‘å®Œæˆï¼Œè¾“å‡ºç›®å½•ï¼š%OUTPUT_DIR%
-echo [*] ä½ åº”è¯¥èƒ½åœ¨ "%OUTPUT_DIR%" ä¸‹çœ‹åˆ° web_api.exe
+echo [*] ±àÒëÍê³É£¬Êä³öÄ¿Â¼£º%OUTPUT_DIR%
+echo [*] ÄãÓ¦¸ÃÄÜÔÚ "%OUTPUT_DIR%" ÏÂ¿´µ½ web_api.exe
 echo.
 pause
 endlocal

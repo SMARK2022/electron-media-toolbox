@@ -47,6 +47,7 @@ __pycache__/
 venv/
 env/
 checkpoint/
+out-web_api/
 
 # Database & Models
 *.db
