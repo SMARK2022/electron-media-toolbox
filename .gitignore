@@ -47,7 +47,7 @@ __pycache__/
 venv/
 env/
 checkpoint/
-out-web_api/
+.nuitka-cache/
 
 # Database & Models
 *.db
