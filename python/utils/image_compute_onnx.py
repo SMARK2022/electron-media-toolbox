@@ -3,6 +3,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple, Callable, Optional, Any
 from pathlib import Path
+import sys
 
 import cv2
 import numpy as np
@@ -38,8 +39,27 @@ def _select_ort_providers() -> List[str]:
 
 # ONNX IQA 模型路径（由原来的 .pt 导出的 .onnx）
 # 如果你的 onnx 文件名不同，请改这里
-_base_dir = Path(__file__).resolve().parent
-_checkpoint_onnx = _base_dir / ".." / "checkpoint" / "lar_iqa.onnx"
+# Nuitka onefile 模式下，资源文件会被解压到临时目录
+# 需要使用特殊的方式获取路径
+def get_resource_path(relative_path):
+    """获取资源文件的绝对路径（支持 onefile 打包）"""
+    if getattr(sys, "frozen", False):
+        # 打包后的环境
+        if hasattr(sys, "_MEIPASS"):
+            # PyInstaller 风格
+            base_path = Path(sys._MEIPASS)
+        else:
+            # Nuitka 风格：使用 exe 所在目录
+            base_path = Path(sys.executable).parent
+    else:
+        # 开发环境
+        base_path = Path(__file__).resolve().parent / ".."
+
+    return base_path / relative_path
+
+
+# 使用新的路径获取方式
+_checkpoint_onnx = get_resource_path("checkpoint/lar_iqa.onnx")
 
 _session_options = ort.SessionOptions()
 # 根据需要可以微调线程数；0 表示由 ORT 自己决定
@@ -463,7 +483,7 @@ def process_and_group_images(
         prev_enabled = file_path
 
     # 多线程计算相似度 & IQA
-    num_threads = max(1, os.cpu_count()//2 or 1)
+    num_threads = max(1, os.cpu_count() // 2 or 1)
     total_pairs = len(pairs_to_compute)
 
     if total_pairs > 0:

@@ -53,7 +53,7 @@ cd /d "%~dp0..\python"
 echo [*] 使用 Nuitka 编译 %MAIN_FILE% 为独立 exe (standalone) ...
 
 "%PYTHON_EXE%" -m nuitka ^
-  --mode=standalone ^
+  --mode=onefile ^
   --output-dir="%OUTPUT_DIR%" ^
   --jobs=%JOBS% ^
   --assume-yes-for-downloads ^
