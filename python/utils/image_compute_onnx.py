@@ -58,21 +58,43 @@ def get_resource_path(relative_path):
     return base_path / relative_path
 
 
-# 使用新的路径获取方式
-_checkpoint_onnx = get_resource_path("checkpoint/lar_iqa.onnx")
+# 使用新的路径获取方式（带判断与 try，避免直接闪退）
+_checkpoint_onnx = Path(get_resource_path("checkpoint/lar_iqa.onnx"))
 
-_session_options = ort.SessionOptions()
-# 根据需要可以微调线程数；0 表示由 ORT 自己决定
-_session_options.intra_op_num_threads = 0
-_session_options.inter_op_num_threads = 0
+_IQA_SESSION = None
+_IQA_INPUT_NAMES: List[str] = []
 
-_IQA_SESSION = ort.InferenceSession(
-    str(_checkpoint_onnx),
-    sess_options=_session_options,
-    providers=_select_ort_providers(),
-)
 
-_IQA_INPUT_NAMES = [inp.name for inp in _IQA_SESSION.get_inputs()]
+# 如果模型文件不存在或 ORT 初始化失败，使用一个简单的 dummy session 以避免程序崩溃。
+class _DummyIqaSession:
+    def run(self, *args, **kwargs):
+        # 返回与真实模型相容的形状：第一个输出应当是可转换为标量的数组
+        return [np.array([0.0], dtype=np.float32)]
+
+
+if not _checkpoint_onnx.exists():
+    print(f"[IQA] ONNX model not found at {_checkpoint_onnx}. IQA will be disabled (using dummy session).")
+    _IQA_SESSION = _DummyIqaSession()
+    _IQA_INPUT_NAMES = ["input_authentic", "input_synthetic"]
+else:
+    try:
+        _session_options = ort.SessionOptions()
+        # 根据需要可以微调线程数；0 表示由 ORT 自己决定
+        _session_options.intra_op_num_threads = 0
+        _session_options.inter_op_num_threads = 0
+
+        _IQA_SESSION = ort.InferenceSession(
+            str(_checkpoint_onnx),
+            sess_options=_session_options,
+            providers=_select_ort_providers(),
+        )
+
+        _IQA_INPUT_NAMES = [inp.name for inp in _IQA_SESSION.get_inputs()]
+        print(f"[IQA] Loaded ONNX model from {_checkpoint_onnx}, inputs: {_IQA_INPUT_NAMES}")
+    except Exception as e:
+        print(f"[IQA] Failed to create ONNX Runtime session ({e}). Falling back to dummy session to avoid crash.")
+        _IQA_SESSION = _DummyIqaSession()
+        _IQA_INPUT_NAMES = ["input_authentic", "input_synthetic"]
 
 HSVHist = Tuple[np.ndarray, np.ndarray, np.ndarray]
 BINS: List[int] = [90, 128, 128]
