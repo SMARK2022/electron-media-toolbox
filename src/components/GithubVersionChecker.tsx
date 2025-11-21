@@ -151,10 +151,9 @@ export function GithubVersionChecker({ className }: { className?: string }) {
         <div className="flex flex-col">
           <span className="font-medium">{t("updateChecker.title")}</span>
           <span className="text-muted-foreground text-xs">
-            {t("updateChecker.currentVersion")} <code>v{CURRENT_VERSION}</code>
+            {t("updateChecker.currentVersion")} <code>{CURRENT_VERSION}</code>
             {latestVersion && (
               <>
-                {"  ·  "}
                 {t("updateChecker.latestVersion")} <code>{latestVersion}</code>
               </>
             )}

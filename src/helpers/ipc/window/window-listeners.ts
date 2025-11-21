@@ -1,6 +1,6 @@
 // main/window-listeners.ts
 
-import { BrowserWindow, clipboard, ipcMain, protocol } from "electron";
+import { BrowserWindow, clipboard, ipcMain, protocol, shell } from "electron";
 import { exec } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
@@ -126,6 +126,20 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
       });
     },
   );
+
+  /**
+   * 通过系统默认浏览器打开外部 URL（用于 ElectronAPI.openExternal）
+   * 支持 http/https 以及 mailto: 等协议
+   */
+  ipcMain.handle("open-external", async (_event, url: string) => {
+    try {
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (error: any) {
+      console.error("[open-external] Error:", error);
+      return { success: false, error: error.message };
+    }
+  });
 
   // 说明：
   // - db-get-thumbs-cache-dir / db-run / db-get 等数据库相关 IPC

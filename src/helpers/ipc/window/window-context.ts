@@ -35,6 +35,7 @@ export function exposeWindowContext() {
    * 通用 Electron API：
    * - readFile / readClipboard / getThumbsCacheDir / runCommand（你原来的接口）
    * - getPathForFile：用于从浏览器 File 对象获取绝对路径
+   * - openExternal：用于通过系统默认浏览器打开外部 URL
    *
    * getPathForFile 优先使用 Electron 32+ 的 webUtils.getPathForFile，
    * 如果不可用，则回退到旧版 Electron 的 file.path，
@@ -78,6 +79,13 @@ export function exposeWindowContext() {
       // 3) 全部失败：返回空字符串，由前端降级处理
       return "";
     },
+
+    /**
+     * 通过系统默认浏览器打开外部 URL。
+     * 调用主进程的 Electron shell.openExternal 以确保在系统浏览器中打开。
+     * @param url 要打开的 URL（支持 http/https 以及 mailto: 等协议）
+     */
+    openExternal: (url: string) => ipcRenderer.invoke("open-external", url),
   });
 
   /**
