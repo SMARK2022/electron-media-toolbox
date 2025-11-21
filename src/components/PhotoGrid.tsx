@@ -235,10 +235,10 @@ export function PhotoGridEnhance({
             style={{ width: `${width}px` }}
             className={cn(
               "group bg-card text-card-foreground flex-none rounded-lg border shadow-sm transition-all duration-200",
-              "focus-visible:ring-ring hover:shadow-md focus-visible:ring-2 focus-visible:outline-none",
+              "hover:shadow-md focus-visible:outline-none",
               highlighted
-                ? "border-orange-400 ring-1 ring-orange-300"
-                : "border-border",
+                ? "border-orange-400 ring-1 ring-orange-300 focus-visible:ring-2 focus-visible:ring-orange-300"
+                : "border-border ring-0 focus-visible:ring-0 focus-visible:border-border",
               !photo.isEnabled && "opacity-40 grayscale",
             )}
             onClick={() => selectPhotoByIndex(index, "Select")}

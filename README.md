@@ -1,201 +1,150 @@
-# <img src="assets/app.ico" alt="SMARK App Icon" height="32"> SMARK Media Tools
+<div align="center">
+  <img src="assets/app.ico" alt="SMARK App Icon" height="80">
+  <h1>SMARK Media Tools</h1>
+  <p><b>基于 GPU/ONNX 加速的摄影后期选片与管理工具箱</b></p>
 
-> A fast, GPU-accelerated photo curation toolbox for burst shots and large image collections.
+  <p>
+    <a href="README_En.md">English</a> | <b>简体中文</b>
+  </p>
 
-## 项目简介 | Project Introduction
-
-**SMARK Media Tools** 是一个面向摄影爱好者与重度图片用户的媒体工具箱，专注于图片的高效管理、分组与筛选。
-**SMARK Media Tools** is a media toolbox designed for efficient management, grouping, and filtering of images.
-
-![SMARK Media Tools GUI](assets/gui.png)
-
-在实际拍摄中，用户常常会产生大量连拍照片，后期筛选过程费时费力、且难以保证主观挑选的一致性。
-因此，本项目支持直接读取相机存储卡中的照片文件夹，通过 **HSV 直方图相似度进行分组**，再结合 **无参考 IQA 美学评分** 对组内照片进行排序，帮助用户快速挑选、删除或保留照片。完成筛选后，用户可一键将选中的照片复制导出到指定文件夹。
-
-In real-world photography, users often end up with many burst shots that are hard to filter manually.
-This toolbox reads photos directly from a camera storage folder, **groups them by HSV histogram similarity**, and **sorts within each group by no-reference IQA aesthetic score**, making it much easier to delete or keep photos. After curation, users can export selected photos to a target folder with one click.
-
-我们的项目目前能够实现：
-
-- **缩略图生成**：约 **3 ms / frame**
-- **照片推理与质量评估**：约 **1 s / frame**
+  <p>
+    <img src="https://img.shields.io/badge/version-2.1.0-blue" alt="Version">
+    <img src="https://img.shields.io/badge/platform-Windows-0078D6" alt="Platform">
+    <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="License">
+    <img src="https://img.shields.io/badge/backend-FastAPI%20%7C%20Nuitka-yellow" alt="Backend">
+  </p>
+</div>
 
 ---
 
-## 主要特性 | Key Features
+## 📖 项目简介
 
-- 🔍 **智能分组**：基于 HSV 直方图相似度自动按场景/连拍序列分组
-- 🎨 **美学评分排序**：采用 ZJU LAR-IQA 无参考图像质量评估算法，对组内照片按质量排序
-- ⚡ **GPU 加速**：基于 PyTorch + CUDA，支持显卡加速推理
-- 🧩 **友好界面与流程**（自 v2.0.0 起大幅优化）：
-  - 更清晰的导入流程与状态反馈
-  - 更直观的筛选界面与预览面板
-- 📦 **轻量打包与安装**（自 v2.0.0 起）：
-  - 支持 **Windows `.msi` 安装包**
-  - 精简 Electron 打包体积，减少冗余依赖
+**SMARK Media Tools** 是一款专为摄影爱好者设计的本地化媒体管理工具。针对连拍产生的海量废片与重复照片，本工具提供了一套高效的自动化整理方案：
 
----
+1.  **智能分组**：通过 HSV 直方图相似度，自动将连拍序列或相似场景聚类。
+2.  **美学评分**：集成 ZJU **LAR-IQA** 无参考图像质量评估算法（ONNX 加速），自动筛选组内最佳照片。
+3.  **一键导出**：快速标记保留/废弃，将精选照片导出至目标文件夹。
 
-## 目前功能计划 | Current Feature Plan
+> **性能参考**：缩略图生成约 **3ms/帧**，质量评估推理约 **1s/帧** (取决于 GPU 性能)。
 
-| 功能                           | Feature                                               | Progress      | Info                                          |
-| ------------------------------ | ----------------------------------------------------- | ------------- | --------------------------------------------- |
-| 实现照片的分组                 | Grouping photos                                       | ✅ Done        | 24.10.08 — Judged by HSV similarity           |
-| 添加显卡支持                   | Add GPU support                                       | ✅ Done        | 24.12.02 — Using PyTorch + CUDA               |
-| 调用更先进的 IQA 模型          | Use advanced IQA model                                | ✅ Done        | 24.12.16 — Using ZJU LAR-IQA no-reference IQA |
-| 配置项、支持页面切换与状态复原 | Configuration options, page switching & state restore | ⬜ In Progress | Basic UI structure ready                      |
-| 实现多种指标排序               | Implement multi-criteria sorting                      | ⬜ Todo        | e.g. time, file size, face focus              |
-| 实现视频的导入与切片保存       | Video import & frame slicing                          | ⬜ Todo        | Planned for future releases                   |
+<div align="center">
+  <img src="assets/gui.png" alt="SMARK Media Tools GUI" width="100%">
+</div>
 
 ---
 
-## 技术栈 | Tech Stack
+## ✨ 主要特性
 
-- **Desktop / UI**
-  - Electron + Vite + React + Shadcn UI
-- **Backend / Engine**
-  - Python + FastAPI / HTTP API
-  - PyTorch + CUDA（GPU 加速 IQA 与分析）
+- **⚡ 全链路加速**
+  - **ONNX Runtime**: 将 LAR-IQA 模型导出为 ONNX 格式，支持 CUDA/TensorRT 加速，脱离笨重的 PyTorch 环境。
+  - **Nuitka 编译**: Python 后端被编译为单一 `web_api.exe`，启动速度快，资源占用低。
+
+- **🧠 自动化后端管理 (v2.1.0)**
+  - Electron 主进程自动接管后端生命周期（启动/保活/关闭）。
+  - 内置健康检查机制：启动前 10 秒自动探测后端状态，实时监控响应延迟。
+
+- **📦 开箱即用**
+  - 提供 Windows `.msi` 安装包，内含 Electron 前端、预编译后端及运行库。
+  - **无需配置 Python 环境**，无需安装 CUDA 工具包（依赖已内置）。
+
+- **🎨 现代化交互**
+  - 基于 Shadcn UI + Tailwind CSS 构建，支持键盘快捷键操作。
+  - 直观的“分组-详情”视图，支持单张照片的启用/弃用标记。
 
 ---
 
-## 项目结构 | Project Structure
+## 📥 安装与运行
+
+### 1. 终端用户 (推荐)
+
+请直接访问 [Releases](../../releases) 页面下载最新版本的安装包：
+
+- 下载 **`Electron Media Toolbox.msi`**
+- 双击安装即可，无需任何额外配置。
+
+### 2. 开发者 (源码编译)
+
+如需二次开发，请分别准备 Node.js 和 Python 环境。
 
 ```bash
-📁 SMARKMediaTools
-├── 📁python
-│   ├── web_api.py
-│   └── 📁utils
-│       └── thumbnails.py
-└── 📁src
-    ├── 📁components
-    │   ├── CustomSlider.tsx
-    │   ├── ImagePreview.tsx
-    │   └── PhotoGrid.tsx
-    ├── 📁pages
-    │   ├── AboutPage.tsx
-    │   ├── HomePage.tsx
-    │   └── 📁PhotoFilterPage
-    │       └── PhotoFilterPage.tsx
-    ├── App.tsx
-    └── main.ts
+# 1. 克隆仓库
+git clone [https://github.com/SMARK2022/electron-media-toolbox.git](https://github.com/SMARK2022/electron-media-toolbox.git)
+
+# 2. 准备后端 (推荐使用 Conda/venv)
+cd python
+pip install -r requirements.txt
+python web_api.py  # 启动后端服务
+
+# 3. 启动前端 (在新的终端窗口)
+cd ..
+npm install
+npm run start
 ````
 
----
+> **注意**：开发模式下，Electron 将直接连接本地 Python 源码服务；构建生产版本时，系统会调用 Nuitka 将后端编译为 exe 并打包。
 
-## 安装与运行 | Installation & How to Run
+-----
 
-### 1. 终端用户（推荐）| For End Users (Recommended)
+## 🛠️ 技术栈
 
-在 Releases 页面下载最新版本（自 **v2.0.0** 起）：
+| 模块             | 技术选型                          | 说明                                       |
+| :--------------- | :-------------------------------- | :----------------------------------------- |
+| **UI / Desktop** | Electron, Vite, React, TypeScript | Shadcn UI + Tailwind CSS 界面构建          |
+| **Backend**      | FastAPI, Uvicorn                  | 核心业务逻辑与文件 I/O                     |
+| **Compiler**     | **Nuitka**                        | 将 Python 编译为独立可执行文件 (`onefile`) |
+| **AI Inference** | **ONNX Runtime**                  | 运行 LAR-IQA 模型 (CPU/GPU 自适应)         |
+| **Packaging**    | Electron Forge, Wix Toolset       | 生成 Windows MSI 安装包                    |
 
-* 下载并运行 **`SMARKMediaTools-2.0.0-setup.msi`**
-* 按照安装向导完成安装
-* 从开始菜单或桌面快捷方式启动 **SMARK Media Tools**
+-----
 
-> Windows `.msi` 安装包已对打包体积进行精简，同时自动包含所需的 Electron 运行环境与前端资源。
+## 🗓️ 功能规划
 
-### 2. 开发者模式 | For Developers (From Source)
+  - [x] **照片智能分组** (HSV 直方图)
+  - [x] **LAR-IQA 美学评分** (ONNX Runtime)
+  - [x] **后端独立编译与生命周期管理** (Nuitka + Auto-start)
+  - [x] **Windows MSI 安装包封装**
+  - [ ] 多维度排序指标 (人脸对焦清晰度、文件大小等)
+  - [ ] 视频文件的导入与切片支持
 
-1. 启动 Python 后端（FastAPI / Web API）
-   Start the Python backend:
+-----
 
-   ```bash
-   python python/web_api.py
-   ```
+## 📝 更新日志
 
-2. 启动前端 Electron 应用
-   Start the frontend (Electron + Vite):
+### v2.1.0 (2025-11-22)
 
-   ```bash
-   npm install    # 首次运行时需要
-   npm run start
-   ```
+  * **架构升级**：后端迁移至 ONNX Runtime，移除 PyTorch 依赖，体积大幅减小。
+  * **编译优化**：使用 Nuitka 编译后端，极大提升启动速度与稳定性。
+  * **体验改进**：新增后端健康探测与延迟显示，优化“关于”页面与版本检查器。
 
----
+### v2.0.0 (2025-11-19)
 
-## 作者 | Author
+  * **正式发布**：推出 `.msi` 安装包，重构导入/导出流程，UI 全面升级。
 
-<table>
-  <tr>
-    <td><img src="src/assets/images/avatar.jpg" alt="SMARK's Avatar" width="100" height="100"></td>
-    <td>
-      <strong>作者:</strong> SMARK<br>
-      <strong>Email:</strong> SMARK2019@outlook.com<br>
-      <strong>GitHub:</strong> <a href="https://github.com/SMARK2022">https://github.com/SMARK2022</a>
-    </td>
-  </tr>
-</table>
+-----
 
----
+## 📂 项目结构
 
-## 特别感谢 | Special Thanks
+```text
+SMARKMediaTools
+├── python/
+│   ├── web_api.py             # FastAPI 后端源码
+│   ├── out/web_api.exe        # Nuitka 编译产物
+│   ├── checkpoint/            # ONNX 模型文件
+│   └── utils/                 # 图像处理核心算法
+├── src/
+│   ├── main.ts                # Electron 主进程 (负责后端管理)
+│   ├── renderer/pages/        # React 页面 (Home, Filter, etc.)
+│   └── components/            # UI 组件
+└── package.json
+```
 
-本项目基于
-This project is based on:
+-----
 
-* Electron + Shadcn 模板：[https://github.com/LuanRoger/electron-shadcn](https://github.com/LuanRoger/electron-shadcn)
+## 📄 许可证与致谢
 
-本项目采用了
-This project uses:
+本项目基于 **Apache License 2.0** 开源。
 
-* 无参 IQA 算法：[https://github.com/nasimjamshidi/LAR-IQA](https://github.com/nasimjamshidi/LAR-IQA)
+  * **LAR-IQA**: [https://github.com/nasimjamshidi/LAR-IQA](https://github.com/nasimjamshidi/LAR-IQA)
+  * **UI Template**: [electron-shadcn](https://github.com/LuanRoger/electron-shadcn)
 
----
-
-## 许可证 | License
-
-此项目基于 **Apache License 2.0** 协议发布，详情请参见 `LICENSE` 文件。
-This project is licensed under the **Apache License 2.0**. For details, please refer to the `LICENSE` file.
-
----
-
-## 更新日志 | Changelog
-
-### 🚀 2.0.0 — 2025.11.19
-
-* 新增 **Windows `.msi` 安装包**，支持一键安装与卸载
-* **大幅精简打包体积**，移除冗余依赖，优化 Electron 资源结构
-* 全面优化 UI：
-
-  * 导入页面与筛选页面重新设计，层级更清晰
-  * 提升空状态、加载状态与错误状态的视觉反馈
-* 重构照片导入流程：
-
-  * 更稳定的文件夹检测逻辑
-  * 更清晰的导入状态提示与进度反馈
-
----
-
-### 🧪 1.x 系列（Alpha）摘要 | 1.x (Alpha) Summary
-
-* **a1.5 — 2025.11.16**
-
-  * 调整照片路径输入方式，支持自动检测文件夹路径
-  * 优化若干交互细节，修复已知 bug
-
-* **a1.4 — 2025.11.16**
-
-  * 更新部分依赖项
-  * 新增 GitHub Releases 版本检查器，可在「关于」页面检测更新
-
-* **a1.3 — 2025.11.06**
-
-  * 修正 electron-forge 与 Vite 打包导致的依赖缺失问题
-  * 修复若干 bug，并发布首个 Electron 打包版 release
-
-* **a1.2 — 2025.01.06**
-
-  * 更新 `.vite` 缓存文件与 Vite 版本
-  * 添加基础筛选功能（简易 Filter 模块）
-
-* **a1.1 / a1.1 更新 — 2025.01.06–2024.12.23**
-
-  * 设置全局语言翻译表（i18n），支持中英双语界面
-  * 优化启动页与页面布局
-  * 添加文件夹可用性检测功能
-
-* **a1.0 — 2024.12.22**
-
-  * 初始化项目，完成基本导入、分组与导出流程
-  * 初步实现 HSV 分组与 IQA 排序逻辑
+**作者**: [SMARK](https://github.com/SMARK2022) | 📧 SMARK2019@outlook.com
