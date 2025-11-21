@@ -87,6 +87,12 @@ i18n.use(initReactI18next).init({
           basedOnProject: "Based on project",
           build: "build",
           adoptedProject: "Adopted project",
+          feedbackLink: "Submit feedback / Issues",
+          feedbackTitle: "Feedback & suggestions",
+          feedbackDescription:
+            "Found a problem or have an idea? Open the issue tracker and let me know.",
+          githubProfile: "Author Github",
+          projectRepo: "Project GitHub:",
         },
         settings: {
           notAvailable:
@@ -103,7 +109,7 @@ i18n.use(initReactI18next).init({
           latestVersion: "Latest:",
           checking: "Checking GitHub updates…",
           upToDate: "You are on the latest version",
-          updateAvailable: "New version available, open GitHub",
+          updateAvailable: "New version available, open latest release",
           error: "Update check failed (click to retry)",
         },
         importPage: {
@@ -149,7 +155,7 @@ i18n.use(initReactI18next).init({
           noPhotosFoundDesc:
             "Try adjusting filters, importing more photos, or running a new detection task.",
           filterHint:
-            "Adjust the similarity threshold before running detection. Use bulk actions to quickly organize your photo groups.\n\nDouble-click on an image in the preview pane to quickly toggle its enabled status;\nclick to preview, use keyboard ↑↓←→ to select photos within the same group.",
+            "Adjust the similarity threshold before running detection. Use bulk actions to quickly organize your photo groups.\n\nDouble-click or press Enter on an image in the preview pane to quickly toggle its enabled status;\nclick to preview, use keyboard ↑↓←→ to select photos within the same group.",
         },
         photoDetailsTable: {
           currentPreviewPhoto: "Current Preview Photo",
@@ -251,6 +257,11 @@ i18n.use(initReactI18next).init({
           basedOnProject: "本项目基于",
           build: "构建",
           adoptedProject: "本项目采用了",
+          feedbackLink: "提交反馈 / 问题",
+          feedbackTitle: "反馈与建议",
+          feedbackDescription: "发现问题或有新想法？点击打开 Issues 页面。",
+          githubProfile: "作者主页",
+          projectRepo: "项目主页：",
         },
         settings: {
           notAvailable: "目前开发阶段，还没有应用任何设置配置项",
@@ -266,7 +277,7 @@ i18n.use(initReactI18next).init({
           latestVersion: "最新：",
           checking: "正在检查 GitHub 更新…",
           upToDate: "当前已是最新版本",
-          updateAvailable: "发现新版本，前往 GitHub 下载",
+          updateAvailable: "发现新版本，前往最新 Release 下载",
           error: "检查更新失败（点击重试）",
         },
         importPage: {
@@ -310,7 +321,7 @@ i18n.use(initReactI18next).init({
           noPhotosFoundDesc:
             "尝试调整筛选条件、导入更多照片或运行新的检测任务。",
           filterHint:
-            "在运行检测之前调整相似度阈值。使用批量操作可快速整理照片分组。\n\n在预览窗格中对图片左键双击可快速切换启用状态；\n单击以预览，使用键盘↑↓←→选择同组内照片。",
+            "在运行检测之前调整相似度阈值。使用批量操作可快速整理照片分组。\n\n在预览窗格中对图片左键双击或Enter键可快速切换启用状态；\n单击以预览，使用键盘↑↓←→选择同组内照片。",
         },
         photoDetailsTable: {
           currentPreviewPhoto: "当前预览照片",

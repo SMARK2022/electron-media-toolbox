@@ -50,6 +50,21 @@ export function GithubVersionChecker({ className }: { className?: string }) {
   const [latestVersion, setLatestVersion] = React.useState<string | null>(null);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
+  const openExternal = React.useCallback((url: string) => {
+    const anyWindow = window as any;
+    try {
+      if (anyWindow.ElectronAPI?.openExternal) {
+        anyWindow.ElectronAPI.openExternal(url);
+      } else if (anyWindow.electron?.shell?.openExternal) {
+        anyWindow.electron.shell.openExternal(url);
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    } catch {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }, []);
+
   React.useEffect(() => {
     let cancelled = false;
 
@@ -98,16 +113,8 @@ export function GithubVersionChecker({ className }: { className?: string }) {
   }, []);
 
   const openLatestReleasePage = React.useCallback(() => {
-    const url = LATEST_RELEASE_PAGE;
-    const w = window as any;
-    // 如果你在 preload 里暴露了 electron.shell.openExternal，可以优先用它
-    if (w.electron?.shell?.openExternal) {
-      w.electron.shell.openExternal(url);
-    } else {
-      // 兜底用浏览器打开
-      window.open(url, "_blank");
-    }
-  }, []);
+    openExternal(LATEST_RELEASE_PAGE);
+  }, [openExternal]);
 
   const renderIcon = () => {
     if (status === "checking") {
@@ -145,15 +152,19 @@ export function GithubVersionChecker({ className }: { className?: string }) {
     }
   };
 
+  const isChecking = status === "checking";
+  const isUpdateAvailable = status === "update-available";
+
   return (
     <div className={cn("flex flex-col gap-1 text-sm", className)}>
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex flex-col">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="flex flex-col gap-1">
           <span className="font-medium">{t("updateChecker.title")}</span>
           <span className="text-muted-foreground text-xs">
             {t("updateChecker.currentVersion")} <code>{CURRENT_VERSION}</code>
             {latestVersion && (
               <>
+                {" · "}
                 {t("updateChecker.latestVersion")} <code>{latestVersion}</code>
               </>
             )}
@@ -161,9 +172,9 @@ export function GithubVersionChecker({ className }: { className?: string }) {
         </div>
 
         <Button
-          variant="outline"
+          variant={isUpdateAvailable ? "default" : "outline"}
           size="sm"
-          disabled={status === "checking"}
+          disabled={isChecking}
           onClick={handleClick}
         >
           {renderIcon()}
