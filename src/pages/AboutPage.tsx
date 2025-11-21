@@ -55,7 +55,7 @@ export default function AboutPage() {
   // 反馈链接（建议指向仓库 Issues，也可以改成你自己的链接）
   const feedbackUrl =
     "https://github.com/SMARK2022/electron-media-toolbox/issues/new";
-  const githubProfileUrl = "https://github.com/SMARK";
+  const githubProfileUrl = "https://github.com/SMARK2022";
   const projectRepoUrl = "https://github.com/SMARK2022/electron-media-toolbox";
   const baseProjectUrl = "https://github.com/LuanRoger/electron-shadcn";
   const adoptedProjectUrl = "https://github.com/nasimjamshidi/LAR-IQA";
