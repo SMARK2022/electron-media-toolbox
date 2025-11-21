@@ -27,7 +27,7 @@ export default function HomePage() {
       setLatency(null);
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1000);
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
       const start = Date.now();
 
       const response = await fetch("http://localhost:8000/status", {

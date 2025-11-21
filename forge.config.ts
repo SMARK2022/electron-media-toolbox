@@ -15,6 +15,7 @@ import {
   rmdirSync,
   statSync,
   unlinkSync,
+  existsSync,
   promises as fsp,
 } from "node:fs";
 import { normalize, join } from "node:path";
@@ -43,6 +44,30 @@ type CustomWalker = CopyClass<Walker> & {
 
 // 应用图标
 const appIcon = path.resolve(__dirname, "assets", "app.ico");
+
+// ================== Python 后端 exe 资源配置 ==================
+
+// 这里假定你已经在项目根目录下的 python/out/web_api.exe
+const pythonExeSource = path.resolve(__dirname, "python", "out", "web_api.exe");
+
+// extraResource 列表：如果 exe 存在，就打包；否则只给个 warning
+const extraResources: { from: string; to: string }[] = [];
+
+if (existsSync(pythonExeSource)) {
+  extraResources.push({
+    from: pythonExeSource,
+    // 最终在打包结果中的路径：<resources>/python/out/web_api.exe
+    to: "python/out/web_api.exe",
+  });
+  console.log(
+    "[forge-config] ✓ Found python backend exe, will bundle:",
+    pythonExeSource,
+  );
+} else {
+  console.warn(
+    "[forge-config] ⚠ web_api.exe not found at python/out/web_api.exe; backend exe will NOT be bundled.",
+  );
+}
 
 // ================== 工具函数：列出目录并清理空目录 ==================
 
@@ -96,6 +121,9 @@ const config: ForgeConfig = {
     prune: true,
     icon: appIcon,
 
+    // 把 python 后端 exe 作为资源文件打进安装目录（resources/python/out/web_api.exe）
+    extraResource: extraResources,
+
     // 只保留必要文件 + 图标 + 选中的 node_modules（大幅减小体积）
     ignore: (file: string) => {
       const filePath = file.toLowerCase();
@@ -118,6 +146,12 @@ const config: ForgeConfig = {
       if (!KEEP_FILE.keep && filePath === "/app.ico") KEEP_FILE.keep = true;
       if (!KEEP_FILE.keep && filePath === "/assets") KEEP_FILE.keep = true;
       if (!KEEP_FILE.keep && filePath.startsWith("/assets/"))
+        KEEP_FILE.keep = true;
+
+      // 允许保留 python/out/web_api.exe 的源码路径（可选：方便 dev 调试时本地也能运行）
+      if (!KEEP_FILE.keep && filePath === "/python") KEEP_FILE.keep = true;
+      if (!KEEP_FILE.keep && filePath === "/python/out") KEEP_FILE.keep = true;
+      if (!KEEP_FILE.keep && filePath === "/python/out/web_api.exe")
         KEEP_FILE.keep = true;
 
       // node_modules：只保留 nativeModuleDependenciesToPackage 中的模块

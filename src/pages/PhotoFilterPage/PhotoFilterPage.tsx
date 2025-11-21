@@ -330,7 +330,7 @@ export default function PhotoFilterSubpage() {
           const timeDifference = (currentTime - parseInt(submitTime)) / 1000;
 
           // 提交 6 秒后，如果状态仍然是空闲，则 5 秒后停止轮询
-          if (timeDifference > 3 && data.status === "空闲中") {
+          if (timeDifference > 2 && data.status === "空闲中") {
             setTimeout(() => {
               if (data.status === "空闲中") {
                 setUpdate(false);
@@ -339,7 +339,7 @@ export default function PhotoFilterSubpage() {
               } else {
                 setUpdate(true);
               }
-            }, 1000);
+            }, 600);
           } else {
             setUpdate(true);
           }

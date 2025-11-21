@@ -12,6 +12,7 @@ import * as zlib from "zlib";
 import { initializeLogger, closeLogger } from "./lib/logger";
 // 引入 protocol 模块,用于注册 schemes
 const exifParser = require("exif-parser");
+import { spawn, ChildProcess } from "node:child_process";
 
 /* -------------------------------------------------------------------------- */
 /*                               初始化与常量                                   */
@@ -30,8 +31,117 @@ console.log(`Electron version: ${process.versions.electron}`);
 console.log("✓ Application initialization started");
 
 // 获取应用程序的根目录（打包后也有效）
+// —— 开发环境下：通常是项目根目录
+// —— 打包后：通常是安装目录
 const appRoot = process.cwd();
 console.log(`App root: ${appRoot}`);
+
+/* -------------------------------------------------------------------------- */
+/*                           Python 后端进程管理逻辑                            */
+/* -------------------------------------------------------------------------- */
+
+let pythonBackend: ChildProcess | null = null;
+
+/**
+ * 根据当前环境，推断 web_api.exe 的路径：
+ * - 开发环境：<项目根>/python/out/web_api.exe
+ * - 打包环境：<resources>/python/out/web_api.exe  （通过 extraResource 打进去）
+ */
+function getPythonBackendPath(): string | null {
+  if (process.platform !== "win32") {
+    // 当前只在 Windows 上用 .exe，有需要可以扩展其他平台
+    console.log("[PythonBackend] Non-Windows platform, skip backend.");
+    return null;
+  }
+
+  // 开发环境：直接从项目根目录查找
+  if (inDevelopment) {
+    const devPath = path.join(appRoot, "python", "out", "web_api.exe");
+    if (fs.existsSync(devPath)) {
+      console.log("[PythonBackend] Found backend exe (dev):", devPath);
+      return devPath;
+    }
+  }
+
+  // 打包环境：通过 extraResource 打到 resources/python/out/web_api.exe
+  const prodPath = path.join(
+    process.resourcesPath,
+    "python",
+    "out",
+    "web_api.exe",
+  );
+  if (fs.existsSync(prodPath)) {
+    console.log("[PythonBackend] Found backend exe (prod):", prodPath);
+    return prodPath;
+  }
+
+  console.log(
+    "[PythonBackend] web_api.exe not found in either dev or prod path, skip starting backend.",
+  );
+  return null;
+}
+
+/**
+ * 启动 Python 后端（如果 exe 存在）
+ */
+function startPythonBackend() {
+  const exePath = getPythonBackendPath();
+  if (!exePath) {
+    return;
+  }
+  if (pythonBackend) {
+    console.log("[PythonBackend] Backend already running, skip.");
+    return;
+  }
+
+  console.log("[PythonBackend] Starting backend:", exePath);
+  try {
+    pythonBackend = spawn(exePath, [], {
+      cwd: path.dirname(exePath),
+      // 开发环境继承输出到控制台，方便调试；打包后可选择忽略或重定向
+      stdio: inDevelopment ? "inherit" : "ignore",
+      windowsHide: false,
+    });
+
+    pythonBackend.on("exit", (code, signal) => {
+      console.log(
+        `[PythonBackend] Process exited with code=${code}, signal=${signal}`,
+      );
+      pythonBackend = null;
+    });
+
+    pythonBackend.on("error", (err) => {
+      console.error("[PythonBackend] Failed to start backend:", err);
+      pythonBackend = null;
+    });
+  } catch (err) {
+    console.error("[PythonBackend] Exception while starting backend:", err);
+    pythonBackend = null;
+  }
+}
+
+/**
+ * 停止 Python 后端（如果已启动）
+ */
+function stopPythonBackend() {
+  if (!pythonBackend) {
+    return;
+  }
+  if (pythonBackend.killed) {
+    pythonBackend = null;
+    return;
+  }
+
+  console.log("[PythonBackend] Stopping backend...");
+  try {
+    // Windows 下直接 kill 即可（映射到 TerminateProcess）
+    pythonBackend.kill();
+  } catch (err) {
+    console.error("[PythonBackend] Error when killing backend:", err);
+  } finally {
+    pythonBackend = null;
+  }
+}
 
 /* -------------------------------------------------------------------------- */
 /*                                 主窗口创建                                   */
@@ -62,7 +172,7 @@ function createWindow() {
   if (inDevelopment) {
     mainWindow.webContents.openDevTools();
   }
-  // 保留原行为：再次显式打开 DevTools
+  // 保留原行为：再次显式打开 DevTools（如果你觉得多余，也可以删掉这一行）
   mainWindow.webContents.openDevTools();
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
@@ -100,6 +210,7 @@ function createWindow() {
       return new Response(null, { status: 500 });
     }
   });
+
   /* ------------------------------ 协议处理: 缩略图 ------------------------------ */
 
   protocol.handle("thumbnail-resource", async (request: Request) => {
@@ -171,7 +282,6 @@ function createWindow() {
   }
 
   // photo-info:// 返回照片 EXIF 与文件信息
-  // photo-info:// 返回照片 EXIF 与文件信息
   protocol.handle("photo-info", async (request: Request) => {
     const decodedUrl = decodeURIComponent(
       request.url.replace(new RegExp(`^photo-info:/`, "i"), ""),
@@ -208,13 +318,28 @@ async function installExtensions() {
   }
 }
 
-app.whenReady().then(createWindow).then(installExtensions);
+/**
+ * 启动流程：
+ * 1. app.whenReady
+ * 2. 启动 Python 后端（如果 exe 存在）
+ * 3. 创建主窗口
+ * 4. 安装 React DevTools（dev 模式）
+ */
+app
+  .whenReady()
+  .then(() => {
+    startPythonBackend();
+    return createWindow();
+  })
+  .then(installExtensions);
 
 /* --------------------------------- macOS 专用 -------------------------------- */
 
 app.on("window-all-closed", () => {
   console.log("All windows closed");
+  // 非 macOS：当所有窗口关闭时，退出应用（并一起关掉后端）
   if (process.platform !== "darwin") {
+    stopPythonBackend();
     app.quit();
   }
 });
@@ -230,7 +355,15 @@ app.on("activate", () => {
 /*                                   退出收尾                                   */
 /* -------------------------------------------------------------------------- */
 
+app.on("before-quit", () => {
+  console.log("[Lifecycle] before-quit");
+  // 再保险：退出前尝试关闭后端
+  stopPythonBackend();
+});
+
 app.on("quit", () => {
   console.log("=== Application Exiting ===");
+  // 这里再调用一次也无妨（stopPythonBackend 内部做了空检查）
+  stopPythonBackend();
   closeLogger();
 });
