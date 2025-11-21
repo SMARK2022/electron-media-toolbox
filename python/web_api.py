@@ -393,8 +393,3 @@ if __name__ == "__main__":
     except Exception:
         _log("[MAIN] Exception in uvicorn.run, see traceback below.")
         traceback.print_exc()
-
-        # 如果是直接双击 exe（没有父控制台），防止窗口秒关（这里只在开发阶段有意义）
-        if sys.stdout is not None and sys.stdout.isatty():
-            input("发生异常，按回车键退出...")
-        raise

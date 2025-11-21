@@ -44,7 +44,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import PhotoDetailsTable from "./PhotoDetailsTable";
+import PhotoDetailsTable from "./PhotoFilterPage/PhotoDetailsTable";
 import { cn } from "@/lib/utils";
 
 interface ServerData {
@@ -609,7 +609,7 @@ export default function PhotoFilterSubpage() {
                   size="sm"
                   className="flex items-center gap-1.5 bg-blue-600 text-xs font-medium text-white shadow-sm hover:bg-blue-700"
                 >
-                  {bool_needUpdate ? (
+                  {serverData?.status !== "空闲中" ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <Play className="h-3.5 w-3.5 fill-current" />
@@ -741,6 +741,7 @@ export default function PhotoFilterSubpage() {
                       setIsPreviewEnabled={setIsPreviewEnabled}
                       updatePhotoEnabledStatus={updatePhotoEnabledStatus}
                       setPhotos={setPhotos}
+                      onPhotoStatusChanged={() => setReloadAlbum(true)}
                     />
                   </div>
                 </div>

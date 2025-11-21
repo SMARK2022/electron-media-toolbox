@@ -1,7 +1,7 @@
 import AboutPage from "@/pages/AboutPage";
 import { createRoute } from "@tanstack/react-router";
 import HomePage from "../pages/HomePage";
-import PhotoFilterSubpage from "../pages/PhotoFilterPage/PhotoFilterPage";
+import PhotoFilterSubpage from "../pages/PhotoFilterPage";
 import PhotoImportPage from "../pages/PhotoImportPage";
 import SettingPage from "../pages/SettingsPage";
 import TestingPage from "../pages/TestingPage";
