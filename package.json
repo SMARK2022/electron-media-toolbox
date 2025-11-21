@@ -12,7 +12,8 @@
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
-    "python:zip": "node scripts/zip-python.cjs"
+    "python:zip": "node scripts/zip-python.cjs",
+    "python:make": "node scripts/python-make.cjs"
   },
   "author": "SMARK <SMARK2019@outlook.com>",
   "license": "Apache License 2.0",
