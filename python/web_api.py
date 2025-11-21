@@ -65,6 +65,7 @@ _log("Python runtime started.")
 import asyncio
 import io
 import time
+import threading  # 新增：用于后台退出线程
 import numpy as np
 import cv2
 
@@ -318,6 +319,37 @@ async def detect_images(request: Request):
     }
     await task_manager.add_task(detection_task)
     return {"message": "检测任务已添加到队列"}
+
+
+# ============================
+# 新增：后端自杀接口（给 Electron 调用）
+# ============================
+
+
+@app.post("/shutdown")
+async def shutdown():
+    """
+    收到关闭请求后，返回一条消息，然后在后台线程中调用 os._exit(0)。
+
+    这样不依赖 uvicorn 的内部退出机制，无论是 Nuitka onefile
+    还是普通 Python 运行，都能立即干净退出整个进程。
+    """
+    _log("[shutdown] 收到关闭请求，准备退出进程...")
+
+    def _do_exit():
+        try:
+            # 给响应一点时间发回去
+            time.sleep(0.5)
+        except Exception:
+            pass
+        _log("[shutdown] 调用 os._exit(0)，进程即将退出。")
+        os._exit(0)
+
+    # 后台线程执行退出，避免阻塞当前请求处理协程
+    t = threading.Thread(target=_do_exit, daemon=True)
+    t.start()
+
+    return {"message": "shutting down"}
 
 
 # ============================

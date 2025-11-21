@@ -43,7 +43,6 @@ import {
 } from "@/components/ui/drawer";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import PhotoDetailsTable from "./PhotoFilterPage/PhotoDetailsTable";
 import { cn } from "@/lib/utils";
 
@@ -523,15 +522,15 @@ export default function PhotoFilterSubpage() {
               </div>
 
               {/* Scrollable Gallery：宽度随左侧 65% 容器自适应 */}
-              <ScrollArea className="mx-auto h-[calc(100vh-220px)] w-full rounded-xl border bg-slate-50 p-3">
+              <ScrollArea className="mx-auto h-[calc(100vh-220px)] w-full rounded-xl border dark:bg-slate-900 p-3">
                 {photos.map((group, index) => (
                   <React.Fragment key={index}>
                     {opt_galleryTabValue === "group" && (
-                      <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                      <div className="mb-1 flex items-center gap-2 px-1 pt-1 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
                         <span>
                           {t("filterPage.groupLabel") || "Group"} {index + 1}
                         </span>
-                        <div className="h-px flex-1 bg-slate-200" />
+                        <div className="h-px flex-1 bg-slate-200 dark:bg-slate-400" />
                       </div>
                     )}
 
@@ -576,11 +575,6 @@ export default function PhotoFilterSubpage() {
                       }
                     />
 
-                    {index < photos.length - 1 && (
-                      <div className="my-3">
-                        <Separator className="bg-slate-200" />
-                      </div>
-                    )}
                   </React.Fragment>
                 ))}
 

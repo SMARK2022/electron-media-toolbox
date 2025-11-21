@@ -21,12 +21,24 @@ import {
 
 import { cn } from "@/lib/utils";
 
+type NavItem = {
+  title: string;
+  url: string;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  description?: string;
+};
+
 export default function NavigationMenuDemo() {
   const { t } = useTranslation();
   const location = useLocation();
 
-  // 左侧主导航 & 右侧工具导航
-  const mainItems = [
+  // 用 Node 风格的环境变量来判断是否为开发模式
+  // Vite / Webpack 等打包器通常会在构建时把它替换掉
+  const isDev =
+    process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test";
+
+  // 左侧主导航
+  const mainItems: NavItem[] = [
     {
       title: t("navigation.home"),
       url: "/",
@@ -51,84 +63,72 @@ export default function NavigationMenuDemo() {
       icon: FolderUp,
       description: t("pageDescriptions.export"),
     },
-  ]; // home / import / filter / export
-  const utilItems = [
-    {
-      title: t("navigation.settings"),
-      url: "/settings",
-      icon: Settings,
-      description: t("pageDescriptions.settings"),
-    },
+  ];
+
+  // 右侧工具导航：
+  // - 生产环境：只保留 About
+  // - 开发环境：Settings + About + Testing
+  const utilItems: NavItem[] = [
     {
       title: t("navigation.about"),
       url: "/about",
       icon: Compass,
       description: t("pageDescriptions.about"),
     },
-    {
+  ];
+
+  if (isDev) {
+    // 开发环境才显示 Settings / Testing
+    utilItems.unshift({
+      title: t("navigation.settings"),
+      url: "/settings",
+      icon: Settings,
+      description: t("pageDescriptions.settings"),
+    });
+    utilItems.push({
       title: t("navigation.testing"),
       url: "/testing",
       icon: FlaskConical,
       description: t("pageDescriptions.testing"),
-    },
-  ]; // settings / about / testing
+    });
+  }
+
+  const renderNavList = (items: NavItem[]) => (
+    <NavigationMenuList>
+      {items.map((item) => {
+        const isActive = location.pathname === item.url;
+
+        return (
+          <NavigationMenuItem key={item.url}>
+            <NavigationMenuLink
+              asChild
+              className={cn(
+                navigationMenuTriggerStyle(),
+                isActive && "bg-gray-100 dark:bg-gray-800 dark:text-white",
+              )}
+            >
+              <Link to={item.url}>
+                <div className="flex items-center gap-2">
+                  <item.icon className="h-5 w-5" />
+                  {item.title}
+                </div>
+              </Link>
+            </NavigationMenuLink>
+          </NavigationMenuItem>
+        );
+      })}
+    </NavigationMenuList>
+  );
 
   return (
     <NavigationMenu className="w-full">
       <div className="flex w-full items-center justify-between">
         {/* 左侧：主导航 */}
-        <NavigationMenuList>
-          {mainItems.map((item) => {
-            const isActive = location.pathname === item.url;
-
-            return (
-              <NavigationMenuItem key={item.url}>
-                <NavigationMenuLink
-                  asChild
-                  className={cn(
-                    navigationMenuTriggerStyle(),
-                    isActive && "bg-gray-100 dark:bg-gray-800 dark:text-white",
-                  )}
-                >
-                  <Link to={item.url}>
-                    <div className="flex items-center gap-2">
-                      <item.icon className="h-5 w-5" />
-                      {item.title}
-                    </div>
-                  </Link>
-                </NavigationMenuLink>
-              </NavigationMenuItem>
-            );
-          })}
-        </NavigationMenuList>
+        {renderNavList(mainItems)}
 
         {/* 右侧：分割线 + 工具导航 */}
-          <span className="h-6 m-2 w-px bg-gray-200 dark:bg-gray-700" />
-          <NavigationMenuList>
-            {utilItems.map((item) => {
-              const isActive = location.pathname === item.url;
-
-              return (
-                <NavigationMenuItem key={item.url}>
-                  <NavigationMenuLink
-                    asChild
-                    className={cn(
-                      navigationMenuTriggerStyle(),
-                      isActive &&
-                        "bg-gray-100 dark:bg-gray-800 dark:text-white",
-                    )}
-                  >
-                    <Link to={item.url}>
-                      <div className="flex items-center gap-2">
-                        <item.icon className="h-5 w-5" />
-                        {item.title}
-                      </div>
-                    </Link>
-                  </NavigationMenuLink>
-                </NavigationMenuItem>
-              );
-            })}
-          </NavigationMenuList>
+        <span className="m-2 h-6 w-px bg-gray-200 dark:bg-gray-700" />
+        {renderNavList(utilItems)}
       </div>
     </NavigationMenu>
   );

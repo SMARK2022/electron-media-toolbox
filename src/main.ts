@@ -1,7 +1,5 @@
 import { app, BrowserWindow, protocol } from "electron";
 import registerListeners from "./helpers/ipc/listeners-register";
-// "electron-squirrel-startup" seems broken when packaging with vite
-// import started from "electron-squirrel-startup";
 import {
   installExtension,
   REACT_DEVELOPER_TOOLS,
@@ -10,9 +8,11 @@ import * as fs from "fs";
 import path from "path";
 import * as zlib from "zlib";
 import { initializeLogger, closeLogger } from "./lib/logger";
+import { spawn, type ChildProcess } from "child_process";
+import * as http from "http"; // 新增：用于调用后端 /shutdown
+
 // 引入 protocol 模块,用于注册 schemes
 const exifParser = require("exif-parser");
-import { spawn, ChildProcess } from "node:child_process";
 
 /* -------------------------------------------------------------------------- */
 /*                               初始化与常量                                   */
@@ -21,8 +21,12 @@ import { spawn, ChildProcess } from "node:child_process";
 // 初始化日志系统（在所有其他代码之前）
 initializeLogger();
 
-const inDevelopment = process.env.NODE_ENV === "development";
-// const inDevelopment = true;
+/**
+ * 是否为开发模式：
+ * - app.isPackaged 为 false 时，认为是开发环境
+ * - 同时兼容 NODE_ENV=development
+ */
+const inDevelopment = process.env.NODE_ENV === "development" || !app.isPackaged;
 
 console.log("=== Application Starting ===");
 console.log(`Is Development: ${inDevelopment}`);
@@ -30,82 +34,82 @@ console.log(`Node version: ${process.version}`);
 console.log(`Electron version: ${process.versions.electron}`);
 console.log("✓ Application initialization started");
 
-// 获取应用程序的根目录（打包后也有效）
-// —— 开发环境下：通常是项目根目录
-// —— 打包后：通常是安装目录
+// 获取应用程序的根目录（打包后也有效，用于 .cache/.thumbs 等）
 const appRoot = process.cwd();
 console.log(`App root: ${appRoot}`);
 
 /* -------------------------------------------------------------------------- */
-/*                           Python 后端进程管理逻辑                            */
+/*                          Python 后端（web_api.exe）管理                      */
 /* -------------------------------------------------------------------------- */
 
 let pythonBackend: ChildProcess | null = null;
 
 /**
- * 根据当前环境，推断 web_api.exe 的路径：
- * - 开发环境：<项目根>/python/out/web_api.exe
- * - 打包环境：<resources>/python/out/web_api.exe  （通过 extraResource 打进去）
+ * 解析 Python 后端 exe 的路径：
+ * - Dev：    <project_root>/python/out/web_api.exe
+ * - 打包后： process.resourcesPath/web_api.exe
  */
-function getPythonBackendPath(): string | null {
+function resolvePythonBackendPath(): string | null {
+  // 当前后端只在 Windows 下有 exe，有其它平台再扩展
   if (process.platform !== "win32") {
-    // 当前只在 Windows 上用 .exe，有需要可以扩展其他平台
     console.log("[PythonBackend] Non-Windows platform, skip backend.");
     return null;
   }
 
-  // 开发环境：直接从项目根目录查找
+  const exeName = "web_api.exe";
+
   if (inDevelopment) {
-    const devPath = path.join(appRoot, "python", "out", "web_api.exe");
+    const devPath = path.join(process.cwd(), "python", "out", exeName);
     if (fs.existsSync(devPath)) {
-      console.log("[PythonBackend] Found backend exe (dev):", devPath);
+      console.log("[PythonBackend] Dev exe found at:", devPath);
       return devPath;
     }
+    console.warn(
+      "[PythonBackend] Dev exe not found at python/out/web_api.exe, skip.",
+    );
+    return null;
   }
 
-  // 打包环境：通过 extraResource 打到 resources/python/out/web_api.exe
-  const prodPath = path.join(
-    process.resourcesPath,
-    "python",
-    "out",
-    "web_api.exe",
-  );
+  // 打包后：extraResource 会把 exe 放在 resources 根目录
+  const prodPath = path.join(process.resourcesPath, exeName);
   if (fs.existsSync(prodPath)) {
-    console.log("[PythonBackend] Found backend exe (prod):", prodPath);
+    console.log("[PythonBackend] Packed exe found at:", prodPath);
     return prodPath;
   }
 
-  console.log(
-    "[PythonBackend] web_api.exe not found in either dev or prod path, skip starting backend.",
+  // 兜底：如果以后你又改回 resources/python/out/web_api.exe，可以兼容一下
+  const altPath = path.join(process.resourcesPath, "python", "out", exeName);
+  if (fs.existsSync(altPath)) {
+    console.log("[PythonBackend] Packed exe found at (alt):", altPath);
+    return altPath;
+  }
+
+  console.warn(
+    "[PythonBackend] No backend exe found in resources, backend will NOT be started.",
   );
   return null;
 }
 
 /**
- * 启动 Python 后端（如果 exe 存在）
+ * 启动 Python 后端：
+ * - exe 不存在则直接跳过
+ * - 开发模式下使用 stdio: "inherit" 方便调试；打包后用 "ignore" 静音
  */
 function startPythonBackend() {
-  const exePath = getPythonBackendPath();
-  if (!exePath) {
-    return;
-  }
-  if (pythonBackend) {
-    console.log("[PythonBackend] Backend already running, skip.");
-    return;
-  }
+  const exePath = resolvePythonBackendPath();
+  if (!exePath) return;
 
-  console.log("[PythonBackend] Starting backend:", exePath);
+  console.log(`[PythonBackend] Starting backend: ${exePath}`);
+
   try {
     pythonBackend = spawn(exePath, [], {
-      cwd: path.dirname(exePath),
-      // 开发环境继承输出到控制台，方便调试；打包后可选择忽略或重定向
       stdio: inDevelopment ? "inherit" : "ignore",
-      windowsHide: false,
+      windowsHide: !inDevelopment,
     });
 
     pythonBackend.on("exit", (code, signal) => {
       console.log(
-        `[PythonBackend] Process exited with code=${code}, signal=${signal}`,
+        `[PythonBackend] Backend exited. code=${code}, signal=${signal}`,
       );
       pythonBackend = null;
     });
@@ -115,31 +119,90 @@ function startPythonBackend() {
       pythonBackend = null;
     });
   } catch (err) {
-    console.error("[PythonBackend] Exception while starting backend:", err);
-    pythonBackend = null;
+    console.error("[PythonBackend] spawn() threw:", err);
   }
 }
 
 /**
- * 停止 Python 后端（如果已启动）
+ * 向 Python 后端发送 /shutdown 请求，让它自己调用 os._exit(0)
+ * 注意：
+ * - 使用 Node 的 http 模块，手动 unref socket，避免阻塞事件循环
+ * - 如果端口没开 / 请求失败，直接忽略
+ */
+function requestBackendShutdown() {
+  // 目前后端固定跑在 8000 端口
+  const options: http.RequestOptions = {
+    host: "127.0.0.1",
+    port: 8000,
+    path: "/shutdown",
+    method: "POST",
+    timeout: 1000,
+  };
+
+  try {
+    const req = http.request(options, (res) => {
+      // 不关心响应内容，直接吃掉数据并在结束时 unref socket
+      res.on("data", () => {});
+      res.on("end", () => {
+        res.socket?.unref();
+      });
+    });
+
+    // socket 一建立就 unref，确保这个请求不会阻止进程退出
+    req.on("socket", (socket) => {
+      socket.unref();
+    });
+
+    req.on("error", (err) => {
+      console.warn("[PythonBackend] /shutdown request error:", err);
+    });
+
+    req.on("timeout", () => {
+      req.destroy();
+    });
+
+    req.end();
+  } catch (err) {
+    console.warn("[PythonBackend] Failed to send /shutdown request:", err);
+  }
+}
+
+/**
+ * 终止 Python 后端：
+ * - 先尝试优雅关闭（HTTP /shutdown + os._exit(0)）
+ * - 然后 kill Node 跟踪到的子进程（通常是 Nuitka stub）
+ * - 最后在 Windows 下用 taskkill /IM web_api.exe /F /T 兜底
  */
 function stopPythonBackend() {
-  if (!pythonBackend) {
-    return;
-  }
-  if (pythonBackend.killed) {
-    pythonBackend = null;
-    return;
-  }
-
   console.log("[PythonBackend] Stopping backend...");
-  try {
-    // Windows 下直接 kill 即可（映射到 TerminateProcess）
-    pythonBackend.kill();
-  } catch (err) {
-    console.error("[PythonBackend] Error when killing backend:", err);
-  } finally {
-    pythonBackend = null;
+
+  // 1) 先让后端自己优雅退出
+  requestBackendShutdown();
+
+  // 2) 再杀掉 Node 直接跟踪到的子进程（Nuitka stub）
+  if (pythonBackend && !pythonBackend.killed) {
+    console.log("[PythonBackend] Killing tracked child process...");
+    try {
+      pythonBackend.kill();
+    } catch (err) {
+      console.error("[PythonBackend] Failed to kill tracked child:", err);
+    }
+  }
+  pythonBackend = null;
+
+  // 3) Windows 兜底：杀掉所有名为 web_api.exe 的进程（包括 Nuitka 子进程）
+  if (process.platform === "win32") {
+    try {
+      console.log("[PythonBackend] Running taskkill /IM web_api.exe /F /T");
+      spawn("taskkill", ["/IM", "web_api.exe", "/F", "/T"], {
+        stdio: "ignore",
+        windowsHide: true,
+      }).on("error", (err) => {
+        console.warn("[PythonBackend] taskkill error:", err);
+      });
+    } catch (err) {
+      console.warn("[PythonBackend] Failed to spawn taskkill:", err);
+    }
   }
 }
 
@@ -172,7 +235,7 @@ function createWindow() {
   if (inDevelopment) {
     mainWindow.webContents.openDevTools();
   }
-  // 保留原行为：再次显式打开 DevTools（如果你觉得多余，也可以删掉这一行）
+  // 如果你觉得两次 openDevTools 太吵，可以删掉这一行
   mainWindow.webContents.openDevTools();
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
@@ -320,26 +383,28 @@ async function installExtensions() {
 
 /**
  * 启动流程：
- * 1. app.whenReady
- * 2. 启动 Python 后端（如果 exe 存在）
- * 3. 创建主窗口
- * 4. 安装 React DevTools（dev 模式）
+ * - app.ready 后先尝试启动 Python 后端（若 exe 存在）
+ * - 再创建主窗口
+ * - 开发环境下安装 React DevTools
  */
 app
   .whenReady()
   .then(() => {
     startPythonBackend();
-    return createWindow();
+    createWindow();
   })
-  .then(installExtensions);
+  .then(() => {
+    if (inDevelopment) {
+      return installExtensions();
+    }
+    return;
+  });
 
 /* --------------------------------- macOS 专用 -------------------------------- */
 
 app.on("window-all-closed", () => {
   console.log("All windows closed");
-  // 非 macOS：当所有窗口关闭时，退出应用（并一起关掉后端）
   if (process.platform !== "darwin") {
-    stopPythonBackend();
     app.quit();
   }
 });
@@ -356,14 +421,11 @@ app.on("activate", () => {
 /* -------------------------------------------------------------------------- */
 
 app.on("before-quit", () => {
-  console.log("[Lifecycle] before-quit");
-  // 再保险：退出前尝试关闭后端
+  console.log("App before-quit, stopping backend...");
   stopPythonBackend();
 });
 
 app.on("quit", () => {
   console.log("=== Application Exiting ===");
-  // 这里再调用一次也无妨（stopPythonBackend 内部做了空检查）
-  stopPythonBackend();
   closeLogger();
 });

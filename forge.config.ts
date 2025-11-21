@@ -47,18 +47,16 @@ const appIcon = path.resolve(__dirname, "assets", "app.ico");
 
 // ================== Python 后端 exe 资源配置 ==================
 
-// 这里假定你已经在项目根目录下的 python/out/web_api.exe
+// 注意：这里是“开发时”的源路径（项目根目录下）
+// 打包时会被复制到 <resources>/web_api.exe
 const pythonExeSource = path.resolve(__dirname, "python", "out", "web_api.exe");
 
-// extraResource 列表：如果 exe 存在，就打包；否则只给个 warning
-const extraResources: { from: string; to: string }[] = [];
+// extraResource 只能是 string 或 string[]
+// Electron Packager 会把这些文件直接拷贝到 resources 根目录
+const extraResources: string[] = [];
 
 if (existsSync(pythonExeSource)) {
-  extraResources.push({
-    from: pythonExeSource,
-    // 最终在打包结果中的路径：<resources>/python/out/web_api.exe
-    to: "python/out/web_api.exe",
-  });
+  extraResources.push(pythonExeSource);
   console.log(
     "[forge-config] ✓ Found python backend exe, will bundle:",
     pythonExeSource,
@@ -121,7 +119,11 @@ const config: ForgeConfig = {
     prune: true,
     icon: appIcon,
 
-    // 把 python 后端 exe 作为资源文件打进安装目录（resources/python/out/web_api.exe）
+    /**
+     * 把 web_api.exe 作为“额外资源”打入安装包：
+     * - 开发时路径：项目根/python/out/web_api.exe
+     * - 打包后路径：path.join(process.resourcesPath, "web_api.exe")
+     */
     extraResource: extraResources,
 
     // 只保留必要文件 + 图标 + 选中的 node_modules（大幅减小体积）
@@ -142,17 +144,16 @@ const config: ForgeConfig = {
       if (!KEEP_FILE.keep && filePath.startsWith("/.vite/"))
         KEEP_FILE.keep = true;
 
-      // 图标 / 资源
+      // 图标 / 静态资源
       if (!KEEP_FILE.keep && filePath === "/app.ico") KEEP_FILE.keep = true;
       if (!KEEP_FILE.keep && filePath === "/assets") KEEP_FILE.keep = true;
       if (!KEEP_FILE.keep && filePath.startsWith("/assets/"))
         KEEP_FILE.keep = true;
 
-      // 允许保留 python/out/web_api.exe 的源码路径（可选：方便 dev 调试时本地也能运行）
-      if (!KEEP_FILE.keep && filePath === "/python") KEEP_FILE.keep = true;
-      if (!KEEP_FILE.keep && filePath === "/python/out") KEEP_FILE.keep = true;
-      if (!KEEP_FILE.keep && filePath === "/python/out/web_api.exe")
-        KEEP_FILE.keep = true;
+      // ⚠ python 源码及 out 目录不再强制保留（后端 exe 走 extraResource）
+      // 如果你希望打包时把整个 python 目录也塞进去，可以按需放开：
+      // if (!KEEP_FILE.keep && filePath === "/python") KEEP_FILE.keep = true;
+      // if (!KEEP_FILE.keep && filePath.startsWith("/python/")) KEEP_FILE.keep = true;
 
       // node_modules：只保留 nativeModuleDependenciesToPackage 中的模块
       if (!KEEP_FILE.keep && filePath.startsWith("/node_modules/")) {
@@ -457,7 +458,7 @@ const config: ForgeConfig = {
               const children = readdirSync(dirPath);
               if (children.length === 0) {
                 rmdirSync(dirPath);
-                // console.log(`    ✂ removed empty dir: ${dirPath}`);
+                console.log(`    ✂ removed empty dir: ${dirPath}`);
               }
             } catch {
               // ignore
