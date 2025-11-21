@@ -66,15 +66,28 @@ async function main() {
       return false;
     }
 
-    // 3) 忽略任何名为 dataset / datasets 的目录
-    //    例如 python/dataset/xxx.py 或 python/foo/datasets/bar.py
-    const segments = lowerName.split(/[\\/]/); // 兼容 Windows/Unix 路径分隔符
-    if (segments.includes("dataset") || segments.includes("datasets")) {
+    // 3) 忽略 .nuitka-cache 目录（nuitka打包缓存）
+    if (lowerName.includes(".nuitka-cache")) {
       return false;
     }
 
-    // 4) 忽略所有 .pdf 文件
+    // 4) 忽略 out 目录（nuitka打包缓存）
+    if (lowerName.includes("out")) {
+      return false;
+    }
+
+    // 5) 忽略所有 .pdf 文件
     if (lowerName.endsWith(".pdf")) {
+      return false;
+    }
+
+    // 6) 忽略所有 .ipynb 文件（Jupyter notebook）
+    if (lowerName.endsWith(".ipynb")) {
+      return false;
+    }
+
+    // 7) 忽略所有 .bat 文件（批处理脚本）
+    if (lowerName.endsWith(".bat")) {
       return false;
     }
 
