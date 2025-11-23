@@ -6,6 +6,7 @@ import { updateAppLanguage } from "./helpers/language_helpers";
 import { syncThemeWithLocal } from "./helpers/theme_helpers";
 import "./localization/i18n";
 import { router } from "./routes/router";
+import { GithubUpdateNotifier } from "./components/GithubUpdateNotifier";
 
 export default function App() {
   const { i18n } = useTranslation();
@@ -21,6 +22,7 @@ export default function App() {
 const root = createRoot(document.getElementById("app")!);
 root.render(
   <React.StrictMode>
+    <GithubUpdateNotifier />
     <App />
   </React.StrictMode>,
 );

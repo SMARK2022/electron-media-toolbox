@@ -1,3 +1,4 @@
+// src/main.ts
 import { app, BrowserWindow, protocol } from "electron";
 import registerListeners from "./helpers/ipc/listeners-register";
 import {
