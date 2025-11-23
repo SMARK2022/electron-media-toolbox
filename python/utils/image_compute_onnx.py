@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple, Callable, Optional, Any
 from pathlib import Path
 import sys
+import threading
 
 import cv2
 import numpy as np
@@ -62,7 +63,10 @@ def get_resource_path(relative_path):
 _checkpoint_onnx = Path(get_resource_path("checkpoint/lar_iqa.onnx"))
 
 _IQA_SESSION = None
+_IQA_SESSION_CPU = None
 _IQA_INPUT_NAMES: List[str] = []
+_IQA_RUN_LOCK = threading.Lock()
+_IS_DML = False
 
 
 # 如果模型文件不存在或 ORT 初始化失败，使用一个简单的 dummy session 以避免程序崩溃。
@@ -76,25 +80,47 @@ if not _checkpoint_onnx.exists():
     print(f"[IQA] ONNX model not found at {_checkpoint_onnx}. IQA will be disabled (using dummy session).")
     _IQA_SESSION = _DummyIqaSession()
     _IQA_INPUT_NAMES = ["input_authentic", "input_synthetic"]
+    _IQA_SESSION_CPU = _IQA_SESSION
 else:
     try:
+        providers = _select_ort_providers()
+
+        # ---- GPU / DirectML Session Options ----
         _session_options = ort.SessionOptions()
-        # 根据需要可以微调线程数；0 表示由 ORT 自己决定
-        _session_options.intra_op_num_threads = 0
-        _session_options.inter_op_num_threads = 0
+        if "DmlExecutionProvider" in providers:
+            # DirectML 不支持 mem pattern + 并行执行，需要串行执行模式
+            _session_options.enable_mem_pattern = False
+            _session_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+            # 关闭图优化以避免 DmlFusedNode 等 fuse 导致崩溃
+            _session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
+        else:
+            _session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
         _IQA_SESSION = ort.InferenceSession(
             str(_checkpoint_onnx),
             sess_options=_session_options,
-            providers=_select_ort_providers(),
+            providers=providers,
         )
 
         _IQA_INPUT_NAMES = [inp.name for inp in _IQA_SESSION.get_inputs()]
-        print(f"[IQA] Loaded ONNX model from {_checkpoint_onnx}, inputs: {_IQA_INPUT_NAMES}")
+        _IS_DML = "DmlExecutionProvider" in _IQA_SESSION.get_providers()
+        print(f"[IQA] Loaded ONNX model from {_checkpoint_onnx}, providers={_IQA_SESSION.get_providers()}, inputs={_IQA_INPUT_NAMES}")
+
+        # ---- CPU Fallback Session ----
+        _cpu_so = ort.SessionOptions()
+        _cpu_so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        _IQA_SESSION_CPU = ort.InferenceSession(
+            str(_checkpoint_onnx),
+            sess_options=_cpu_so,
+            providers=["CPUExecutionProvider"],
+        )
+
     except Exception as e:
         print(f"[IQA] Failed to create ONNX Runtime session ({e}). Falling back to dummy session to avoid crash.")
         _IQA_SESSION = _DummyIqaSession()
         _IQA_INPUT_NAMES = ["input_authentic", "input_synthetic"]
+        _IQA_SESSION_CPU = _IQA_SESSION
+        _IS_DML = False
 
 HSVHist = Tuple[np.ndarray, np.ndarray, np.ndarray]
 BINS: List[int] = [90, 128, 128]
@@ -289,7 +315,16 @@ def infer_iqa(
         _IQA_INPUT_NAMES[0]: image_authentic,
         _IQA_INPUT_NAMES[1]: image_synthetic,
     }
-    outputs = _IQA_SESSION.run(None, inputs)
+    try:
+        if _IS_DML:
+            # DirectML Session 不允许多线程并发 Run，必须串行化
+            with _IQA_RUN_LOCK:
+                outputs = _IQA_SESSION.run(None, inputs)
+        else:
+            outputs = _IQA_SESSION.run(None, inputs)
+    except Exception as e:
+        print(f"[IQA] GPU/DirectML inference failed ({e}), falling back to CPUExecutionProvider.")
+        outputs = _IQA_SESSION_CPU.run(None, inputs)
     # 假定第一个输出是标量或 [1,1] 形式
     score_array = outputs[0]
     score = float(np.asarray(score_array).reshape(-1)[0])

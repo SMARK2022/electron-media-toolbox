@@ -169,42 +169,62 @@ function requestBackendShutdown() {
 
 /**
  * 终止 Python 后端：
- * - 先尝试优雅关闭（HTTP /shutdown + os._exit(0)）
- * - 然后 kill Node 跟踪到的子进程（通常是 Nuitka stub）
- * - 最后在 Windows 下用 taskkill /IM web_api.exe /F /T 兜底
+ * - 首选：HTTP /shutdown，让后端自己优雅退出（触发 SIGINT）
+ * - 然后等待一段时间，看看进程是否退出（通过 'exit' 事件）
+ * - 最后兜底：在 Windows 上用不带 /F 的 taskkill，尽量给系统一个正常关闭的机会
+ *
+ * 注意：
+ * - 不再主动调用 pythonBackend.kill()（在 Windows 上是 TerminateProcess，和 /F 类似）
+ * - 真正“强杀”（/F）的兜底可以留给用户手动在任务管理器中点掉
  */
 function stopPythonBackend() {
   console.log("[PythonBackend] Stopping backend...");
 
-  // 1) 先让后端自己优雅退出
+  // 1) 首先请求后端优雅关闭（触发 /shutdown -> SIGINT）
   requestBackendShutdown();
 
-  // 2) 再杀掉 Node 直接跟踪到的子进程（Nuitka stub）
-  if (pythonBackend && !pythonBackend.killed) {
-    console.log("[PythonBackend] Killing tracked child process...");
-    try {
-      pythonBackend.kill();
-    } catch (err) {
-      console.error("[PythonBackend] Failed to kill tracked child:", err);
-    }
+  if (!pythonBackend) {
+    return;
   }
-  pythonBackend = null;
 
-  // 3) Windows 兜底：杀掉所有名为 web_api.exe 的进程（包括 Nuitka 子进程）
-  if (process.platform === "win32") {
-    try {
-      console.log("[PythonBackend] Running taskkill /IM web_api.exe /F /T");
-      spawn("taskkill", ["/IM", "web_api.exe", "/F", "/T"], {
+  console.log("[PythonBackend] Waiting for backend process to exit by itself...");
+
+  // 2) 等待一段时间（例如 5 秒），如果仍未退出，再尝试软兜底
+  const backend = pythonBackend;
+  pythonBackend = null; // 标记为正在关闭
+
+  const timeoutMs = 3000;
+
+  setTimeout(() => {
+    // 如果进程已经退出，就什么都不做
+    if (backend.killed) {
+      console.log("[PythonBackend] Backend already killed/exit, no further action.");
+      return;
+    }
+
+    console.warn("[PythonBackend] Backend still alive after shutdown request, trying soft kill...");
+
+    if (process.platform === "win32") {
+      // 3) Windows 兜底：不带 /F，只发送正常关闭信号，让系统尽量优雅结束进程
+      const { spawn } = require("child_process");
+      const child = spawn("taskkill", ["/IM", "web_api.exe", "/T"], {
         stdio: "ignore",
         windowsHide: true,
-      }).on("error", (err) => {
+      });
+      child.on("error", (err: Error) => {
         console.warn("[PythonBackend] taskkill error:", err);
       });
-    } catch (err) {
-      console.warn("[PythonBackend] Failed to spawn taskkill:", err);
+    } else {
+      // 非 Windows：常规 SIGTERM 即可（不等同于 TerminateProcess）
+      try {
+        backend.kill("SIGTERM");
+      } catch (err) {
+        console.warn("[PythonBackend] backend.kill(SIGTERM) error:", err);
+      }
     }
-  }
+  }, timeoutMs);
 }
+
 
 /* -------------------------------------------------------------------------- */
 /*                                 主窗口创建                                   */
