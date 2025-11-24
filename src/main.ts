@@ -11,6 +11,7 @@ import * as zlib from "zlib";
 import { initializeLogger, closeLogger } from "./lib/logger";
 import { spawn, type ChildProcess } from "child_process";
 import * as http from "http"; // 新增：用于调用后端 /shutdown
+import { LruBufferCache } from "./helpers/cache/lru-buffer-cache";
 
 // 引入 protocol 模块,用于注册 schemes
 const exifParser = require("exif-parser");
@@ -18,6 +19,9 @@ const exifParser = require("exif-parser");
 /* -------------------------------------------------------------------------- */
 /*                               初始化与常量                                   */
 /* -------------------------------------------------------------------------- */
+
+// 允许主进程拥有更大的堆空间（确保能容纳最大缓存）
+app.commandLine.appendSwitch("js-flags", "--max-old-space-size=16384");
 
 // 初始化日志系统（在所有其他代码之前）
 initializeLogger();
@@ -38,6 +42,55 @@ console.log("✓ Application initialization started");
 // 获取应用程序的根目录（打包后也有效，用于 .cache/.thumbs 等）
 const appRoot = process.cwd();
 console.log(`App root: ${appRoot}`);
+
+const ONE_GB = 1024 * 1024 * 1024;
+
+function resolveLocalResourceCacheLimit(): {
+  limitBytes: number;
+  freeMemGB: number;
+} {
+  const memoryInfo = process.getSystemMemoryInfo(); // 单位：KB
+  const freeMemGB = memoryInfo.free / 1024 / 1024;
+
+  if (freeMemGB > 9) return { limitBytes: 8 * ONE_GB, freeMemGB };
+  if (freeMemGB > 5) return { limitBytes: 4 * ONE_GB, freeMemGB };
+  if (freeMemGB > 3) return { limitBytes: 2 * ONE_GB, freeMemGB };
+  if (freeMemGB > 1) return { limitBytes: 1 * ONE_GB, freeMemGB };
+  return { limitBytes: 0, freeMemGB };
+}
+
+function detectMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".png":
+      return "image/png";
+    case ".webp":
+      return "image/webp";
+    case ".gif":
+      return "image/gif";
+    case ".bmp":
+      return "image/bmp";
+    case ".tiff":
+    case ".tif":
+      return "image/tiff";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+const { limitBytes: localResourceCacheLimit, freeMemGB } =
+  resolveLocalResourceCacheLimit();
+const localResourceCache = new LruBufferCache(localResourceCacheLimit);
+console.log(
+  `[LocalResourceCache] Free memory: ${freeMemGB.toFixed(
+    2,
+  )} GB -> Cache capacity: ${(localResourceCacheLimit / ONE_GB).toFixed(
+    2,
+  )} GB`,
+);
 
 /* -------------------------------------------------------------------------- */
 /*                          Python 后端（web_api.exe）管理                      */
@@ -282,13 +335,31 @@ function createWindow() {
     );
     const fullPath =
       process.platform === "win32" ? convertPath(decodedUrl) : decodedUrl;
+    const cacheKey = fullPath;
 
-    console.log(`Full path: ${fullPath}`);
+    const cached = localResourceCache.get(cacheKey);
+    if (cached) {
+      return new Response(cached.data as any, {
+        headers: { "Content-Type": cached.mimeType },
+      });
+    }
 
     try {
       const data = await fs.promises.readFile(fullPath);
+      const mimeType = detectMimeType(fullPath);
+
+      if (localResourceCache.capacityBytes > 0) {
+        localResourceCache.set(cacheKey, {
+          data,
+          mimeType,
+          size: data.byteLength,
+        });
+      }
+
       // Buffer -> Response 的类型不总是能被 TS 精确推断，使用 as any 以兼容运行时 API
-      return new Response(data as any);
+      return new Response(data as any, {
+        headers: { "Content-Type": mimeType },
+      });
     } catch (error: any) {
       console.error(`Failed to read file: ${error.message as string}`);
       return new Response(null, { status: 500 });

@@ -45,7 +45,7 @@ export function exposeWindowContext() {
     readFile: (file: string) => ipcRenderer.invoke("read-file", file),
     readClipboard: () => ipcRenderer.invoke("clipboard-read"),
     getThumbsCacheDir: () => ipcRenderer.invoke("db-get-thumbs-cache-dir"),
-    runCommand: (cmdStr: string, cmdPath: string) =>
+    runCommand: (cmdStr: string, cmdPath?: string) =>
       ipcRenderer.invoke("run-command", cmdStr, cmdPath),
 
     /**

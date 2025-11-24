@@ -12,7 +12,7 @@ declare global {
       readFile(file: string): Promise<{ success: boolean; content: string }>;
       readClipboard(): Promise<string>;
       getThumbsCacheDir(): Promise<string>;
-      runCommand(cmdStr: string, cmdPath: string): Promise<string>;
+      runCommand(cmdStr: string, cmdPath?: string): Promise<string>;
       getPathForFile?(file: File): string;
     };
   }

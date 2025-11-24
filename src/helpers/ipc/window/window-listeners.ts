@@ -98,7 +98,7 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
    */
   ipcMain.handle(
     "run-command",
-    async (_event, cmdStr: string, cmdPath: string) => {
+    async (_event, cmdStr: string, cmdPath?: string) => {
       return new Promise((resolve, reject) => {
         const workerProcess = exec(cmdStr, { cwd: cmdPath });
 
