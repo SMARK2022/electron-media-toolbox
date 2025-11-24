@@ -223,6 +223,237 @@ export default function PhotoFilterSubpage() {
   const [bool_isPreviewEnabled, setIsPreviewEnabled] =
     React.useState<boolean>(false);
 
+  // 可拖动分栏：左侧宽度（vw），初始为 65vw，允许在初始值的左右各 20vw 范围内拖动
+  const initialLeftVwRef = React.useRef<number>(65);
+  const [leftWidthVw, setLeftWidthVw] = React.useState<number>(
+    initialLeftVwRef.current,
+  );
+  const minLeftVw = Math.max(8, initialLeftVwRef.current - 20);
+  const maxLeftVw = Math.min(92, initialLeftVwRef.current + 20);
+
+  // 预览面板内的可拖动：图片展示高度百分比，范围 20%~70%
+  const [previewHeightPercent, setPreviewHeightPercent] =
+    React.useState<number>(50);
+
+  // 拖动相关 refs
+  const draggingRef = React.useRef(false);
+  const startXRef = React.useRef(0);
+  const startLeftRef = React.useRef(leftWidthVw);
+
+  // 存放当前绑定到 window 的处理函数（用于卸载时移除）
+  const mouseMoveHandlerRef = React.useRef<((e: MouseEvent) => void) | null>(
+    null,
+  );
+  const mouseUpHandlerRef = React.useRef<(() => void) | null>(null);
+  const touchMoveHandlerRef = React.useRef<((e: TouchEvent) => void) | null>(
+    null,
+  );
+  const touchEndHandlerRef = React.useRef<(() => void) | null>(null);
+
+  // 启动鼠标拖动：在这里创建并绑定移动/结束处理器
+  const startMouseDrag = (clientX: number) => {
+    draggingRef.current = true;
+    startXRef.current = clientX;
+    startLeftRef.current = leftWidthVw;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const deltaX = ev.clientX - startXRef.current;
+      const deltaVw = (deltaX / window.innerWidth) * 100;
+      let newLeft = startLeftRef.current + deltaVw;
+      if (newLeft < minLeftVw) newLeft = minLeftVw;
+      if (newLeft > maxLeftVw) newLeft = maxLeftVw;
+      setLeftWidthVw(Number(newLeft.toFixed(2)));
+    };
+
+    const onMouseUp = () => {
+      draggingRef.current = false;
+      if (mouseMoveHandlerRef.current) {
+        window.removeEventListener("mousemove", mouseMoveHandlerRef.current);
+      }
+      if (mouseUpHandlerRef.current) {
+        window.removeEventListener("mouseup", mouseUpHandlerRef.current);
+      }
+      mouseMoveHandlerRef.current = null;
+      mouseUpHandlerRef.current = null;
+    };
+
+    mouseMoveHandlerRef.current = onMouseMove;
+    mouseUpHandlerRef.current = onMouseUp;
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  };
+
+  // 启动触摸拖动
+  const startTouchDrag = (clientX: number) => {
+    draggingRef.current = true;
+    startXRef.current = clientX;
+    startLeftRef.current = leftWidthVw;
+
+    const onTouchMove = (ev: TouchEvent) => {
+      const touch = ev.touches[0];
+      if (!touch) return;
+      const deltaX = touch.clientX - startXRef.current;
+      const deltaVw = (deltaX / window.innerWidth) * 100;
+      let newLeft = startLeftRef.current + deltaVw;
+      if (newLeft < minLeftVw) newLeft = minLeftVw;
+      if (newLeft > maxLeftVw) newLeft = maxLeftVw;
+      setLeftWidthVw(Number(newLeft.toFixed(2)));
+    };
+
+    const onTouchEnd = () => {
+      draggingRef.current = false;
+      if (touchMoveHandlerRef.current) {
+        window.removeEventListener("touchmove", touchMoveHandlerRef.current);
+      }
+      if (touchEndHandlerRef.current) {
+        window.removeEventListener("touchend", touchEndHandlerRef.current);
+      }
+      touchMoveHandlerRef.current = null;
+      touchEndHandlerRef.current = null;
+    };
+
+    touchMoveHandlerRef.current = onTouchMove;
+    touchEndHandlerRef.current = onTouchEnd;
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onTouchEnd);
+  };
+
+  // 卸载时清理（以防有残留监听器）
+  React.useEffect(() => {
+    return () => {
+      if (mouseMoveHandlerRef.current) {
+        window.removeEventListener("mousemove", mouseMoveHandlerRef.current);
+      }
+      if (mouseUpHandlerRef.current) {
+        window.removeEventListener("mouseup", mouseUpHandlerRef.current);
+      }
+      if (touchMoveHandlerRef.current) {
+        window.removeEventListener("touchmove", touchMoveHandlerRef.current);
+      }
+      if (touchEndHandlerRef.current) {
+        window.removeEventListener("touchend", touchEndHandlerRef.current);
+      }
+    };
+  }, []);
+
+  // ========== 预览图片高度拖动逻辑 ==========
+  const previewDraggingRef = React.useRef(false);
+  const previewStartYRef = React.useRef(0);
+  const previewStartHeightRef = React.useRef(previewHeightPercent);
+
+  const previewMouseMoveHandlerRef = React.useRef<
+    ((e: MouseEvent) => void) | null
+  >(null);
+  const previewMouseUpHandlerRef = React.useRef<(() => void) | null>(null);
+  const previewTouchMoveHandlerRef = React.useRef<
+    ((e: TouchEvent) => void) | null
+  >(null);
+  const previewTouchEndHandlerRef = React.useRef<(() => void) | null>(null);
+
+  const startPreviewMouseDrag = (clientY: number) => {
+    previewDraggingRef.current = true;
+    previewStartYRef.current = clientY;
+    previewStartHeightRef.current = previewHeightPercent;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const deltaY = ev.clientY - previewStartYRef.current;
+      // 假设 preview 容器高度约为 calc(100vh - 85px) = 约 915px（取整）
+      // 但实际计算：deltaY / 视口高度 * 100 -> %
+      const deltaPercent = (deltaY / (window.innerHeight - 85)) * 100;
+      let newHeight = previewStartHeightRef.current + deltaPercent;
+      if (newHeight < 20) newHeight = 20;
+      if (newHeight > 70) newHeight = 70;
+      setPreviewHeightPercent(Number(newHeight.toFixed(1)));
+    };
+
+    const onMouseUp = () => {
+      previewDraggingRef.current = false;
+      if (previewMouseMoveHandlerRef.current) {
+        window.removeEventListener(
+          "mousemove",
+          previewMouseMoveHandlerRef.current,
+        );
+      }
+      if (previewMouseUpHandlerRef.current) {
+        window.removeEventListener("mouseup", previewMouseUpHandlerRef.current);
+      }
+      previewMouseMoveHandlerRef.current = null;
+      previewMouseUpHandlerRef.current = null;
+    };
+
+    previewMouseMoveHandlerRef.current = onMouseMove;
+    previewMouseUpHandlerRef.current = onMouseUp;
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  };
+
+  const startPreviewTouchDrag = (clientY: number) => {
+    previewDraggingRef.current = true;
+    previewStartYRef.current = clientY;
+    previewStartHeightRef.current = previewHeightPercent;
+
+    const onTouchMove = (ev: TouchEvent) => {
+      const touch = ev.touches[0];
+      if (!touch) return;
+      const deltaY = touch.clientY - previewStartYRef.current;
+      const deltaPercent = (deltaY / (window.innerHeight - 85)) * 100;
+      let newHeight = previewStartHeightRef.current + deltaPercent;
+      if (newHeight < 20) newHeight = 20;
+      if (newHeight > 70) newHeight = 70;
+      setPreviewHeightPercent(Number(newHeight.toFixed(1)));
+    };
+
+    const onTouchEnd = () => {
+      previewDraggingRef.current = false;
+      if (previewTouchMoveHandlerRef.current) {
+        window.removeEventListener(
+          "touchmove",
+          previewTouchMoveHandlerRef.current,
+        );
+      }
+      if (previewTouchEndHandlerRef.current) {
+        window.removeEventListener(
+          "touchend",
+          previewTouchEndHandlerRef.current,
+        );
+      }
+      previewTouchMoveHandlerRef.current = null;
+      previewTouchEndHandlerRef.current = null;
+    };
+
+    previewTouchMoveHandlerRef.current = onTouchMove;
+    previewTouchEndHandlerRef.current = onTouchEnd;
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onTouchEnd);
+  };
+
+  // 卸载时清理预览拖动监听器
+  React.useEffect(() => {
+    return () => {
+      if (previewMouseMoveHandlerRef.current) {
+        window.removeEventListener(
+          "mousemove",
+          previewMouseMoveHandlerRef.current,
+        );
+      }
+      if (previewMouseUpHandlerRef.current) {
+        window.removeEventListener("mouseup", previewMouseUpHandlerRef.current);
+      }
+      if (previewTouchMoveHandlerRef.current) {
+        window.removeEventListener(
+          "touchmove",
+          previewTouchMoveHandlerRef.current,
+        );
+      }
+      if (previewTouchEndHandlerRef.current) {
+        window.removeEventListener(
+          "touchend",
+          previewTouchEndHandlerRef.current,
+        );
+      }
+    };
+  }, []);
+
   // 预览面板：当 preview_photos 变化时，同步当前预览图片的启用状态
   React.useEffect(() => {
     setIsPreviewEnabled(preview_photos[0]?.isEnabled ?? false);
@@ -478,10 +709,17 @@ export default function PhotoFilterSubpage() {
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-slate-50/60 px-4 py-2 dark:bg-gray-900">
-      {/* 顶层左右 65% / 35% 分栏布局 */}
-      <div className="flex w-full flex-1 gap-4">
-        {/* 左侧：主画廊（约 65% 宽度） */}
-        <div className="order-1 max-w-[65%] min-w-[55%] basis-[65%]">
+      {/* 顶层左右分栏（左宽度可拖动），初始约 65vw，min/max = 初始 ±20vw */}
+      <div className="flex w-full flex-1 items-stretch">
+        {/* 左侧：主画廊（宽度由 leftWidthVw 控制） */}
+        <div
+          className="order-1"
+          style={{
+            width: `${leftWidthVw}vw`,
+            minWidth: `${minLeftVw}vw`,
+            maxWidth: `${maxLeftVw}vw`,
+          }}
+        >
           <div className="bg-background/80 flex h-[calc(100vh-85px)] w-full flex-col space-y-4 rounded-xl p-3 shadow-sm">
             <Tabs
               id="gallery-pannel"
@@ -522,7 +760,7 @@ export default function PhotoFilterSubpage() {
               </div>
 
               {/* Scrollable Gallery：宽度随左侧 65% 容器自适应 */}
-              <ScrollArea className="mx-auto h-[calc(100vh-220px)] w-full rounded-xl border dark:bg-slate-900 p-3">
+              <ScrollArea className="mx-auto h-[calc(100vh-220px)] w-full rounded-xl border p-3 dark:bg-slate-900">
                 {photos.map((group, index) => (
                   <React.Fragment key={index}>
                     {opt_galleryTabValue === "group" && (
@@ -574,7 +812,6 @@ export default function PhotoFilterSubpage() {
                           : []
                       }
                     />
-
                   </React.Fragment>
                 ))}
 
@@ -642,8 +879,25 @@ export default function PhotoFilterSubpage() {
           </div>
         </div>
 
-        {/* 右侧：筛选 / 预览面板（约 35% 宽度） */}
-        <div className="hidden max-w-[35%] basis-[35%] flex-col space-y-4 sm:flex md:order-2">
+        {/* 中间：拖拽手柄（仅在 sm 及以上显示） */}
+        <div
+          className="hidden items-stretch sm:flex md:order-2"
+          style={{
+            width: 12,
+            cursor: "ew-resize",
+            userSelect: "none",
+            touchAction: "none",
+          }}
+          onMouseDown={(e) => startMouseDrag(e.clientX)}
+          onTouchStart={(e) => {
+            if (e.touches && e.touches[0]) startTouchDrag(e.touches[0].clientX);
+          }}
+        >
+          <div className="bg-muted/30 hover:bg-muted/50 mx-auto h-full w-1 rounded" />
+        </div>
+
+        {/* 右侧：筛选 / 预览面板（剩余空间，响应式隐藏小屏幕） */}
+        <div className="hidden flex-1 flex-col space-y-4 sm:flex md:order-3">
           <Tabs
             id="side-pannel"
             value={opt_panelTabValue}
@@ -720,15 +974,48 @@ export default function PhotoFilterSubpage() {
 
             <TabsContent
               value="preview"
-              className="mt-0 border-0 bg-transparent p-0"
+              className="mt-0 flex h-[calc(100vh-160px)] flex-col overflow-hidden border-0 bg-transparent p-0"
             >
               {preview_photos.length > 0 ? (
-                <div>
-                  <ImagePreview
-                    src={`local-resource://${preview_photos[0].filePath}`}
-                    height={"calc((100vh - 200px) * 0.50)"} // 预览控件的高度
-                  />
-                  <div className="mt-4 space-y-1">
+                <div className="flex h-full flex-col overflow-hidden">
+                  {/* 图片展示部分：高度由 previewHeightPercent 控制 */}
+                  <div
+                    className="flex-shrink-0 overflow-auto"
+                    style={{
+                      height: `${previewHeightPercent}%`,
+                      minHeight: "20%",
+                      maxHeight: "70%",
+                    }}
+                  >
+                    <ImagePreview
+                      src={`local-resource://${preview_photos[0].filePath}`}
+                      height="100%"
+                    />
+                  </div>
+
+                  {/* 拖动条：竖直方向，cursor-ns-resize */}
+                  <div
+                    className="bg-muted/20 hover:bg-muted/40 flex flex-shrink-0 cursor-ns-resize items-center justify-center transition-colors select-none"
+                    style={{
+                      height: 8,
+                      touchAction: "none",
+                    }}
+                    onMouseDown={(e) => startPreviewMouseDrag(e.clientY)}
+                    onTouchStart={(e) => {
+                      if (e.touches && e.touches[0])
+                        startPreviewTouchDrag(e.touches[0].clientY);
+                    }}
+                  >
+                    <div className="bg-muted/60 h-1.5 w-10 rounded-full" />
+                  </div>
+
+                  {/* 表格部分：占用剩余空间，用 ScrollArea 包装 */}
+                  <div
+                    className="flex-1 overflow-hidden"
+                    style={{
+                      maxHeight: `${100 - previewHeightPercent}%`,
+                    }}
+                  >
                     <PhotoDetailsTable
                       photo={preview_photos[0]}
                       isPreviewEnabled={bool_isPreviewEnabled}
