@@ -52,6 +52,54 @@ interface ServerData {
   workers: string[];
 }
 
+/**
+ * 单个分组组件，使用 React.memo 避免无关重渲染
+ * 只有 group 本身的引用变化时才会重渲染这组
+ */
+const GalleryGroup = React.memo(
+  ({
+    group,
+    index,
+    isGroupMode,
+    groupLabel,
+    highlightPhotos,
+    onPhotoClick,
+  }: {
+    group: Photo[];
+    index: number;
+    isGroupMode: boolean;
+    groupLabel: string;
+    highlightPhotos: Photo[];
+    onPhotoClick?: (photos: Photo[], event: string) => void | Promise<void>;
+  }) => {
+    // 每组的 key 建议用首张的 filePath，避免 index 导致的错乱
+    const header =
+      isGroupMode && group.length > 0 ? (
+        <div className="mb-1 flex items-center gap-2 px-1 pt-1 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+          <span>
+            {groupLabel} {index + 1}
+          </span>
+          <div className="h-px flex-1 bg-slate-200 dark:bg-slate-400" />
+        </div>
+      ) : null;
+
+    return (
+      <div
+        key={group[0]?.filePath ?? `group-${index}`}
+        className="mb-2 last:mb-0"
+      >
+        {header}
+        <PhotoGridEnhance
+          photos={group}
+          onPhotoClick={onPhotoClick}
+          highlightPhotos={highlightPhotos}
+        />
+      </div>
+    );
+  },
+);
+GalleryGroup.displayName = "GalleryGroup";
+
 function ServerStatusMonitorDrawer({
   serverStatus,
   serverData,
@@ -590,6 +638,70 @@ export default function PhotoFilterSubpage() {
     }
   }, [bool_needUpdate, t]);
 
+  const handlePhotoClick = React.useCallback(
+    async (clickphotos: Photo[], event: string) => {
+      if (!clickphotos.length) return;
+      const target = clickphotos[0];
+
+      if (event === "Select") {
+        // 选择照片：获取扩展信息并显示预览
+        const extended = await getPhotosExtendByPhotos(clickphotos);
+        setPreviewPhotos(extended);
+        setPannelTabValue("preview");
+        return;
+      }
+
+      if (event === "Change") {
+        // 切换启用状态：更新数据库 + 本地状态
+        const newEnabled = !(target.isEnabled ?? true);
+
+        // 1) 更新数据库
+        await updatePhotoEnabledStatus(target.filePath, newEnabled);
+
+        // 2) 本地更新 photos
+        // 如果禁用且不显示禁用图片，则直接删除；否则只改 isEnabled 状态
+        setPhotos((prev) => {
+          if (!newEnabled && !bool_showDisabled) {
+            // 禁用且不显示：从分组中删除，并移除空分组
+            return prev
+              .map((group) =>
+                group.filter((p) => p.filePath !== target.filePath),
+              )
+              .filter((group) => group.length > 0); // 删除空分组
+          } else {
+            // 启用或显示禁用图片：只更新 isEnabled 状态
+            return prev.map((group) =>
+              group.map((p) =>
+                p.filePath === target.filePath
+                  ? { ...p, isEnabled: newEnabled }
+                  : p,
+              ),
+            );
+          }
+        });
+
+        // 3) 更新右侧 preview_photos
+        if (!newEnabled && !bool_showDisabled) {
+          // 禁用且不显示：清空预览
+          setPreviewPhotos([]);
+          setPannelTabValue("filter");
+        } else {
+          // 启用或显示禁用图片：更新预览的 isEnabled 状态
+          setPreviewPhotos((prevExt) =>
+            prevExt.map((p) =>
+              p.filePath === target.filePath
+                ? { ...p, isEnabled: newEnabled }
+                : p,
+            ),
+          );
+          setIsPreviewEnabled(newEnabled);
+          setPannelTabValue("preview");
+        }
+      }
+    },
+    [bool_showDisabled, setPhotos, setPreviewPhotos],
+  );
+
   const handleSliderChange = (value: number) => {
     setSimilarityThreshold(value);
     sessionStorage.setItem("similarityThreshold", value.toString());
@@ -622,9 +734,9 @@ export default function PhotoFilterSubpage() {
     }
   };
 
-  const handleDisableRedundant = async () => {
+  const handleDisableRedundant = React.useCallback(async () => {
     try {
-      // 并行处理所有组：每组保留第 1 张，弃用后面所有
+      // 先更新数据库：每组只保留第 1 张，后面的都禁用
       await Promise.all(
         photos.map(async (group) => {
           const updates = group
@@ -633,11 +745,29 @@ export default function PhotoFilterSubpage() {
           await Promise.all(updates);
         }),
       );
-      setReloadAlbum(true);
+
+      // 再本地更新 state
+      // 如果不显示禁用图片，则直接删除冗余照片；否则只改 isEnabled 状态
+      setPhotos((prev) => {
+        if (!bool_showDisabled) {
+          // 不显示禁用图片：只保留每个分组的第 1 张
+          return prev
+            .map((group) => (group.length > 0 ? [group[0]] : []))
+            .filter((group) => group.length > 0); // 删除空分组
+        } else {
+          // 显示禁用图片：每个分组的后面元素标记为禁用
+          return prev.map((group) =>
+            group.map((photo, idx) =>
+              idx === 0 ? photo : { ...photo, isEnabled: false },
+            ),
+          );
+        }
+      });
+      // 不再 setReloadAlbum(true)，必要时由轮询刷新
     } catch (error) {
       console.error("禁用冗余照片失败:", error);
     }
-  };
+  }, [bool_showDisabled, photos]);
 
   const handleEnableAll = async () => {
     try {
@@ -646,7 +776,12 @@ export default function PhotoFilterSubpage() {
           .flat()
           .map((photo) => updatePhotoEnabledStatus(photo.filePath, true)),
       );
-      setReloadAlbum(true);
+
+      setPhotos((prev) =>
+        prev.map((group) =>
+          group.map((photo) => ({ ...photo, isEnabled: true })),
+        ),
+      );
     } catch (error) {
       console.error("启用所有照片失败:", error);
     }
@@ -705,6 +840,18 @@ export default function PhotoFilterSubpage() {
     return () => window.clearInterval(interval_status);
   }, [bool_needUpdate, fetchServerStatus]);
 
+  // 当前高亮照片列表（只在 preview_photos 变化时重建）
+  const highlightPhotos = React.useMemo<Photo[]>(() => {
+    if (!preview_photos.length) return [];
+    return preview_photos.map((photo) => ({
+      fileName: photo.fileName,
+      fileUrl: photo.fileUrl,
+      filePath: photo.filePath,
+      info: photo.info ?? "",
+      isEnabled: photo.isEnabled ?? true,
+    }));
+  }, [preview_photos]);
+
   const totalPhotoCount = photos.flat().length;
 
   return (
@@ -762,57 +909,15 @@ export default function PhotoFilterSubpage() {
               {/* Scrollable Gallery：宽度随左侧 65% 容器自适应 */}
               <ScrollArea className="mx-auto h-[calc(100vh-220px)] w-full rounded-xl border p-3 dark:bg-slate-900">
                 {photos.map((group, index) => (
-                  <React.Fragment key={index}>
-                    {opt_galleryTabValue === "group" && (
-                      <div className="mb-1 flex items-center gap-2 px-1 pt-1 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
-                        <span>
-                          {t("filterPage.groupLabel") || "Group"} {index + 1}
-                        </span>
-                        <div className="h-px flex-1 bg-slate-200 dark:bg-slate-400" />
-                      </div>
-                    )}
-
-                    <PhotoGridEnhance
-                      photos={group}
-                      onPhotoClick={async (clickphotos, event) => {
-                        if (event === "Select") {
-                          // 异步获取扩展信息
-                          const extended =
-                            await getPhotosExtendByPhotos(clickphotos);
-                          // console.log("选中了照片:", extended, clickphotos);
-
-                          setPreviewPhotos(extended);
-                          setPannelTabValue("preview");
-                        } else if (event === "Change") {
-                          // console.log("修改了照片:", clickphotos);
-
-                          // 先更新启用状态（默认 undefined 按 true 处理）
-                          await updatePhotoEnabledStatus(
-                            clickphotos[0].filePath,
-                            !(clickphotos[0].isEnabled ?? true),
-                          );
-                          setReloadAlbum(true);
-
-                          // 再获取最新的扩展信息
-                          const extended =
-                            await getPhotosExtendByPhotos(clickphotos);
-                          setPreviewPhotos(extended);
-                          setPannelTabValue("preview");
-                        }
-                      }}
-                      highlightPhotos={
-                        preview_photos.length > 0
-                          ? preview_photos.map((photo) => ({
-                              fileName: photo.fileName,
-                              fileUrl: photo.fileUrl,
-                              filePath: photo.filePath,
-                              info: photo.info ?? "",
-                              isEnabled: photo.isEnabled ?? true,
-                            }))
-                          : []
-                      }
-                    />
-                  </React.Fragment>
+                  <GalleryGroup
+                    key={group[0]?.filePath ?? `group-${index}`}
+                    group={group}
+                    index={index}
+                    isGroupMode={opt_galleryTabValue === "group"}
+                    groupLabel={t("filterPage.groupLabel") || "Group"}
+                    highlightPhotos={highlightPhotos}
+                    onPhotoClick={handlePhotoClick}
+                  />
                 ))}
 
                 {photos.length === 0 && (
