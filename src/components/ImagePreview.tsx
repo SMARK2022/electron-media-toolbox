@@ -1,108 +1,275 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 
 interface ImagePreviewProps {
   src: string;
-  width?: string | number; // 支持 CSS 样式设置宽度（可选）
-  height?: string | number; // 支持 CSS 样式设置高度（可选）
+  width?: string | number;
+  height?: string | number;
 }
 
 const ImagePreview: React.FC<ImagePreviewProps> = ({ src, width, height }) => {
-  const containerRef = useRef<HTMLDivElement>(null); // 容器的 ref，用于获取实际的宽高
-  const [baseScale, setBaseScale] = useState(1);
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
-  // 限制最大和最小缩放倍数
-  const minScale = 1;
-  const maxScale = 10;
+  // 图片和容器的真实尺寸
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
-  // 获取容器的宽高
-  const containerWidth = containerRef.current?.offsetWidth || 0;
-  const containerHeight = containerRef.current?.offsetHeight || 0;
+  // 基础缩放（自适应容器的缩放比例，作为 1 倍基准）
+  const [baseScale, setBaseScale] = useState(1);
 
-  // 放大缩小函数（不再调用 preventDefault，避免 passive listener 报错）
-  const handleWheel = (e: React.WheelEvent) => {
-    const delta = e.deltaY < 0 ? 0.1 : -0.1;
-    setScale((prevScale) => {
-      const nextScale = prevScale + delta;
-      return Math.min(Math.max(nextScale, minScale), maxScale);
-    });
+  // 交互状态（scale 是相对于 baseScale 的倍数，1 = 自适应大小）
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [lastMousePosition, setLastMousePosition] = useState({ x: 0, y: 0 });
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  // --- 新增：控制缩放提示的显示状态 ---
+  const [showZoomBadge, setShowZoomBadge] = useState(false);
+  const zoomBadgeTimer = useRef<NodeJS.Timeout | null>(null);
+
+  // 缩放限制（相对于自适应尺寸）
+  const MIN_SCALE = 1; // 最小就是自适应大小
+  const MAX_SCALE = 10; // 最大 10 倍
+  const ZOOM_SPEED = 0.1;
+
+  // --- 优化功能：显示并自动隐藏缩放提示 ---
+  const triggerZoomBadge = useCallback(() => {
+    setShowZoomBadge(true);
+    if (zoomBadgeTimer.current) {
+      clearTimeout(zoomBadgeTimer.current);
+    }
+    zoomBadgeTimer.current = setTimeout(() => {
+      setShowZoomBadge(false);
+    }, 1500); // 1.5秒后自动消失
+  }, []);
+
+  // 核心函数：计算边界限制后的位置
+  const getClampedPosition = useCallback(
+    (
+      targetPos: { x: number; y: number },
+      targetScale: number,
+      currentBaseScale?: number,
+    ) => {
+      if (!containerSize.width || !imageSize.width) return targetPos;
+
+      // 使用传入的 baseScale 或当前的 baseScale
+      const effectiveBaseScale = currentBaseScale ?? baseScale;
+
+      // 实际显示的图片尺寸 = 原始尺寸 * baseScale * scale
+      const scaledWidth = imageSize.width * effectiveBaseScale * targetScale;
+      const scaledHeight = imageSize.height * effectiveBaseScale * targetScale;
+
+      let newX = targetPos.x;
+      let newY = targetPos.y;
+
+      // X 轴边界处理
+      if (scaledWidth <= containerSize.width) {
+        // 图片比容器小：居中
+        newX = (containerSize.width - scaledWidth) / 2;
+      } else {
+        // 图片比容器大：限制边缘
+        const minX = containerSize.width - scaledWidth;
+        const maxX = 0;
+        newX = Math.min(Math.max(newX, minX), maxX);
+      }
+
+      // Y 轴边界处理
+      if (scaledHeight <= containerSize.height) {
+        newY = (containerSize.height - scaledHeight) / 2;
+      } else {
+        const minY = containerSize.height - scaledHeight;
+        const maxY = 0;
+        newY = Math.min(Math.max(newY, minY), maxY);
+      }
+
+      return { x: newX, y: newY };
+    },
+    [containerSize, imageSize, baseScale],
+  );
+
+  // 自适应容器：计算初始缩放和位置
+  const fitToContainer = useCallback(
+    (isInitialLoad: boolean = false) => {
+      if (!containerRef.current || imageSize.width === 0) return;
+
+      const cWidth = containerRef.current.offsetWidth;
+      const cHeight = containerRef.current.offsetHeight;
+      setContainerSize({ width: cWidth, height: cHeight });
+
+      // 计算适配比例（contain 模式）
+      const scaleX = cWidth / imageSize.width;
+      const scaleY = cHeight / imageSize.height;
+      const fitScale = Math.min(scaleX, scaleY);
+
+      // 设置 baseScale（自适应尺寸的缩放比例）
+      const prevBaseScale = baseScale;
+      setBaseScale(fitScale);
+
+      if (isInitialLoad) {
+        // 初始加载：重置为 1 倍并居中
+        setScale(1);
+        const initialPos = {
+          x: (cWidth - imageSize.width * fitScale) / 2,
+          y: (cHeight - imageSize.height * fitScale) / 2,
+        };
+        setPosition(initialPos);
+        setIsAnimating(true);
+      } else {
+        // 切换图片或容器变化：保持当前 scale，调整位置以适应新的 baseScale
+        setScale((currentScale) => {
+          const validScale = Math.max(currentScale, MIN_SCALE);
+
+          setPosition((currentPos) => {
+            // 计算在新 baseScale 下的修正位置
+            // 尝试保持视觉中心点不变
+            if (prevBaseScale !== 0 && prevBaseScale !== fitScale) {
+              const ratio = fitScale / prevBaseScale;
+              const adjustedPos = {
+                x: currentPos.x * ratio,
+                y: currentPos.y * ratio,
+              };
+              return getClampedPosition(adjustedPos, validScale, fitScale);
+            }
+
+            return getClampedPosition(currentPos, validScale, fitScale);
+          });
+
+          return validScale;
+        });
+      }
+    },
+    [imageSize, MIN_SCALE, getClampedPosition, baseScale],
+  );
+
+  // 图片加载完成
+  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
   };
 
-  // 鼠标拖动函数
+  // 监听容器尺寸变化
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      // 容器变化时保持当前缩放，只调整位置
+      fitToContainer(false);
+    });
+
+    resizeObserver.observe(containerRef.current);
+    return () => resizeObserver.disconnect();
+  }, [fitToContainer]);
+
+  // 图片加载后自适应（区分首次加载和切换图片）
+  const prevSrc = useRef<string>("");
+  useEffect(() => {
+    if (imageSize.width > 0) {
+      const isInitialLoad = prevSrc.current === "";
+      fitToContainer(isInitialLoad);
+      prevSrc.current = src;
+    }
+  }, [imageSize, fitToContainer, src]);
+
+  // 滚轮缩放（以鼠标为中心）
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    if (isDragging) return;
+
+    // 计算新缩放比例（相对于自适应尺寸）
+    const delta = -Math.sign(e.deltaY) * ZOOM_SPEED;
+    let newScale = scale + delta * scale;
+    newScale = Math.min(Math.max(newScale, MIN_SCALE), MAX_SCALE);
+
+    // 获取鼠标相对容器的位置
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    // 保持鼠标下的点不动
+    const newX = mouseX - (mouseX - position.x) * (newScale / scale);
+    const newY = mouseY - (mouseY - position.y) * (newScale / scale);
+
+    // 应用边界限制
+    const clampedPos = getClampedPosition({ x: newX, y: newY }, newScale);
+
+    setIsAnimating(true);
+    setScale(newScale);
+    setPosition(clampedPos);
+
+    // 触发缩放提示显示
+    triggerZoomBadge();
+  };
+
+  // 鼠标拖拽
   const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
     setIsDragging(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
+    setIsAnimating(false);
+    setLastMousePosition({ x: e.clientX, y: e.clientY });
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) return;
+    e.preventDefault();
 
-    const dx = e.clientX - dragStart.x;
-    const dy = e.clientY - dragStart.y;
+    const dx = e.clientX - lastMousePosition.x;
+    const dy = e.clientY - lastMousePosition.y;
 
-    setOffset((prevOffset) => ({
-      x: prevOffset.x + dx / scale / baseScale,
-      y: prevOffset.y + dy / scale / baseScale,
-    }));
-    setDragStart({ x: e.clientX, y: e.clientY });
+    const nextPos = {
+      x: position.x + dx,
+      y: position.y + dy,
+    };
+
+    const clampedPos = getClampedPosition(nextPos, scale);
+
+    setPosition(clampedPos);
+    setLastMousePosition({ x: e.clientX, y: e.clientY });
   };
 
   const handleMouseUp = () => {
     setIsDragging(false);
   };
 
-  const handleMouseLeave = () => {
-    setIsDragging(false);
+  // 双击缩放
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    triggerZoomBadge(); // 双击也显示提示
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    if (scale !== 1) {
+      // 双击还原到 1 倍（自适应大小）并居中
+      setScale(1);
+
+      const clampedPos = getClampedPosition({ x: 0, y: 0 }, 1);
+      setPosition(clampedPos);
+      setIsAnimating(true);
+      return;
+    }
+
+    // 双击放大到 2 倍（相对于自适应尺寸），以鼠标位置为中心
+    const targetScale = 2;
+
+    const newX = mouseX - (mouseX - position.x) * (targetScale / scale);
+    const newY = mouseY - (mouseY - position.y) * (targetScale / scale);
+
+    const clampedPos = getClampedPosition({ x: newX, y: newY }, targetScale);
+
+    setIsAnimating(true);
+    setScale(targetScale);
+    setPosition(clampedPos);
   };
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (!imageRef.current || !containerWidth || !containerHeight) return;
-
-      // 限制图片的最大偏移量，以防图片移出边界
-      const imageWidthRatio = imageRef.current.width / containerWidth;
-      const imageHeightRatio = imageRef.current.height / containerHeight;
-      const maxRatio = Math.max(imageWidthRatio, imageHeightRatio) || 1;
-
-      if (1 / maxRatio !== baseScale) {
-        setBaseScale(1 / maxRatio);
-      }
-
-      const imageWidth = imageRef.current.width * scale * baseScale;
-      const imageHeight = imageRef.current.height * scale * baseScale;
-      let newX = offset.x * scale * baseScale;
-      let newY = offset.y * scale * baseScale;
-
-      if (imageWidth < containerWidth) {
-        newX = (containerWidth - imageWidth) / 2;
-      } else {
-        newX = Math.min(Math.max(newX, -(imageWidth - containerWidth)), 0);
-      }
-
-      if (imageHeight < containerHeight) {
-        newY = (containerHeight - imageHeight) / 2;
-      } else {
-        newY = Math.min(Math.max(newY, -(imageHeight - containerHeight)), 0);
-      }
-
-      newX = newX / scale / baseScale;
-      newY = newY / scale / baseScale;
-
-      if (newX !== offset.x || newY !== offset.y) {
-        setOffset({ x: newX, y: newY });
-      }
-    }, 5);
-
-    return () => clearInterval(interval);
-  }, [scale, baseScale, offset, containerWidth, containerHeight]);
 
   return (
     <div
-      ref={containerRef} // 使用ref获取容器实际尺寸
+      ref={containerRef}
       style={{
         position: "relative",
         ...(width != null ? { width } : {}),
@@ -110,64 +277,104 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({ src, width, height }) => {
         overflow: "hidden",
         cursor: isDragging ? "grabbing" : "grab",
         background: "#efefef",
+        userSelect: "none",
+        minWidth: 0,
+        minHeight: 0,
       }}
-      onWheel={handleWheel} // 监听滚轮缩放
-      onDoubleClick={(e) => {
-        if (scale !== 1) {
-          // 双击还原缩放并居中
-          setScale(1);
-          setOffset({ x: 0, y: 0 });
-          return;
-        }
-
-        // 双击放大：以鼠标位置为中心
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (!rect) return;
-
-        const mouseX = e.clientX - rect.left; // 鼠标相对于容器的 X 坐标
-        const mouseY = e.clientY - rect.top; // 鼠标相对于容器的 Y 坐标
-        const targetScale = 2; // 目标缩放倍数
-
-        const newOffsetX =
-          (mouseX - containerWidth / 2) / targetScale / baseScale;
-        const newOffsetY =
-          (mouseY - containerHeight / 2) / targetScale / baseScale;
-
-        setScale(targetScale);
-        setOffset({ x: -newOffsetX, y: -newOffsetY });
-      }}
-      // 鼠标拖动
-      onMouseDown={handleMouseDown} // 鼠标按下开始拖动
-      onMouseMove={handleMouseMove} // 拖动中
-      onMouseUp={handleMouseUp} // 鼠标松开结束拖动
-      onMouseLeave={handleMouseLeave} // 离开区域时结束拖动
+      onWheel={handleWheel}
+      onDoubleClick={handleDoubleClick}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
     >
+      {/* 隐藏的原始图片用于获取尺寸 */}
       <img
-        ref={imageRef}
         src={src}
-        alt="Preview"
-        style={{
-          transform: `scale(${scale * baseScale}) translate(${offset.x}px, ${offset.y}px)`,
-          transformOrigin: "top left",
-          transition: "transform 0.1s ease-out",
-          pointerEvents: "none", // 禁用图片的点击事件
-          userSelect: "none", // 禁用图片的选择
-          display: "block", // 防止图片下方空白
-        }}
+        alt="Original"
+        onLoad={handleImageLoad}
+        style={{ display: "none" }}
       />
-      {/* 显示局部蒙版 */}
+
+      {/* 实际渲染的图片 */}
+      {imageSize.width > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: imageSize.width,
+            height: imageSize.height,
+            transform: `translate3d(${position.x}px, ${position.y}px, 0) scale(${baseScale * scale})`,
+            transformOrigin: "0 0",
+            transition: isAnimating ? "transform 0.15s ease-out" : "none",
+            willChange: "transform",
+            pointerEvents: "none",
+          }}
+        >
+          <img
+            ref={imageRef}
+            src={src}
+            alt="Preview"
+            style={{
+              width: "100%",
+              height: "100%",
+              display: "block",
+              pointerEvents: "none",
+              userSelect: "none",
+            }}
+            draggable={false}
+          />
+        </div>
+      )}
+
+      {/* 加载提示 */}
+      {imageSize.width === 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            color: "#999",
+            fontSize: "14px",
+          }}
+        >
+          Loading...
+        </div>
+      )}
+
+      {/* 优化后的缩放比例显示 */}
       <div
         style={{
           position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          background: "rgba(0, 0, 0, 0.5)", // 黑色蒙版
-          pointerEvents: "none", // 防止覆盖用户操作
-          clipPath: `inset(${offset.y}px ${offset.x}px ${containerHeight - offset.y}px ${containerWidth - offset.x}px)`,
+          bottom: "24px", // 稍微提高一点
+          left: "50%",
+          transform: `translateX(-50%) translateY(${showZoomBadge ? "0" : "10px"})`, // 出现时上浮
+          // 玻璃拟态风格
+          background: "rgba(30, 30, 30, 0.75)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)", // 兼容 Safari
+          // 字体和颜色
+          color: "rgba(255, 255, 255, 0.95)",
+          fontSize: "13px",
+          fontWeight: 500,
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontVariantNumeric: "tabular-nums", // 关键：等宽数字，防止抖动
+          // 边框和阴影
+          padding: "6px 14px",
+          borderRadius: "999px", // 完全胶囊形
+          border: "1px solid rgba(255, 255, 255, 0.1)",
+          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+          // 动画状态
+          opacity: showZoomBadge ? 1 : 0,
+          transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+          pointerEvents: "none",
+          zIndex: 10,
         }}
-      ></div>
+      >
+        {Math.round(scale * 100)}%
+      </div>
     </div>
   );
 };

@@ -980,16 +980,19 @@ export default function PhotoFilterSubpage() {
                 <div className="flex h-full flex-col overflow-hidden">
                   {/* 图片展示部分：高度由 previewHeightPercent 控制 */}
                   <div
-                    className="flex-shrink-0 overflow-auto"
+                    className="flex-shrink-0"
                     style={{
                       height: `${previewHeightPercent}%`,
                       minHeight: "20%",
                       maxHeight: "70%",
+                      width: "100%", // 添加这行
+                      display: "flex", // 添加这行
                     }}
                   >
                     <ImagePreview
                       src={`local-resource://${preview_photos[0].filePath}`}
                       height="100%"
+                      width="100%"
                     />
                   </div>
 
