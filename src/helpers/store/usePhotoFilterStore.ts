@@ -1,7 +1,17 @@
 import { create } from "zustand";
-import { Photo, PhotoExtend, getPhotosExtendByCriteria, getPhotosExtendByPhotos, initializeDatabase, updatePhotoEnabledStatus } from "@/helpers/db/db";
+import {
+  Photo,
+  PhotoExtend,
+  getPhotosExtendByCriteria,
+  getPhotosExtendByPhotos,
+  initializeDatabase,
+  updatePhotoEnabledStatus,
+  deletePhotoByPath,
+} from "@/helpers/db/db";
 
 export type GalleryMode = "group" | "total";
+
+export type PhotoPage = "import" | "filter" | "export";
 
 export interface ServerData {
   status: string;
@@ -10,6 +20,11 @@ export interface ServerData {
 }
 
 interface PhotoFilterState {
+  // 通用照片状态（3 个页面复用）
+  lstAllPhotos: Photo[]; // 当前相册中所有照片（扁平列表）
+  currentPage: PhotoPage; // 当前所在页面（可用于差异化行为）
+  currentSelectedPhoto: Photo | null; // 最近一次在任意页面选中的照片
+
   lstGalleryGroupedPhotos: Photo[][];
   lstPreviewPhotoDetails: PhotoExtend[];
   modeGalleryView: GalleryMode;
@@ -24,6 +39,32 @@ interface PhotoFilterState {
   objServerStatusData: ServerData | null;
   numLeftPaneWidthVw: number;
   numPreviewHeightPercent: number;
+
+  // 磁盘删除确认对话框状态
+  boolShowDeleteConfirm: boolean; // 是否展示“删除文件”确认弹窗
+  boolSkipDeleteConfirm: boolean; // 是否不再提醒（谨慎选择）
+  objPendingDeletePhoto: Photo | null; // 当前等待确认删除的照片
+
+  // 元数据详情弹窗状态
+  boolShowInfoDialog: boolean;
+  objInfoPhoto: Photo | null;
+  objInfoMetadata: Record<string, any> | null;
+
+  // 右键菜单配置与行为
+  contextMenuGroups: {
+    id: string;
+    label: string;
+    items: {
+      id: string;
+      label: string;
+      icon?: string; // 前端根据 id 自行渲染具体 icon
+    }[];
+  }[];
+
+  // actions - 通用
+  fnSetAllPhotos: (photos: Photo[]) => void;
+  fnSetCurrentPage: (page: PhotoPage) => void;
+  fnSetCurrentSelectedPhoto: (photo: Photo | null) => void;
 
   // actions
   fnInitPage: () => Promise<void>; // 页面初始化时调用：初始化数据库 & 提交时间戳
@@ -40,6 +81,15 @@ interface PhotoFilterState {
   fnSetServerStatusData: (value: ServerData | null) => void;
   fnSetCurrentPreviewEnabled: (value: boolean) => void;
 
+  // 删除确认弹窗相关 actions
+  fnOpenDeleteConfirm: (photo: Photo) => void;
+  fnCloseDeleteConfirm: () => void;
+  fnSetSkipDeleteConfirm: (skip: boolean) => void;
+
+  // 详情弹窗相关 actions
+  fnOpenInfoDialog: (photo: Photo, metadata: Record<string, any>) => void;
+  fnCloseInfoDialog: () => void;
+
   fnFetchEnabledPhotos: () => Promise<void>; // 从数据库读取当前 gallery 模式下的启用图片并分组
   fnFetchServerStatus: (formatStatus: (data: ServerData | null) => string) => Promise<void>; // 轮询后端 /status 并根据状态控制 needUpdate
   fnSelectPreviewPhotos: (photos: Photo[]) => Promise<void>; // 从 grid 选中若干图片，刷新右侧 preview 列表
@@ -47,9 +97,20 @@ interface PhotoFilterState {
   fnDisableRedundantInGroups: () => Promise<void>; // 禁用每组中除第一张外的其他照片
   fnEnableAllPhotos: () => Promise<void>; // 启用当前相册中所有照片
   fnUpdateFromDetailsPanel: (filePath: string, enabled: boolean) => Promise<void>; // 从详情面板切换启用状态
+
+  // 右键菜单行为（由 PhotoGridEnhance 调用）
+  fnHandleContextMenuAction: (
+    actionId: string,
+    photo: Photo,
+    page: PhotoPage,
+  ) => Promise<void>;
 }
 
 export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
+  // ===== 通用照片状态 =====
+  lstAllPhotos: [],
+  currentPage: "filter",
+  currentSelectedPhoto: null,
   lstGalleryGroupedPhotos: [], // 左侧画廊展示用的照片分组（二维数组：group -> photos）
   lstPreviewPhotoDetails: [], // 右侧预览面板当前展示的照片（支持多选扩展）
   modeGalleryView: "group", // 画廊模式：按组显示还是全部平铺
@@ -65,11 +126,65 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   numLeftPaneWidthVw: 65, // 左侧画廊分栏宽度（vw 单位），用于拖拽持久
   numPreviewHeightPercent: 50, // 右侧预览区高度（相对 SidePanel 百分比）
 
+  // 删除文件确认弹窗初始状态
+  boolShowDeleteConfirm: false,
+  boolSkipDeleteConfirm: false,
+  objPendingDeletePhoto: null,
+
+  // 元数据详情弹窗初始状态
+  boolShowInfoDialog: false,
+  objInfoPhoto: null,
+  objInfoMetadata: null,
+
+  // 默认右键菜单配置（3 个页面共用，必要时可根据 currentPage 差异化渲染）
+  contextMenuGroups: [
+    {
+      id: "open",
+      label: "Open",
+      items: [
+        { id: "open-default", label: "Open", icon: "open" },
+        { id: "reveal-in-folder", label: "Show in folder", icon: "folder" },
+      ],
+    },
+    {
+      id: "edit",
+      label: "Edit",
+      items: [
+        {
+          id: "toggle-enabled",
+          label: "Enable / Disable",
+          icon: "toggle",
+        },
+        {
+          id: "delete-db",
+          label: "Remove (DB only)",
+          icon: "delete-db",
+        },
+        {
+          id: "delete-file",
+          label: "Delete file",
+          icon: "delete-file",
+        },
+      ],
+    },
+    {
+      id: "info",
+      label: "Info",
+      items: [
+        { id: "show-info", label: "Details", icon: "info" },
+      ],
+    },
+  ],
+
   fnInitPage: async () => {
     const currentTime = Date.now();
     sessionStorage.setItem("submitTime", currentTime.toString());
     await initializeDatabase();
   },
+
+  fnSetAllPhotos: (photos) => set({ lstAllPhotos: photos }),
+  fnSetCurrentPage: (page) => set({ currentPage: page }),
+  fnSetCurrentSelectedPhoto: (photo) => set({ currentSelectedPhoto: photo }),
 
   fnSetGalleryMode: (mode) => set({ modeGalleryView: mode }), // 切换画廊展示模式
   fnSetRightPanelTab: (tab) => set({ tabRightPanel: tab }), // 切换右侧 Tab
@@ -86,6 +201,29 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   fnSetServerStatusText: (value) => set({ strServerStatusText: value }), // 直接设置服务端状态文案
   fnSetServerStatusData: (value) => set({ objServerStatusData: value }), // 直接设置服务端原始数据
   fnSetCurrentPreviewEnabled: (value) => set({ boolCurrentPreviewEnabled: value }), // 仅更新预览开关，不写 DB
+
+  // 打开“删除文件”确认弹窗，并记录待删除的照片
+  fnOpenDeleteConfirm: (photo) =>
+    set({ boolShowDeleteConfirm: true, objPendingDeletePhoto: photo }),
+
+  // 关闭“删除文件”确认弹窗并清除待删除记录
+  fnCloseDeleteConfirm: () =>
+    set({ boolShowDeleteConfirm: false, objPendingDeletePhoto: null }),
+
+  // 设置是否跳过删除确认（谨慎使用，可在对话框中勾选）
+  fnSetSkipDeleteConfirm: (skip) => set({ boolSkipDeleteConfirm: skip }),
+
+  // 打开详情弹窗并记录元数据
+  fnOpenInfoDialog: (photo, metadata) =>
+    set({
+      boolShowInfoDialog: true,
+      objInfoPhoto: photo,
+      objInfoMetadata: metadata,
+    }),
+
+  // 关闭详情弹窗
+  fnCloseInfoDialog: () =>
+    set({ boolShowInfoDialog: false, objInfoPhoto: null, objInfoMetadata: null }),
 
   fnFetchEnabledPhotos: async () => {
     const { modeGalleryView, strSortedColumnKey, boolShowDisabledPhotos } = get();
@@ -282,6 +420,132 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
       boolCurrentPreviewEnabled: enabled,
       boolReloadAlbumRequested: true,
     }));
+  },
+
+  // ===== 右键菜单行为统一入口 =====
+  fnHandleContextMenuAction: async (actionId, photo, page) => {
+    set({ currentSelectedPhoto: photo, currentPage: page });
+
+    const state = get();
+
+    switch (actionId) {
+      case "open-default": {
+        try {
+          const rawPath = photo.filePath;
+          if (!rawPath) return;
+
+          const anyWindow = window as any;
+
+          // 1. 如果 preload 暴露了专门的 openPath，则优先直接用 shell.openPath 打开本地文件
+          if (anyWindow?.ElectronAPI?.openPath) {
+            await anyWindow.ElectronAPI.openPath(rawPath);
+            break;
+          }
+
+          // 2. 否则退回到 file:/// URL + openExternal 的方案
+          const normalizedPath = rawPath.replace(/\\/g, "/");
+          const fileUrl = `file:///${encodeURI(normalizedPath)}`;
+          await anyWindow?.ElectronAPI?.openExternal?.(fileUrl);
+        } catch (error) {
+          console.error("[contextMenu] open-default failed:", error);
+        }
+        break;
+      }
+      case "reveal-in-folder": {
+        try {
+          await (window as any)?.ElectronAPI?.revealInFolder?.(photo.filePath);
+        } catch (error) {
+          console.error("[contextMenu] reveal-in-folder failed:", error);
+        }
+        break;
+      }
+      case "toggle-enabled": {
+        await get().fnTogglePhotoEnabledFromGrid(photo);
+        break;
+      }
+      case "delete-db": {
+        try {
+          await deletePhotoByPath(photo.filePath);
+          set((s) => ({
+            lstAllPhotos: s.lstAllPhotos.filter(
+              (p) => p.filePath !== photo.filePath,
+            ),
+            lstGalleryGroupedPhotos: s.lstGalleryGroupedPhotos
+              .map((group) =>
+                group.filter((p) => p.filePath !== photo.filePath),
+              )
+              .filter((group) => group.length > 0),
+            lstPreviewPhotoDetails: s.lstPreviewPhotoDetails.filter(
+              (p) => p.filePath !== photo.filePath,
+            ),
+          }));
+        } catch (error) {
+          console.error("[contextMenu] delete-db failed:", error);
+        }
+        break;
+      }
+      case "delete-file": {
+        const { boolSkipDeleteConfirm } = state;
+
+        // 如果用户未勾选“跳过确认”，则先弹出确认对话框，由 UI 组件统一处理真正删除动作
+        if (!boolSkipDeleteConfirm) {
+          set({ boolShowDeleteConfirm: true, objPendingDeletePhoto: photo });
+          break;
+        }
+
+        // 否则直接执行删除逻辑（与对话框点击确认后的逻辑保持一致）
+        try {
+          const res = await (window as any)?.ElectronAPI?.deleteFile?.(
+            photo.filePath,
+          );
+          if (res && res.success) {
+            try {
+              await deletePhotoByPath(photo.filePath);
+            } catch (error) {
+              console.warn(
+                "[contextMenu] delete-file -> delete-db warn:",
+                error,
+              );
+            }
+            set((s) => ({
+              lstAllPhotos: s.lstAllPhotos.filter(
+                (p) => p.filePath !== photo.filePath,
+              ),
+              lstGalleryGroupedPhotos: s.lstGalleryGroupedPhotos
+                .map((group) =>
+                  group.filter((p) => p.filePath !== photo.filePath),
+                )
+                .filter((group) => group.length > 0),
+              lstPreviewPhotoDetails: s.lstPreviewPhotoDetails.filter(
+                (p) => p.filePath !== photo.filePath,
+              ),
+            }));
+          } else {
+            console.error("[contextMenu] delete-file failed:", res);
+          }
+        } catch (error) {
+          console.error("[contextMenu] delete-file failed:", error);
+        }
+        break;
+      }
+      case "show-info": {
+        try {
+          const res = await (window as any)?.ElectronAPI?.getPhotoMetadata?.(
+            photo.filePath,
+          );
+          if (res && res.success) {
+            get().fnOpenInfoDialog(photo, res.data ?? {});
+          } else {
+            console.error("[contextMenu] show-info failed:", res);
+          }
+        } catch (error) {
+          console.error("[contextMenu] show-info failed:", error);
+        }
+        break;
+      }
+      default:
+        console.warn("[contextMenu] unknown actionId", actionId, photo, page);
+    }
   },
 }));
 

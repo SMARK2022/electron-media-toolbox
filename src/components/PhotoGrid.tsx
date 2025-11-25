@@ -1,17 +1,32 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { Card } from "@/components/ui/card";
 import missing_icon from "@/assets/images/cat_missing.svg";
 import { Photo } from "@/helpers/db/db";
 import { cn } from "@/lib/utils";
 import {
-  Eye,
+  FolderOpen,
   Trash2,
-  Download,
-  Share2,
   Info,
   CheckCircle2,
   XCircle,
+  ExternalLink,
 } from "lucide-react";
+import {
+  usePhotoFilterStore,
+  type PhotoPage,
+} from "@/helpers/store/usePhotoFilterStore";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useTranslation } from "react-i18next";
+import { PhotoInfoDialog } from "@/components/PhotoInfoDialog";
 
 interface PhotoGridProps {
   photos?: Photo[];
@@ -19,6 +34,11 @@ interface PhotoGridProps {
   width?: number;
   height?: number;
   columns?: number;
+  /**
+   * 当前所在业务页面，用于在统一 store 中区分来源（导入 / 筛选 / 导出）。
+   * 如果不传则默认视为 "filter" 页面，保证兼容性。
+   */
+  page?: PhotoPage;
 }
 
 // ========== 右键菜单组件 ==========
@@ -26,9 +46,26 @@ interface ContextMenuProps {
   x: number;
   y: number;
   onClose: () => void;
-  onAction: (action: string) => void;
+  /**
+   * 点击菜单项时触发的回调，传递菜单项 id，由上层统一处理具体动作。
+   */
+  onAction: (actionId: string) => void;
   targetName: string;
   isEnabled: boolean;
+  /** 当前所在业务页面，用于控制哪些菜单可用（导入 / 筛选 / 导出） */
+  page: PhotoPage;
+  /**
+   * 从全局 store 注入的菜单分组配置，支持不同分组及菜单项。
+   */
+  groups: {
+    id: string;
+    label: string;
+    items: {
+      id: string;
+      label: string;
+      icon?: string;
+    }[];
+  }[];
 }
 
 const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -38,7 +75,10 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   onAction,
   targetName,
   isEnabled,
+  page,
+  groups,
 }) => {
+  const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,43 +113,108 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
         {ellipsizeMiddle(targetName, 32)}
       </div>
       <div className="p-1">
-        <ContextMenuItem
-          icon={<Eye size={14} />}
-          label="查看详情"
-          onClick={() => onAction("view")}
-        />
-        <ContextMenuItem
-          icon={<Info size={14} />}
-          label="显示信息"
-          onClick={() => onAction("info")}
-        />
-        <ContextMenuItem
-          icon={<Download size={14} />}
-          label="下载原图"
-          onClick={() => onAction("download")}
-        />
-        <ContextMenuItem
-          icon={<Share2 size={14} />}
-          label="分享"
-          onClick={() => onAction("share")}
-        />
-        <div className="my-1 h-px bg-gray-100" />
-        <ContextMenuItem
-          icon={isEnabled ? <XCircle size={14} /> : <CheckCircle2 size={14} />}
-          label={isEnabled ? "标记为弃用" : "标记为启用"}
-          onClick={() => onAction("toggle-status")}
-          className={
-            isEnabled
-              ? "text-orange-600 hover:bg-orange-50 hover:text-orange-700"
-              : "text-green-600 hover:bg-green-50 hover:text-green-700"
-          }
-        />
-        <ContextMenuItem
-          icon={<Trash2 size={14} />}
-          label="删除照片"
-          onClick={() => onAction("delete")}
-          className="text-red-600 hover:bg-red-50 hover:text-red-700"
-        />
+        {groups.map((group) => {
+          // 如果当前不是 filter 页面，则完全移除启用/禁用项，而不是显示为不可点
+          const itemsToShow = group.items.filter(
+            (item) => !(item.id === "toggle-enabled" && page !== "filter"),
+          );
+
+          // 如果分组在当前上下文没有任何要展示的项，则跳过渲染该分组
+          if (itemsToShow.length === 0) return null;
+
+          return (
+            <div key={group.id} className="mb-1 last:mb-0">
+              {/* 分组标题行 */}
+              <div className="px-2 pt-1 text-[11px] font-semibold tracking-wide text-gray-400 uppercase">
+                {group.label}
+              </div>
+              {itemsToShow.map((item) => {
+                // 根据 item.icon 提示选择一个合适的 lucide 图标，保持视觉统一
+                let iconNode: React.ReactNode = null;
+                if (item.icon === "open") {
+                  iconNode = <ExternalLink size={14} />;
+                } else if (item.icon === "folder") {
+                  iconNode = <FolderOpen size={14} />;
+                } else if (item.icon === "toggle") {
+                  iconNode = isEnabled ? (
+                    <XCircle size={14} />
+                  ) : (
+                    <CheckCircle2 size={14} />
+                  );
+                } else if (
+                  item.icon === "delete-db" ||
+                  item.icon === "delete-file"
+                ) {
+                  iconNode = <Trash2 size={14} />;
+                } else if (item.icon === "info") {
+                  iconNode = <Info size={14} />;
+                }
+
+                // 启用 / 禁用 菜单项需要根据当前 isEnabled 状态调整文案和颜色
+                const isToggleItem = item.id === "toggle-enabled";
+                // 非筛选页（如 import / export）现在已被过滤掉，不会到达这里
+                const canToggleEnabled = page === "filter";
+
+                const dynamicLabel = isToggleItem
+                  ? isEnabled
+                    ? t("photoContext.menu.toggleEnabled.disable", "标记为禁用")
+                    : t("photoContext.menu.toggleEnabled.enable", "标记为启用")
+                  : (() => {
+                      // 其他菜单项统一走 i18n，如果未配置则回落到原始 label
+                      switch (item.id) {
+                        case "open-default":
+                          return t("photoContext.menu.openDefault", "Open");
+                        case "reveal-in-folder":
+                          return t(
+                            "photoContext.menu.revealInFolder",
+                            "Show in folder",
+                          );
+                        case "delete-db":
+                          return t(
+                            "photoContext.menu.deleteDb",
+                            "Remove (DB only)",
+                          );
+                        case "delete-file":
+                          return t(
+                            "photoContext.menu.deleteFile",
+                            "Delete file",
+                          );
+                        case "show-info":
+                          return t("photoContext.menu.showInfo", "Details");
+                        default:
+                          return item.label;
+                      }
+                    })();
+
+                const dynamicClassName = isToggleItem
+                  ? canToggleEnabled
+                    ? isEnabled
+                      ? "text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+                      : "text-green-600 hover:bg-green-50 hover:text-green-700"
+                    : "text-gray-300 cursor-not-allowed"
+                  : item.id === "delete-db" || item.id === "delete-file"
+                    ? "text-red-600 hover:bg-red-50 hover:text-red-700"
+                    : undefined;
+
+                const isDisabled = isToggleItem && !canToggleEnabled;
+
+                return (
+                  <ContextMenuItem
+                    key={item.id}
+                    icon={iconNode}
+                    label={dynamicLabel}
+                    onClick={() => {
+                      if (isDisabled) return;
+                      onAction(item.id);
+                    }}
+                    className={dynamicClassName}
+                  />
+                );
+              })}
+              <div className="my-1 h-px bg-gray-100" />
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -164,11 +269,40 @@ export function PhotoGridEnhance({
   onPhotoClick,
   highlightPhotos: initialHighlightPhotos,
   onContextMenuAction,
+  page = "filter",
 }: PhotoGridProps & {
   onPhotoClick?: (photos: Photo[], event: string) => void | Promise<void>;
   highlightPhotos?: Photo[];
   onContextMenuAction?: (action: string, photo: Photo) => void;
 }) {
+  const { t } = useTranslation();
+  // 从全局 store 中读取右键菜单配置与统一处理函数
+  const contextMenuGroups = usePhotoFilterStore((s) => s.contextMenuGroups);
+  const fnHandleContextMenuAction = usePhotoFilterStore(
+    (s) => s.fnHandleContextMenuAction,
+  );
+  const boolShowDeleteConfirm = usePhotoFilterStore(
+    (s) => s.boolShowDeleteConfirm,
+  );
+  const boolSkipDeleteConfirm = usePhotoFilterStore(
+    (s) => s.boolSkipDeleteConfirm,
+  );
+  const objPendingDeletePhoto = usePhotoFilterStore(
+    (s) => s.objPendingDeletePhoto,
+  );
+  const fnOpenDeleteConfirm = usePhotoFilterStore((s) => s.fnOpenDeleteConfirm);
+  const fnCloseDeleteConfirm = usePhotoFilterStore(
+    (s) => s.fnCloseDeleteConfirm,
+  );
+  const fnSetSkipDeleteConfirm = usePhotoFilterStore(
+    (s) => s.fnSetSkipDeleteConfirm,
+  );
+
+  const boolShowInfoDialog = usePhotoFilterStore((s) => s.boolShowInfoDialog);
+  const objInfoPhoto = usePhotoFilterStore((s) => s.objInfoPhoto);
+  const objInfoMetadata = usePhotoFilterStore((s) => s.objInfoMetadata);
+  const fnCloseInfoDialog = usePhotoFilterStore((s) => s.fnCloseInfoDialog);
+
   const photosArray = Array.isArray(photos) ? photos : [];
 
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
@@ -406,15 +540,98 @@ export function PhotoGridEnhance({
           y={contextMenu.y}
           targetName={contextMenu.photo.fileName}
           isEnabled={contextMenu.photo.isEnabled ?? true}
+          page={page}
+          groups={contextMenuGroups}
           onClose={() => setContextMenu({ ...contextMenu, visible: false })}
           onAction={(action) => {
-            if (onContextMenuAction && contextMenu.photo) {
-              onContextMenuAction(action, contextMenu.photo);
+            if (contextMenu.photo) {
+              // 如果外层组件提供了自定义处理函数，则优先使用，方便某些页面覆写默认行为
+              if (onContextMenuAction) {
+                onContextMenuAction(action, contextMenu.photo);
+              } else {
+                // 默认情况下走全局 store 的统一入口，action 即为 store 中注册的 item.id
+                void fnHandleContextMenuAction(action, contextMenu.photo, page);
+              }
             }
             setContextMenu({ ...contextMenu, visible: false });
           }}
         />
       )}
+
+      {/* 删除文件确认对话框：仅在需要确认时展示 */}
+      <AlertDialog
+        open={boolShowDeleteConfirm && !!objPendingDeletePhoto}
+        onOpenChange={(open) => {
+          if (!open) {
+            fnCloseDeleteConfirm();
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("photoContext.confirmDeleteTitle", "Delete photo file")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                "photoContext.confirmDeleteDesc",
+                "This will permanently delete the file from disk. This action cannot be undone.",
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="bg-muted my-2 rounded-md px-3 py-2 text-xs">
+            <div className="font-mono break-all">
+              {objPendingDeletePhoto?.filePath}
+            </div>
+          </div>
+          <div className="mt-2 flex items-center space-x-2">
+            <Checkbox
+              id="skip-delete-confirm"
+              checked={boolSkipDeleteConfirm}
+              onCheckedChange={(checked: boolean) =>
+                fnSetSkipDeleteConfirm(checked === true)
+              }
+            />
+            <label
+              htmlFor="skip-delete-confirm"
+              className="text-muted-foreground text-xs select-none"
+            >
+              {t(
+                "photoContext.skipConfirmLabel",
+                "Do not ask again (use with caution)",
+              )}
+            </label>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              {t("common.cancel", "Cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                const target = objPendingDeletePhoto;
+                fnCloseDeleteConfirm();
+                if (!target) return;
+
+                // 调用 store 中的 delete-file 行为：通过统一入口再次分发
+                await fnHandleContextMenuAction("delete-file", target, page);
+              }}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {t("photoContext.confirmDeleteButton", "Delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 照片详情元数据弹窗 */}
+      <PhotoInfoDialog
+        open={boolShowInfoDialog}
+        onOpenChange={(open) => {
+          if (!open) fnCloseInfoDialog();
+        }}
+        photo={objInfoPhoto}
+        metadata={objInfoMetadata as any}
+      />
     </>
   );
 }

@@ -80,12 +80,35 @@ export function exposeWindowContext() {
       return "";
     },
 
+  /**
+   * 使用系统默认程序直接打开本地文件路径。
+   * 内部通过主进程的 shell.openPath 实现，适合用于打开图片等本地文件。
+   */
+  openPath: (filePath: string) => ipcRenderer.invoke("open-path", filePath),
+
+  /**
+   * 通过系统默认浏览器打开外部 URL。
+   * 调用主进程的 Electron shell.openExternal 以确保在系统浏览器中打开。
+   * @param url 要打开的 URL（支持 http/https 以及 mailto: 等协议）
+   */
+  openExternal: (url: string) => ipcRenderer.invoke("open-external", url),
+
     /**
-     * 通过系统默认浏览器打开外部 URL。
-     * 调用主进程的 Electron shell.openExternal 以确保在系统浏览器中打开。
-     * @param url 要打开的 URL（支持 http/https 以及 mailto: 等协议）
+     * 在系统文件管理器中展示指定文件（选中该文件）。
      */
-    openExternal: (url: string) => ipcRenderer.invoke("open-external", url),
+    revealInFolder: (filePath: string) =>
+      ipcRenderer.invoke("reveal-in-folder", filePath),
+
+    /**
+     * 删除磁盘上的文件（简单封装，实际删除逻辑在主进程中完成）。
+     */
+    deleteFile: (filePath: string) => ipcRenderer.invoke("delete-file", filePath),
+
+    /**
+     * 获取单张照片的完整元数据信息（通过 IPC 调用后端）。
+     */
+    getPhotoMetadata: (filePath: string) =>
+      ipcRenderer.invoke("get-photo-metadata", filePath),
   });
 
   /**

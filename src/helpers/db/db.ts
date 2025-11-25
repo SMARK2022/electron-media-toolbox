@@ -320,3 +320,13 @@ export async function getPhotosExtendByPhotos(
   // 过滤掉 null / undefined
   return rows.filter((row): row is PhotoExtend => row != null);
 }
+
+// 根据 filePath 删除单条照片记录
+export function deletePhotoByPath(filePath: string) {
+  const sql = `
+        DELETE FROM present
+        WHERE filePath = @filePath
+    `;
+  const params = { filePath };
+  return window.ElectronDB.run(sql, params);
+}

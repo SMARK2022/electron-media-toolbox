@@ -26,6 +26,7 @@ import {
 } from "@/helpers/db/db";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
+import { usePhotoFilterStore } from "@/helpers/store/usePhotoFilterStore";
 
 // lucide icons for better visual feedback in drop zone & buttons
 import { Upload, FileWarning, Image as ImageIcon } from "lucide-react";
@@ -38,7 +39,10 @@ interface DroppedFile {
 }
 
 interface FileImportDrawerProps {
-  setPhotos: React.Dispatch<React.SetStateAction<Photo[]>>;
+  /**
+   * 导入完成后，将新照片列表写入全局 store（而不是仅仅写入本地 state）。
+   */
+  onImported: (photos: Photo[]) => void;
 }
 
 // 允许的扩展名（用于拖拽和文件选择公用）
@@ -74,7 +78,7 @@ const normalizePath = (p: string) => p.replace(/\\/g, "/");
 
 // ----------------- 主导入 Drawer -----------------
 
-function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
+function FileImportDrawer({ onImported }: FileImportDrawerProps) {
   const { t } = useTranslation();
 
   const [droppedFiles, setDroppedFiles] = React.useState<DroppedFile[]>([]);
@@ -190,6 +194,7 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
     setIsProcessing(false);
     clearTimeoutRef(invalidDropTimeoutRef);
     clearTimeoutRef(folderErrorTimeoutRef);
+    // 重置数据库状态：重新初始化并清空 present 表
     initializeDatabase();
     clearPhotos();
   };
@@ -287,8 +292,9 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
       );
 
       // 更新数据库 + UI
-      clearPhotos();
-      initializeDatabase();
+  // 清空旧数据并重新初始化相册表结构
+  clearPhotos();
+  initializeDatabase();
       addPhotosExtend(photoObjects);
 
       const photoObjectsForState: Photo[] = photoObjects.map((p) => ({
@@ -299,7 +305,8 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
         isEnabled: p.isEnabled ?? true,
       }));
 
-      setPhotos(photoObjectsForState);
+  // 通过回调写入全局 store（由外层页面负责调用 fnSetAllPhotos）
+  onImported(photoObjectsForState);
 
       // 一些持久化记录（当前页面不读取，但保留）
       sessionStorage.setItem(
@@ -506,7 +513,9 @@ function FileImportDrawer({ setPhotos }: FileImportDrawerProps) {
 
 export default function PhotoImportSubpage() {
   const { t } = useTranslation();
-  const [photos, setPhotos] = React.useState<Photo[]>([]);
+  const photos = usePhotoFilterStore((s) => s.lstAllPhotos); // 相册中的所有照片
+  const fnSetAllPhotos = usePhotoFilterStore((s) => s.fnSetAllPhotos);
+  const fnSetCurrentPage = usePhotoFilterStore((s) => s.fnSetCurrentPage);
 
   // 初始化数据库并加载数据（带兜底）
   React.useEffect(() => {
@@ -516,25 +525,26 @@ export default function PhotoImportSubpage() {
         const savedPhotos = await getPhotos();
 
         if (Array.isArray(savedPhotos)) {
-          setPhotos(savedPhotos);
+          // 将数据库中的照片同步到全局 store，供三个页面共用
+          fnSetAllPhotos(savedPhotos);
         } else if (savedPhotos == null) {
           console.warn(
             "[PhotoImportSubpage] getPhotos() returned null/undefined, fallback to []",
           );
-          setPhotos([]);
+          fnSetAllPhotos([]);
         } else {
           console.warn(
             "[PhotoImportSubpage] getPhotos() returned non-array:",
             savedPhotos,
           );
-          setPhotos([]);
+          fnSetAllPhotos([]);
         }
       } catch (error) {
         console.error(
           "[PhotoImportSubpage] failed to init / load photos:",
           error,
         );
-        setPhotos([]);
+        fnSetAllPhotos([]);
       }
     };
     void init();
@@ -542,6 +552,9 @@ export default function PhotoImportSubpage() {
 
   // 从 sessionStorage 恢复 UI 状态（带解析与类型保护）
   React.useEffect(() => {
+    // 进入导入页面时，记录当前页面类型，便于右键菜单区分来源
+    fnSetCurrentPage("import");
+
     try {
       const saved = sessionStorage.getItem("savedPhotoObjectsForState");
       if (!saved) return;
@@ -555,7 +568,8 @@ export default function PhotoImportSubpage() {
         return;
       }
 
-      setPhotos(parsed as Photo[]);
+      // 如 sessionStorage 中有缓存，则优先恢复到全局 store
+      fnSetAllPhotos(parsed as Photo[]);
     } catch (error) {
       console.error(
         "[PhotoImportSubpage] failed to restore photos from sessionStorage:",
@@ -567,7 +581,12 @@ export default function PhotoImportSubpage() {
   return (
     <div className="flex min-h-screen flex-col bg-slate-50/60 p-4 px-4 py-2 dark:bg-gray-900">
       <div className="mb-4 flex justify-between">
-        <FileImportDrawer setPhotos={setPhotos} />
+        <FileImportDrawer
+          onImported={(newPhotos) => {
+            // 导入完成时，统一更新全局照片列表
+            fnSetAllPhotos(newPhotos);
+          }}
+        />
         <div className="bg-muted inline-flex items-center rounded-full px-3 py-1 text-sm font-medium">
           <span className="text-muted-foreground">
             {t("labels.totalPhotos")}
@@ -580,7 +599,7 @@ export default function PhotoImportSubpage() {
 
       <div className="flex-1 overflow-hidden">
         <ScrollArea className="mx-auto h-[calc(100vh-160px)] w-full max-w-full rounded-md border p-4">
-          <PhotoGridEnhance photos={photos} />
+          <PhotoGridEnhance photos={photos} page="import" />
           {photos.length === 0 && (
             <div className="text-muted-foreground flex h-[calc(70vh-100px)] flex-col items-center justify-center text-center">
               <div className="mb-3 rounded-full bg-white p-4 shadow-sm">

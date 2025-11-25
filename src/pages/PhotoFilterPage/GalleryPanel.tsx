@@ -110,6 +110,7 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = ({
             isGroupMode={modeGalleryView === "group"}
             groupLabel={t("filterPage.groupLabel") || "Group"}
             highlightPhotos={highlightPhotos}
+            // 将选择事件透传给上层（如右侧详情面板），右键菜单行为由 PhotoGridEnhance + 全局 store 统一处理
             onPhotoClick={onPhotoClick}
           />
         ))}

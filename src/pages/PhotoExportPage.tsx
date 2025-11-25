@@ -25,10 +25,14 @@ import { copyPhotos, folderExists } from "@/lib/system";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { Save, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { usePhotoFilterStore } from "@/helpers/store/usePhotoFilterStore";
 
 export default function PhotoExportSubpage() {
   const { t } = useTranslation();
-  const [photos, setPhotos] = useState<Photo[]>([]);
+  // 从全局 store 读取最新的相册照片列表
+  const photos = usePhotoFilterStore((s) => s.lstAllPhotos);
+  const fnSetAllPhotos = usePhotoFilterStore((s) => s.fnSetAllPhotos);
+  const fnSetCurrentPage = usePhotoFilterStore((s) => s.fnSetCurrentPage);
   const [folderName, setFolderName] = useState<string>("");
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
   const [copyInProgress, setCopyInProgress] = useState<boolean>(false);
@@ -86,10 +90,11 @@ export default function PhotoExportSubpage() {
         }));
       }
 
-      setPhotos(groupedPhotos);
+      // 将可导出的启用照片同步到全局列表，方便其他页面共用
+      fnSetAllPhotos(groupedPhotos);
     } catch (error) {
       console.error("获取启用照片失败:", error);
-      setPhotos([]);
+      fnSetAllPhotos([]);
     }
   };
 
@@ -98,6 +103,8 @@ export default function PhotoExportSubpage() {
     sessionStorage.setItem("submitTime", currentTime.toString());
     initializeDatabase();
     void fetchEnabledPhotos();
+    // 记录当前页面为导出页，用于右键菜单等行为区分
+    fnSetCurrentPage("export");
   }, []);
 
   const isExportDisabled = !folderName || photos.length === 0;
@@ -212,7 +219,8 @@ export default function PhotoExportSubpage() {
       </AlertDialog>
 
       <ScrollArea className="mx-auto h-[calc(100vh-180px)] min-h-[60vh] w-full max-w-full rounded-md border p-3">
-        <PhotoGridEnhance photos={photos} />
+        {/* 导出页使用与筛选页 / 导入页一致的网格组件和右键菜单 */}
+        <PhotoGridEnhance photos={photos} page="export" />
       </ScrollArea>
     </div>
   );
