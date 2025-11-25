@@ -1,12 +1,27 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 
+export interface PreviewFocusRegion {
+  bbox: [number, number, number, number];
+  zoomFactor?: number;
+  requestId?: number;
+}
+
 interface ImagePreviewProps {
   src: string;
   width?: string | number;
   height?: string | number;
+  focusRegion?: PreviewFocusRegion;
 }
 
-const ImagePreview: React.FC<ImagePreviewProps> = ({ src, width, height }) => {
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+const ImagePreview: React.FC<ImagePreviewProps> = ({
+  src,
+  width,
+  height,
+  focusRegion,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
@@ -27,6 +42,7 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({ src, width, height }) => {
   // --- 新增：控制缩放提示的显示状态 ---
   const [showZoomBadge, setShowZoomBadge] = useState(false);
   const zoomBadgeTimer = useRef<NodeJS.Timeout | null>(null);
+  const focusRegionRef = useRef<PreviewFocusRegion | null>(null);
 
   // 缩放限制（相对于自适应尺寸）
   const MIN_SCALE = 1; // 最小就是自适应大小
@@ -142,6 +158,68 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({ src, width, height }) => {
     [imageSize, MIN_SCALE, getClampedPosition, baseScale],
   );
 
+  const focusOnRegion = useCallback(
+    (region: PreviewFocusRegion | null) => {
+      if (
+        !region ||
+        !containerSize.width ||
+        !containerSize.height ||
+        !imageSize.width ||
+        !imageSize.height ||
+        baseScale === 0
+      ) {
+        return false;
+      }
+
+      const [x1, y1, x2, y2] = region.bbox;
+      if (x2 <= x1 || y2 <= y1) return false;
+
+      const targetZoom = region.zoomFactor && region.zoomFactor > 1 ? region.zoomFactor : 1.2;
+      const width = x2 - x1;
+      const height = y2 - y1;
+      const padRatio = (targetZoom - 1) / 2;
+      const padX = width * padRatio;
+      const padY = height * padRatio;
+
+      const px1 = clamp(x1 - padX, 0, imageSize.width);
+      const py1 = clamp(y1 - padY, 0, imageSize.height);
+      const px2 = clamp(x2 + padX, 0, imageSize.width);
+      const py2 = clamp(y2 + padY, 0, imageSize.height);
+
+      const regionWidth = Math.max(1, px2 - px1);
+      const regionHeight = Math.max(1, py2 - py1);
+
+      const absoluteScale = Math.min(
+        containerSize.width / regionWidth,
+        containerSize.height / regionHeight,
+      );
+      const targetScale = absoluteScale / baseScale;
+      const clampedScale = Math.min(Math.max(targetScale, MIN_SCALE), MAX_SCALE);
+
+      const centerX = px1 + regionWidth / 2;
+      const centerY = py1 + regionHeight / 2;
+
+      const desiredX = containerSize.width / 2 - centerX * baseScale * clampedScale;
+      const desiredY = containerSize.height / 2 - centerY * baseScale * clampedScale;
+      const clampedPos = getClampedPosition({ x: desiredX, y: desiredY }, clampedScale);
+
+      setScale(clampedScale);
+      setPosition(clampedPos);
+      setIsAnimating(true);
+      triggerZoomBadge();
+      return true;
+    },
+    [
+      containerSize,
+      imageSize,
+      baseScale,
+      getClampedPosition,
+      triggerZoomBadge,
+      MIN_SCALE,
+      MAX_SCALE,
+    ],
+  );
+
   // 图片加载完成
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
@@ -170,6 +248,17 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({ src, width, height }) => {
       prevSrc.current = src;
     }
   }, [imageSize, fitToContainer, src]);
+
+  useEffect(() => {
+    if (!focusRegion) return;
+    focusRegionRef.current = focusRegion;
+    focusOnRegion(focusRegion);
+  }, [focusRegion, focusOnRegion]);
+
+  useEffect(() => {
+    if (!focusRegionRef.current) return;
+    focusOnRegion(focusRegionRef.current);
+  }, [focusOnRegion, imageSize, containerSize, baseScale]);
 
   // 滚轮缩放（以鼠标为中心）
   const handleWheel = (e: React.WheelEvent) => {

@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { CustomSlider } from "@/components/CustomSlider";
-import ImagePreview from "@/components/ImagePreview"; // 右侧大图预览组件
 import PhotoDetailsTable from "./PhotoDetailsTable"; // 预览下方的详细信息 & 开关表格
 import { AlertCircle, Image as ImageIcon, RotateCcw, Trash2 } from "lucide-react";
 import { usePhotoFilterSelectors } from "../../helpers/store/usePhotoFilterStore"; // 只订阅与 SidePanel 相关的状态和 action
@@ -13,29 +12,6 @@ interface SidePanelProps {
   onStartPreviewMouseDrag: (clientY: number) => void;
   onStartPreviewTouchDrag: (clientY: number) => void;
 }
-
-const PreviewPlaceholder: React.FC<{ height?: string }> = ({ height }) => {
-  const { t } = useTranslation();
-
-  return (
-    <div
-      style={height ? { height } : undefined}
-      className="border-muted-foreground/20 bg-muted/40 m-4 flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center"
-    >
-      <div className="bg-muted mb-3 rounded-full p-3 shadow-sm">
-        <ImageIcon className="text-muted-foreground/40 h-8 w-8" />
-      </div>
-      <p className="text-foreground text-sm font-medium">
-        {t("filterPage.previewPlaceholderTitle") ||
-          "Select a photo from the gallery to preview"}
-      </p>
-      <p className="text-muted-foreground mt-1 max-w-xs text-xs">
-        {t("filterPage.previewPlaceholderDesc") ||
-          "Click any thumbnail on the left to view details and toggle its enabled status."}
-      </p>
-    </div>
-  );
-};
 
 export const SidePanel: React.FC<SidePanelProps> = ({
   previewHeightPercent,
@@ -144,59 +120,17 @@ export const SidePanel: React.FC<SidePanelProps> = ({
         value="preview"
         className="mt-0 flex h-[calc(100vh-160px)] flex-col overflow-hidden border-0 bg-transparent p-0"
       >
-  {lstPreviewPhotoDetails.length > 0 ? (
-          <div className="flex h-full flex-col overflow-hidden">
-            <div
-              className="flex-shrink-0"
-              style={{
-                height: `${previewHeightPercent}%`,
-                minHeight: "20%",
-                maxHeight: "70%",
-                width: "100%",
-                display: "flex",
-              }}
-            >
-              <ImagePreview
-                src={`local-resource://${lstPreviewPhotoDetails[0].filePath}`}
-                height="100%"
-                width="100%"
-              />
-            </div>
-
-            <div
-              className="bg-muted/20 hover:bg-muted/40 flex flex-shrink-0 cursor-ns-resize items-center justify-center transition-colors select-none"
-              style={{
-                height: 8,
-                touchAction: "none",
-              }}
-              onMouseDown={(e) => onStartPreviewMouseDrag(e.clientY)}
-              onTouchStart={(e) => {
-                if (e.touches && e.touches[0])
-                  onStartPreviewTouchDrag(e.touches[0].clientY);
-              }}
-            >
-              <div className="bg-muted/60 h-1.5 w-10 rounded-full" />
-            </div>
-
-            <div
-              className="flex-1 overflow-hidden"
-              style={{
-                maxHeight: `${100 - previewHeightPercent}%`,
-              }}
-            >
-              <PhotoDetailsTable
-                photo={lstPreviewPhotoDetails[0]}
-                isPreviewEnabled={boolCurrentPreviewEnabled}
-                setIsPreviewEnabled={() => {}}
-                updatePhotoEnabledStatus={fnUpdateFromDetailsPanel}
-                setPhotos={() => {}}
-                onPhotoStatusChanged={() => fnSetReloadAlbumRequested(true)}
-              />
-            </div>
-          </div>
-        ) : (
-          <PreviewPlaceholder height={"calc((100vh - 180px))"} />
-        )}
+        <PhotoDetailsTable
+          photo={lstPreviewPhotoDetails[0]}
+          isPreviewEnabled={boolCurrentPreviewEnabled}
+          setIsPreviewEnabled={() => {}}
+          updatePhotoEnabledStatus={fnUpdateFromDetailsPanel}
+          setPhotos={() => {}}
+          onPhotoStatusChanged={() => fnSetReloadAlbumRequested(true)}
+          previewHeightPercent={previewHeightPercent}
+          onStartPreviewMouseDrag={onStartPreviewMouseDrag}
+          onStartPreviewTouchDrag={onStartPreviewTouchDrag}
+        />
       </TabsContent>
     </Tabs>
   );
