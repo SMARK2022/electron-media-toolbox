@@ -2,13 +2,9 @@ import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple, Callable, Optional, Any
-from pathlib import Path
-import sys
-import threading
 
 import cv2
 import numpy as np
-import onnxruntime as ort
 import os
 
 from utils.database import (
@@ -16,111 +12,7 @@ from utils.database import (
     save_cache_to_db,
     update_group_id_in_db,
 )
-
-# ---------------------------------------------------------------------------
-# ONNX Runtime session initialization
-# ---------------------------------------------------------------------------
-
-
-def _select_ort_providers() -> List[str]:
-    """选择最合适的 ONNX Runtime 执行后端。
-
-    优先级：
-    1. CUDAExecutionProvider
-    2. DmlExecutionProvider (DirectML, 适合 Windows + DX12 显卡)
-    3. CPUExecutionProvider
-    """
-    providers = ort.get_available_providers()
-    if "CUDAExecutionProvider" in providers:
-        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
-    if "DmlExecutionProvider" in providers:
-        return ["DmlExecutionProvider", "CPUExecutionProvider"]
-    return ["CPUExecutionProvider"]
-
-
-# ONNX IQA 模型路径（由原来的 .pt 导出的 .onnx）
-# 如果你的 onnx 文件名不同，请改这里
-# Nuitka onefile 模式下，资源文件会被解压到临时目录
-# 需要使用特殊的方式获取路径
-def get_resource_path(relative_path):
-    """获取资源文件的绝对路径（支持 onefile 打包）"""
-    if getattr(sys, "frozen", False):
-        # 打包后的环境
-        if hasattr(sys, "_MEIPASS"):
-            # PyInstaller 风格
-            base_path = Path(sys._MEIPASS)
-        else:
-            # Nuitka 风格：使用 exe 所在目录
-            base_path = Path(sys.executable).parent
-    else:
-        # 开发环境
-        base_path = Path(__file__).resolve().parent / ".."
-
-    return base_path / relative_path
-
-
-# 使用新的路径获取方式（带判断与 try，避免直接闪退）
-_checkpoint_onnx = Path(get_resource_path("checkpoint/lar_iqa.onnx"))
-
-_IQA_SESSION = None
-_IQA_SESSION_CPU = None
-_IQA_INPUT_NAMES: List[str] = []
-_IQA_RUN_LOCK = threading.Lock()
-_IS_DML = False
-
-
-# 如果模型文件不存在或 ORT 初始化失败，使用一个简单的 dummy session 以避免程序崩溃。
-class _DummyIqaSession:
-    def run(self, *args, **kwargs):
-        # 返回与真实模型相容的形状：第一个输出应当是可转换为标量的数组
-        return [np.array([0.0], dtype=np.float32)]
-
-
-if not _checkpoint_onnx.exists():
-    print(f"[IQA] ONNX model not found at {_checkpoint_onnx}. IQA will be disabled (using dummy session).")
-    _IQA_SESSION = _DummyIqaSession()
-    _IQA_INPUT_NAMES = ["input_authentic", "input_synthetic"]
-    _IQA_SESSION_CPU = _IQA_SESSION
-else:
-    try:
-        providers = _select_ort_providers()
-
-        # ---- GPU / DirectML Session Options ----
-        _session_options = ort.SessionOptions()
-        if "DmlExecutionProvider" in providers:
-            # DirectML 不支持 mem pattern + 并行执行，需要串行执行模式
-            _session_options.enable_mem_pattern = False
-            _session_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-            # 关闭图优化以避免 DmlFusedNode 等 fuse 导致崩溃
-            _session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
-        else:
-            _session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-
-        _IQA_SESSION = ort.InferenceSession(
-            str(_checkpoint_onnx),
-            sess_options=_session_options,
-            providers=providers,
-        )
-
-        _IQA_INPUT_NAMES = [inp.name for inp in _IQA_SESSION.get_inputs()]
-        _IS_DML = "DmlExecutionProvider" in _IQA_SESSION.get_providers()
-        print(f"[IQA] Loaded ONNX model from {_checkpoint_onnx}, providers={_IQA_SESSION.get_providers()}, inputs={_IQA_INPUT_NAMES}")
-
-        # ---- CPU Fallback Session ----
-        _cpu_so = ort.SessionOptions()
-        _cpu_so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        _IQA_SESSION_CPU = ort.InferenceSession(
-            str(_checkpoint_onnx),
-            sess_options=_cpu_so,
-            providers=["CPUExecutionProvider"],
-        )
-
-    except Exception as e:
-        print(f"[IQA] Failed to create ONNX Runtime session ({e}). Falling back to dummy session to avoid crash.")
-        _IQA_SESSION = _DummyIqaSession()
-        _IQA_INPUT_NAMES = ["input_authentic", "input_synthetic"]
-        _IQA_SESSION_CPU = _IQA_SESSION
-        _IS_DML = False
+from utils.iqa_onnx import infer_iqa_from_bgr, detect_faces_from_bgr
 
 HSVHist = Tuple[np.ndarray, np.ndarray, np.ndarray]
 BINS: List[int] = [90, 128, 128]
@@ -222,115 +114,6 @@ def ensure_hist_cached(
 
 
 # ---------------------------------------------------------------------------
-# IQA：ONNX Runtime 前处理 + 推理
-# ---------------------------------------------------------------------------
-
-# 与原 PyTorch 版本一致的 ImageNet 归一化参数
-_IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-_IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-
-
-def _preprocess_image_from_bgr(
-    img_bgr: np.ndarray,
-    color_space: str = "RGB",
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    IQA 模型前处理（对应原来的 torchvision pipeline），仅用 OpenCV + NumPy：
-
-      - BGR -> RGB
-      - 仅支持 RGB color_space（移除 LAB/YUV 等不会用到的分支）
-      - authentic 分支: Resize 到 384x384
-      - synthetic 分支: CenterCrop 到 1280x1280
-      - /255 -> [0,1] -> Normalize -> HWC->NCHW -> 加 batch 维
-    """
-    # BGR -> RGB
-    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-
-    # 当前调用只会传 "RGB"，保留参数是为了不改函数形式
-    if color_space == "RGB":
-        working = img_rgb
-    else:
-        # 如果以后要扩展 HSV/LAB/YUV，请在这里显式添加
-        raise ValueError(f"Unsupported color_space: {color_space}. Only 'RGB' is supported in ONNX pipeline.")
-
-    # authentic 分支：Resize 到 384x384
-    authentic = cv2.resize(
-        working,
-        (384, 384),
-        interpolation=cv2.INTER_AREA,
-    )
-
-    # synthetic 分支：CenterCrop 到 1280x1280（先对原图操作）
-    h, w, _ = working.shape
-    crop_size = 1280
-    if h < crop_size or w < crop_size:
-        # 模拟 torchvision CenterCrop 对“小图”的行为：
-        # 先将短边缩放到 1280，再中心裁剪
-        scale = crop_size / min(h, w)
-        new_w = int(round(w * scale))
-        new_h = int(round(h * scale))
-        resized = cv2.resize(working, (new_w, new_h), interpolation=cv2.INTER_AREA)
-        h, w, _ = resized.shape
-        y0 = max((h - crop_size) // 2, 0)
-        x0 = max((w - crop_size) // 2, 0)
-        synthetic = resized[y0 : y0 + crop_size, x0 : x0 + crop_size]
-    else:
-        y0 = (h - crop_size) // 2
-        x0 = (w - crop_size) // 2
-        synthetic = working[y0 : y0 + crop_size, x0 : x0 + crop_size]
-
-    def _to_nchw_normalized(img: np.ndarray) -> np.ndarray:
-        # HWC uint8 -> float32 [0,1]
-        arr = img.astype(np.float32) / 255.0
-        # Normalize
-        arr = (arr - _IMAGENET_MEAN) / _IMAGENET_STD
-        # HWC -> NCHW
-        arr = np.transpose(arr, (2, 0, 1))
-        # [1, C, H, W]
-        return arr[None, :, :, :].astype(np.float32)
-
-    image_authentic = _to_nchw_normalized(authentic)
-    image_synthetic = _to_nchw_normalized(synthetic)
-    return image_authentic, image_synthetic
-
-
-def preprocess_image(
-    image_path: str,
-    color_space: str = "RGB",
-) -> Tuple[np.ndarray, np.ndarray]:
-    """兼容旧接口：从路径读图，再调用基于 BGR 的前处理."""
-    img_bgr = cv_imread(image_path)
-    return _preprocess_image_from_bgr(img_bgr, color_space=color_space)
-
-
-def infer_iqa(
-    image_authentic: np.ndarray,
-    image_synthetic: np.ndarray,
-) -> float:
-    """用 ONNX Runtime 跑 IQA 推理，返回标量评分."""
-    if len(_IQA_INPUT_NAMES) != 2:
-        raise RuntimeError(f"Expected IQA ONNX model with 2 inputs, got {_IQA_INPUT_NAMES}")
-
-    inputs: Dict[str, np.ndarray] = {
-        _IQA_INPUT_NAMES[0]: image_authentic,
-        _IQA_INPUT_NAMES[1]: image_synthetic,
-    }
-    try:
-        if _IS_DML:
-            # DirectML Session 不允许多线程并发 Run，必须串行化
-            with _IQA_RUN_LOCK:
-                outputs = _IQA_SESSION.run(None, inputs)
-        else:
-            outputs = _IQA_SESSION.run(None, inputs)
-    except Exception as e:
-        print(f"[IQA] GPU/DirectML inference failed ({e}), falling back to CPUExecutionProvider.")
-        outputs = _IQA_SESSION_CPU.run(None, inputs)
-    # 假定第一个输出是标量或 [1,1] 形式
-    score_array = outputs[0]
-    score = float(np.asarray(score_array).reshape(-1)[0])
-    return score
-
-
 def ensure_iqa_cached(
     file_path: str,
     iqa_cache: Dict[str, float],
@@ -349,13 +132,31 @@ def ensure_iqa_cached(
     if img_bgr is None:
         img_bgr = cv_imread(file_path)
 
-    image_authentic, image_synthetic = _preprocess_image_from_bgr(img_bgr, color_space="RGB")
-    score = infer_iqa(image_authentic, image_synthetic)
-    iqa_value = float(score) * 20.0  # 保留原来的 *20 缩放
-    iqa_cache[file_path] = iqa_value
+    # 交给独立 IQA 模块进行预处理与推理
+    iqa_value = infer_iqa_from_bgr(img_bgr, color_space="RGB")
+    iqa_cache[file_path] = float(iqa_value)
 
     elapsed = time.time() - start_time
     print(f"[ensure_iqa_cached] {file_path} IQA computed in {elapsed:.3f}s")
+
+
+def ensure_face_cached(
+    file_path: str,
+    face_cache: Dict[str, dict],
+    img_bgr: Optional[np.ndarray] = None,
+) -> None:
+    """确保某张图的人脸检测结果已缓存。"""
+    if file_path in face_cache:
+        return
+
+    if img_bgr is None:
+        img_bgr = cv_imread(file_path)
+
+    start_time = time.time()
+    face_info = detect_faces_from_bgr(img_bgr, score_thresh=0.5)
+    face_cache[file_path] = face_info
+    elapsed = time.time() - start_time
+    print(f"[ensure_face_cached] {file_path} face detection computed in {elapsed:.3f}s")
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +169,7 @@ def compute_similarity_and_IQA(
     ref_path: str,
     hist_cache: Dict[str, HSVHist],
     iqa_cache: Dict[str, float],
+    face_cache: Dict[str, dict],
 ) -> Tuple[float, float]:
     """
     计算 (file_path, ref_path) 这对图片的相似度 + file_path 的 IQA。
@@ -387,14 +189,17 @@ def compute_similarity_and_IQA(
     img_curr: Optional[np.ndarray] = None
     need_hist = file_path not in hist_cache
     need_iqa = file_path not in iqa_cache
+    need_face = file_path not in face_cache
 
-    if need_hist or need_iqa:
+    if need_hist or need_iqa or need_face:
         img_curr = cv_imread(file_path)
 
     if need_hist:
         ensure_hist_cached(file_path, hist_cache, img_curr)
     if need_iqa:
         ensure_iqa_cached(file_path, iqa_cache, img_curr)
+    if need_face:
+        ensure_face_cached(file_path, face_cache, img_curr)
 
     similarity = calculate_similarity_from_hist(
         hist_cache[file_path],
@@ -417,6 +222,7 @@ def process_pair_batch(
     cache_data: Dict[Tuple[str, str], Tuple[float, float]],
     hist_cache: Dict[str, HSVHist],
     iqa_cache: Dict[str, float],
+    face_cache: Dict[str, dict],
     db_path: str,
     update_progress: Callable[[str, int, int, int], Any],
     include_first_self_pair: bool = False,
@@ -447,6 +253,7 @@ def process_pair_batch(
                 img_first = cv_imread(first_enabled_file)
                 ensure_hist_cached(first_enabled_file, hist_cache, img_first)
                 ensure_iqa_cached(first_enabled_file, iqa_cache, img_first)
+                ensure_face_cached(first_enabled_file, face_cache, img_first)
 
                 # 同步一次 IQA 到 DB（后续 save_cache_to_db 也会再次覆盖一次）
                 cursor.execute(
@@ -475,6 +282,7 @@ def process_pair_batch(
                 ref_path,
                 hist_cache,
                 iqa_cache,
+                face_cache,
             )
 
             cache_data[(file_path, ref_path)] = (similarity, iqa_value)
@@ -517,6 +325,7 @@ def process_and_group_images(
         enabled_map,
         hist_cache,
         iqa_cache,
+        face_cache,
     ) = load_cache_from_db(db_path, show_disabled_photos)
 
     total_images = len(image_files)
@@ -578,18 +387,19 @@ def process_and_group_images(
             for future in as_completed(futures):
                 future.result()
 
-    # 兜底：确保首个启用图片一定有 IQA
+    # 兜底：确保首个启用图片一定有 IQA 和人脸数据
     if enabled_files:
         first_enabled = enabled_files[0]
         if first_enabled not in iqa_cache:
-            print(f"[process_and_group_images] fallback IQA computation for first enabled: {first_enabled}")
+            print(f"[process_and_group_images] fallback IQA/face computation for first enabled: {first_enabled}")
             img_first = cv_imread(first_enabled)
             ensure_hist_cached(first_enabled, hist_cache, img_first)
             ensure_iqa_cached(first_enabled, iqa_cache, img_first)
+            ensure_face_cached(first_enabled, face_cache, img_first)
 
-    # 将 per-image 直方图 & IQA 写回 DB
+    # 将 per-image 直方图 & IQA & 人脸数据 写回 DB
     update_progress("保存缓存数据中", 0, 0, 1)
-    save_cache_to_db(db_path, cache_data, hist_cache, iqa_cache)
+    save_cache_to_db(db_path, cache_data, hist_cache, iqa_cache, face_cache)
 
     # ====== 对启用图片进行分组 ======
     groups: List[List[Tuple[str, float, float]]] = []

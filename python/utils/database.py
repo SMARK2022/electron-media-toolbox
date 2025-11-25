@@ -2,6 +2,7 @@ import os
 import sqlite3
 from typing import Dict, Tuple, List
 
+import json
 import numpy as np
 
 # Histogram bin configuration must match image_compute.py
@@ -32,7 +33,7 @@ def load_cache_from_db(db_path: str, show_disabled_photos: bool):
     # 始终读取所有照片（启用/未启用），后续再根据 isEnabled 控制参与计算与否
     cursor.execute(
         """
-        SELECT filePath, simRefPath, similarity, IQA, isEnabled, histH, histS, histV
+    SELECT filePath, simRefPath, similarity, IQA, isEnabled, histH, histS, histV, faceData
         FROM present
         ORDER BY id ASC
         """
@@ -45,6 +46,7 @@ def load_cache_from_db(db_path: str, show_disabled_photos: bool):
     enabled_map: Dict[str, bool] = {}
     hist_cache: Dict[str, HSVHist] = {}
     iqa_cache: Dict[str, float] = {}
+    face_cache: Dict[str, dict] = {}
 
     for row in rows:
         (
@@ -56,6 +58,7 @@ def load_cache_from_db(db_path: str, show_disabled_photos: bool):
             hist_h,
             hist_s,
             hist_v,
+            face_data,
         ) = row
 
         if file_path not in image_files:
@@ -72,6 +75,14 @@ def load_cache_from_db(db_path: str, show_disabled_photos: bool):
         if iqa_value is not None:
             iqa_cache[file_path] = float(iqa_value)
 
+        # faceData JSON
+        if face_data is not None:
+            try:
+                face_cache[file_path] = json.loads(face_data)
+            except Exception:
+                # 如果解析失败，则忽略，后续重新计算
+                pass
+
         # Histogram blobs -> numpy arrays
         if hist_h is not None and hist_s is not None and hist_v is not None:
             try:
@@ -83,7 +94,7 @@ def load_cache_from_db(db_path: str, show_disabled_photos: bool):
                 # 如果解码失败，则忽略，后续重新计算
                 pass
 
-    return cache_data, image_files, enabled_map, hist_cache, iqa_cache
+    return cache_data, image_files, enabled_map, hist_cache, iqa_cache, face_cache
 
 
 def save_cache_to_db(
@@ -91,6 +102,7 @@ def save_cache_to_db(
     cache_data,  # 保留参数以兼容旧接口，这里不直接使用
     hist_cache: Dict[str, HSVHist],
     iqa_cache: Dict[str, float],
+    face_cache: Dict[str, dict],
 ) -> None:
     """
     Persist per-image HSV histograms and IQA scores into the database.
@@ -102,8 +114,8 @@ def save_cache_to_db(
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # 对所有有 histogram 和/或 IQA 的图片进行更新
-    all_files = set(hist_cache.keys()) | set(iqa_cache.keys())
+    # 对所有有 histogram、IQA 或人脸数据的图片进行更新
+    all_files = set(hist_cache.keys()) | set(iqa_cache.keys()) | set(face_cache.keys())
 
     for file_path in all_files:
         h_blob = s_blob = v_blob = None
@@ -115,6 +127,12 @@ def save_cache_to_db(
             v_blob = v.astype(np.float32).tobytes()
 
         iqa_value = iqa_cache.get(file_path, None)
+        face_json: str | None = None
+        if file_path in face_cache:
+            try:
+                face_json = json.dumps(face_cache[file_path], ensure_ascii=False)
+            except Exception:
+                face_json = None
 
         cursor.execute(
             "SELECT id FROM present WHERE filePath = ?",
@@ -125,7 +143,16 @@ def save_cache_to_db(
         if row:
             row_id = row[0]
 
-            if h_blob is not None and iqa_value is not None:
+            if h_blob is not None and iqa_value is not None and face_json is not None:
+                cursor.execute(
+                    """
+                    UPDATE present
+                    SET histH = ?, histS = ?, histV = ?, IQA = ?, faceData = ?
+                    WHERE id = ?
+                    """,
+                    (h_blob, s_blob, v_blob, float(iqa_value), face_json, row_id),
+                )
+            elif h_blob is not None and iqa_value is not None:
                 cursor.execute(
                     """
                     UPDATE present
@@ -133,6 +160,15 @@ def save_cache_to_db(
                     WHERE id = ?
                     """,
                     (h_blob, s_blob, v_blob, float(iqa_value), row_id),
+                )
+            elif h_blob is not None and face_json is not None:
+                cursor.execute(
+                    """
+                    UPDATE present
+                    SET histH = ?, histS = ?, histV = ?, faceData = ?
+                    WHERE id = ?
+                    """,
+                    (h_blob, s_blob, v_blob, face_json, row_id),
                 )
             elif h_blob is not None:
                 cursor.execute(
@@ -143,6 +179,15 @@ def save_cache_to_db(
                     """,
                     (h_blob, s_blob, v_blob, row_id),
                 )
+            elif iqa_value is not None and face_json is not None:
+                cursor.execute(
+                    """
+                    UPDATE present
+                    SET IQA = ?, faceData = ?
+                    WHERE id = ?
+                    """,
+                    (float(iqa_value), face_json, row_id),
+                )
             elif iqa_value is not None:
                 cursor.execute(
                     """
@@ -151,6 +196,15 @@ def save_cache_to_db(
                     WHERE id = ?
                     """,
                     (float(iqa_value), row_id),
+                )
+            elif face_json is not None:
+                cursor.execute(
+                    """
+                    UPDATE present
+                    SET faceData = ?
+                    WHERE id = ?
+                    """,
+                    (face_json, row_id),
                 )
         else:
             # 该 file_path 目前在 present 中不存在，插入一条最小信息记录
@@ -169,9 +223,10 @@ def save_cache_to_db(
                     IQA,
                     histH,
                     histS,
-                    histV
+                    histV,
+                    faceData
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     os.path.basename(file_path),
@@ -187,6 +242,7 @@ def save_cache_to_db(
                     h_blob,
                     s_blob,
                     v_blob,
+                    face_json,
                 ),
             )
 
