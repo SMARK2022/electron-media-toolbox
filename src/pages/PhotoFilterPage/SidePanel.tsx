@@ -3,10 +3,10 @@ import { useTranslation } from "react-i18next";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { CustomSlider } from "@/components/CustomSlider";
-import ImagePreview from "@/components/ImagePreview";
-import PhotoDetailsTable from "./PhotoDetailsTable";
+import ImagePreview from "@/components/ImagePreview"; // 右侧大图预览组件
+import PhotoDetailsTable from "./PhotoDetailsTable"; // 预览下方的详细信息 & 开关表格
 import { AlertCircle, Image as ImageIcon, RotateCcw, Trash2 } from "lucide-react";
-import { usePhotoFilterSelectors } from "./usePhotoFilterStore";
+import { usePhotoFilterSelectors } from "./usePhotoFilterStore"; // 只订阅与 SidePanel 相关的状态和 action
 
 interface SidePanelProps {
   previewHeightPercent: number;
@@ -54,18 +54,18 @@ export const SidePanel: React.FC<SidePanelProps> = ({
     isPreviewEnabled,
     setReloadAlbumFlag,
     updateFromDetailsPanel,
-  } = usePhotoFilterSelectors();
+  } = usePhotoFilterSelectors(); // 只关心 panelTab / slider / 预览 / 批量操作等
 
   const handleSliderChange = (value: number) => {
-    setSimilarityThreshold(value);
+    setSimilarityThreshold(value); // 修改阈值时直接写入 store（内部已负责持久化）
   };
 
   const handleDisableRedundant = React.useCallback(async () => {
-    await disableRedundant();
+    await disableRedundant(); // 调用 store 中的批量禁用逻辑
   }, [disableRedundant]);
 
   const handleEnableAll = async () => {
-    await enableAll();
+    await enableAll(); // 启用全部图片
   };
 
   return (

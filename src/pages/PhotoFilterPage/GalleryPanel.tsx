@@ -4,8 +4,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Layers, Grid, Image as ImageIcon } from "lucide-react";
 import { Photo } from "@/lib/db";
-import { PhotoGridEnhance } from "@/components/PhotoGrid";
-import { usePhotoFilterSelectors } from "./usePhotoFilterStore";
+import { PhotoGridEnhance } from "@/components/PhotoGrid"; // 复用全局的增强版缩略图网格组件
+import { usePhotoFilterSelectors } from "./usePhotoFilterStore"; // 只订阅 gallery 相关状态（photos + mode）
 
 interface GalleryGroupProps {
   group: Photo[];
@@ -18,7 +18,7 @@ interface GalleryGroupProps {
 
 const GalleryGroup: React.FC<GalleryGroupProps> = React.memo(
   ({ group, index, isGroupMode, groupLabel, highlightPhotos, onPhotoClick }) => {
-    const header =
+  const header =
       isGroupMode && group.length > 0 ? (
         <div className="mb-1 flex items-center gap-2 px-1 pt-1 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
           <span>
@@ -33,7 +33,7 @@ const GalleryGroup: React.FC<GalleryGroupProps> = React.memo(
         key={group[0]?.filePath ?? `group-${index}`}
         className="mb-2 last:mb-0"
       >
-        {header}
+  {header}
         <PhotoGridEnhance
           photos={group}
           onPhotoClick={onPhotoClick}
@@ -43,7 +43,7 @@ const GalleryGroup: React.FC<GalleryGroupProps> = React.memo(
     );
   },
 );
-GalleryGroup.displayName = "GalleryGroup";
+GalleryGroup.displayName = "GalleryGroup"; // 便于在 React DevTools 中识别
 
 interface GalleryPanelProps {
   totalPhotoCount: number;
@@ -57,7 +57,7 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = ({
   onPhotoClick,
 }) => {
   const { t } = useTranslation();
-  const { photos, galleryMode, setGalleryMode } = usePhotoFilterSelectors();
+  const { photos, galleryMode, setGalleryMode } = usePhotoFilterSelectors(); // 从 store 中取出画廊需要的最小状态
 
   return (
     <Tabs
@@ -66,7 +66,7 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = ({
       onValueChange={(val) => setGalleryMode(val as "group" | "total")}
       className="space-y-3"
     >
-      {/* 顶部工具栏：模式切换 + 总数提示 */}
+  {/* 顶部工具栏：模式切换 + 总数提示 */}
       <div className="flex items-center justify-between gap-3">
         <TabsList className="bg-muted/70 grid w-[280px] grid-cols-2">
           <TabsTrigger
@@ -96,7 +96,7 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = ({
         </div>
       </div>
 
-      {/* Scrollable Gallery：宽度随左侧容器自适应 */}
+  {/* Scrollable Gallery：宽度随左侧容器自适应 */}
       <ScrollArea className="mx-auto h-[calc(100vh-220px)] w-full rounded-xl border p-3 dark:bg-slate-900">
         {photos.map((group, index) => (
           <GalleryGroup

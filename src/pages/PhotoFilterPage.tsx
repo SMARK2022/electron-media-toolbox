@@ -35,16 +35,18 @@ import { Photo } from "@/lib/db";
 import {
   usePhotoFilterSelectors,
   type ServerData,
-} from "./PhotoFilterPage/usePhotoFilterStore";
-import { GalleryPanel } from "./PhotoFilterPage/GalleryPanel";
-import { SidePanel } from "./PhotoFilterPage/SidePanel";
-import { usePhotoFilterEffects } from "./PhotoFilterPage/PhotoFilterEffects";
-import { PhotoGridEnhance } from "@/components/PhotoGrid";
+} from "./PhotoFilterPage/usePhotoFilterStore"; // Zustand 领域 store：照片列表、预览、服务状态等统一在这里管理
+import { GalleryPanel } from "./PhotoFilterPage/GalleryPanel"; // 左侧画廊 UI，只关心 gallery 相关的 slice
+import { SidePanel } from "./PhotoFilterPage/SidePanel"; // 右侧筛选 & 预览 UI，只关心 panel 相关的 slice
+import { usePhotoFilterEffects } from "./PhotoFilterPage/PhotoFilterEffects"; // 副作用 hook：初始化 / 轮询都集中到这里
+import { PhotoGridEnhance } from "@/components/PhotoGrid"; // 旧版 GalleryGroup 仍然引用的增强网格组件
 
 /**
  * 单个分组组件，使用 React.memo 避免无关重渲染
  * 只有 group 本身的引用变化时才会重渲染这组
  */
+// 旧版的分组渲染组件，目前已由 `GalleryPanel` 内部实现更合理的版本
+// 如果后续不再直接从本文件使用，可以考虑完全移除以进一步精简入口组件
 const GalleryGroup = React.memo(
   ({
     group,
@@ -78,6 +80,8 @@ const GalleryGroup = React.memo(
         className="mb-2 last:mb-0"
       >
         {header}
+        {/* 注意：当前项目真正使用的分组渲染已经迁移到 `GalleryPanel` 中，
+            这里保留仅为了兼容旧引用或快速对比；如果不再需要可整体删除。*/}
         <PhotoGridEnhance
           photos={group}
           onPhotoClick={onPhotoClick}
@@ -87,7 +91,7 @@ const GalleryGroup = React.memo(
     );
   },
 );
-GalleryGroup.displayName = "GalleryGroup";
+GalleryGroup.displayName = "GalleryGroup"; // 便于在 React DevTools 中识别组件名称
 
 function ServerStatusMonitorDrawer({
   serverStatus,
@@ -202,44 +206,33 @@ export default function PhotoFilterSubpage() {
   const {
     photos,
     previewPhotos,
-    galleryMode,
-    panelTab,
     similarityThreshold,
     showDisabled,
     sortedColumn,
-    reloadAlbumFlag,
-    needUpdate,
     serverStatus,
     serverData,
-    isPreviewEnabled,
     leftWidthVw,
     previewHeightPercent,
     setShowDisabled,
-    setReloadAlbumFlag,
     setNeedUpdate,
     setLeftWidthVw,
     setPreviewHeightPercent,
     selectPhotos,
     togglePhotoEnabledFromGrid,
-    // 以下动作在子组件 / effect 中使用
-    // disableRedundant,
-    // enableAll,
-    // updateFromDetailsPanel,
   } = usePhotoFilterSelectors();
 
-  // 统一副作用（初始化、轮询等）
-  usePhotoFilterEffects();
+  usePhotoFilterEffects(); // 初始化数据库 + 相册轮询 + 服务状态轮询，解耦出组件外
 
-  const initialLeftVwRef = React.useRef<number>(leftWidthVw);
-  const minLeftVw = Math.max(8, initialLeftVwRef.current - 20);
-  const maxLeftVw = Math.min(92, initialLeftVwRef.current + 20);
+  const initialLeftVwRef = React.useRef<number>(leftWidthVw); // 记录首次加载时的左侧宽度百分比
+  const minLeftVw = Math.max(8, initialLeftVwRef.current - 20); // 限制拖拽最小宽度，避免左侧太窄
+  const maxLeftVw = Math.min(92, initialLeftVwRef.current + 20); // 限制拖拽最大宽度，避免遮挡右侧
 
-  // 拖动相关 refs
+  // 左右分栏宽度拖动相关 refs
   const draggingRef = React.useRef(false);
   const startXRef = React.useRef(0);
   const startLeftRef = React.useRef(leftWidthVw);
 
-  // 存放当前绑定到 window 的处理函数（用于卸载时移除）
+  // 存放当前绑定到 window 的处理函数（用于卸载时统一移除，防止内存泄漏）
   const mouseMoveHandlerRef = React.useRef<((e: MouseEvent) => void) | null>(
     null,
   );
@@ -249,7 +242,7 @@ export default function PhotoFilterSubpage() {
   );
   const touchEndHandlerRef = React.useRef<(() => void) | null>(null);
 
-  // 启动鼠标拖动：在这里创建并绑定移动/结束处理器
+  // 启动左右分栏的鼠标拖动：在这里创建并绑定移动/结束处理器
   const startMouseDrag = (clientX: number) => {
     draggingRef.current = true;
     startXRef.current = clientX;
@@ -282,7 +275,7 @@ export default function PhotoFilterSubpage() {
     window.addEventListener("mouseup", onMouseUp);
   };
 
-  // 启动触摸拖动
+  // 启动左右分栏的触摸拖动（移动端）
   const startTouchDrag = (clientX: number) => {
     draggingRef.current = true;
     startXRef.current = clientX;
@@ -317,7 +310,7 @@ export default function PhotoFilterSubpage() {
     window.addEventListener("touchend", onTouchEnd);
   };
 
-  // 卸载时清理（以防有残留监听器）
+  // 卸载时清理左右分栏拖动监听器
   React.useEffect(() => {
     return () => {
       if (mouseMoveHandlerRef.current) {
@@ -335,7 +328,7 @@ export default function PhotoFilterSubpage() {
     };
   }, []);
 
-  // ========== 预览图片高度拖动逻辑 ==========
+  // ========== 预览图片高度拖动逻辑（右侧预览面板内部高度调节） ==========
   const previewDraggingRef = React.useRef(false);
   const previewStartYRef = React.useRef(0);
   const previewStartHeightRef = React.useRef(previewHeightPercent);

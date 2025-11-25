@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { usePhotoFilterSelectors, type ServerData } from "./usePhotoFilterStore";
+import { usePhotoFilterSelectors, type ServerData } from "./usePhotoFilterStore"; // 复用同一领域 store 的 action / state
 
 /**
  * 集中管理与 store 相关的副作用：
@@ -19,14 +19,14 @@ export const usePhotoFilterEffects = () => {
     fetchEnabledPhotos,
     fetchServerStatus,
     setReloadAlbumFlag,
-  } = usePhotoFilterSelectors();
+  } = usePhotoFilterSelectors(); // 只解构副作用真正需要的字段，保持组件层与实现解耦
 
-  // 初始化数据库 & 状态
+  // 初始化数据库 & 状态（页面挂载一次即可）
   React.useEffect(() => {
     void init();
   }, [init]);
 
-  // 轮询相册数据：每 4 秒刷新一次
+  // 轮询相册数据：每 4 秒刷新一次，只在 needUpdate 为 true 时执行
   React.useEffect(() => {
     fetchEnabledPhotos();
 
@@ -39,7 +39,7 @@ export const usePhotoFilterEffects = () => {
     return () => window.clearInterval(interval_photos);
   }, [needUpdate, fetchEnabledPhotos]);
 
-  // 显式触发相册刷新
+  // 显式触发相册刷新：当 reloadAlbumFlag / showDisabled / galleryMode 变化时强制刷新
   React.useEffect(() => {
     fetchEnabledPhotos();
     if (reloadAlbumFlag) {
@@ -47,7 +47,7 @@ export const usePhotoFilterEffects = () => {
     }
   }, [reloadAlbumFlag, showDisabled, galleryMode, fetchEnabledPhotos, setReloadAlbumFlag]);
 
-  // 轮询服务端状态：每 0.5 秒刷新一次
+  // 轮询服务端状态：每 0.5 秒刷新一次，用 formatStatus 把原始数据映射到 UI 字符串
   React.useEffect(() => {
     const formatStatus = (data: ServerData | null) =>
       t("filterPage.serverStatusPrefix", {
