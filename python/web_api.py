@@ -75,7 +75,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
-from utils.image_compute_onnx import process_and_group_images  # 使用 ONNX 版本的图像处理函数
+from utils.image_compute import process_and_group_images  # 使用 ONNX 版本的图像处理函数
 from utils.thumbnails import generate_thumbnails, get_thumbnail
 
 
