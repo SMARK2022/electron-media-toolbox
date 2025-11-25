@@ -55,88 +55,42 @@ class _DummyIqaSession:
         return [np.array([0.0], dtype=np.float32)]
 
 
+# ============================================================================
+# IQA 模型相关全局变量
+# ============================================================================
 _IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 _IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
-_checkpoint_onnx = Path(get_resource_path("checkpoint/lar_iqa.onnx"))
-
+_IQA_CHECKPOINT_ONNX = Path(get_resource_path("checkpoint/lar_iqa.onnx"))
 _IQA_SESSION: Optional[ort.InferenceSession] = None
 _IQA_SESSION_CPU: Optional[ort.InferenceSession] = None
 _IQA_INPUT_NAMES: List[str] = []
 _IQA_RUN_LOCK = threading.Lock()
-_IS_DML = False
+_IQA_IS_DML = False
 
+# ============================================================================
+# 人脸检测模型相关全局变量
+# ============================================================================
 _FACE_DET_MODEL_PATH = Path(get_resource_path("checkpoint/det_500m.onnx"))
 _FACE_DETECTOR = None
 _FACE_DET_PROVIDERS: List[str] = []
+_FACE_DET_LOCK = threading.Lock()
+_FACE_DET_IS_DML = False
 
 
-def _init_sessions_if_needed() -> None:
+def _init_iqa_sessions_if_needed() -> None:
     """懒加载方式初始化 IQA ONNX Session。"""
-    global _IQA_SESSION, _IQA_SESSION_CPU, _IQA_INPUT_NAMES, _IS_DML
+    global _IQA_SESSION, _IQA_SESSION_CPU, _IQA_INPUT_NAMES, _IQA_IS_DML
 
     if _IQA_SESSION is not None and _IQA_SESSION_CPU is not None and _IQA_INPUT_NAMES:
         return
 
-    if not _checkpoint_onnx.exists():
-        print(f"[IQA] ONNX model not found at {_checkpoint_onnx}. IQA will be disabled (using dummy session).")
+    if not _IQA_CHECKPOINT_ONNX.exists():
+        print(f"[IQA] ONNX model not found at {_IQA_CHECKPOINT_ONNX}. IQA will be disabled (using dummy session).")
         _IQA_SESSION = _DummyIqaSession()
         _IQA_SESSION_CPU = _IQA_SESSION
         _IQA_INPUT_NAMES = ["input_authentic", "input_synthetic"]
-        _IS_DML = False
-
-
-def _select_face_providers() -> List[str]:
-    """与 IQA 类似的 providers 选择逻辑，优先 DML, CUDA, 最后 CPU。"""
-    providers = ort.get_available_providers()
-    if "DmlExecutionProvider" in providers:
-        return ["DmlExecutionProvider", "CPUExecutionProvider"]
-    if "CUDAExecutionProvider" in providers:
-        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
-    return ["CPUExecutionProvider"]
-
-
-def _init_face_detector_if_needed() -> None:
-    """懒加载人脸检测器 (SCRFD det_500m.onnx)。"""
-    global _FACE_DETECTOR, _FACE_DET_PROVIDERS
-
-    if _FACE_DETECTOR is not None:
-        return
-
-    if not _FACE_DET_MODEL_PATH.exists():
-        print(f"[FACE] det_500m.onnx not found at {_FACE_DET_MODEL_PATH}, face detection disabled.")
-        _FACE_DETECTOR = None
-        _FACE_DET_PROVIDERS = []
-        return
-
-    providers = _select_face_providers()
-    _FACE_DET_PROVIDERS = providers
-    print(f"[FACE] providers={providers}")
-
-    # insightface 的 get_model 会创建 ORT Session，并使用传入 providers
-    _FACE_DETECTOR = insightface.model_zoo.get_model(str(_FACE_DET_MODEL_PATH), providers=providers)
-
-    # 兼容不同版本 prepare 参数
-    sig = inspect.signature(_FACE_DETECTOR.prepare)
-    kw = {}
-    if "ctx_id" in sig.parameters:
-        # DirectML / CPU 用 -1，CUDA 用 0
-        use_cuda = "CUDAExecutionProvider" in providers
-        kw["ctx_id"] = 0 if use_cuda else -1
-    if "input_size" in sig.parameters:
-        kw["input_size"] = (640, 640)
-    if "det_size" in sig.parameters:
-        kw["det_size"] = (640, 640)
-    if "det_thresh" in sig.parameters:
-        kw["det_thresh"] = 0.5
-    if "nms_thresh" in sig.parameters:
-        kw["nms_thresh"] = 0.4
-
-    _FACE_DETECTOR.prepare(**kw)
-
-    # 某些版本把阈值存在 det_thresh 属性里（没有就忽略）
-    if hasattr(_FACE_DETECTOR, "det_thresh"):
-        _FACE_DETECTOR.det_thresh = 0.5
+        _IQA_IS_DML = False
         return
 
     try:
@@ -154,23 +108,20 @@ def _init_face_detector_if_needed() -> None:
             _session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
         _IQA_SESSION = ort.InferenceSession(
-            str(_checkpoint_onnx),
+            str(_IQA_CHECKPOINT_ONNX),
             sess_options=_session_options,
             providers=providers,
         )
 
         _IQA_INPUT_NAMES = [inp.name for inp in _IQA_SESSION.get_inputs()]
-        _IS_DML = "DmlExecutionProvider" in _IQA_SESSION.get_providers()
-        print(
-            f"[IQA] Loaded ONNX model from {_checkpoint_onnx}, "
-            f"providers={_IQA_SESSION.get_providers()}, inputs={_IQA_INPUT_NAMES}"
-        )
+        _IQA_IS_DML = "DmlExecutionProvider" in _IQA_SESSION.get_providers()
+        print(f"[IQA] Loaded ONNX model from {_IQA_CHECKPOINT_ONNX}, providers={_IQA_SESSION.get_providers()}, inputs={_IQA_INPUT_NAMES}")
 
         # ---- CPU Fallback Session ----
         _cpu_so = ort.SessionOptions()
         _cpu_so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         _IQA_SESSION_CPU = ort.InferenceSession(
-            str(_checkpoint_onnx),
+            str(_IQA_CHECKPOINT_ONNX),
             sess_options=_cpu_so,
             providers=["CPUExecutionProvider"],
         )
@@ -180,7 +131,77 @@ def _init_face_detector_if_needed() -> None:
         _IQA_SESSION = _DummyIqaSession()
         _IQA_SESSION_CPU = _IQA_SESSION
         _IQA_INPUT_NAMES = ["input_authentic", "input_synthetic"]
-        _IS_DML = False
+        _IQA_IS_DML = False
+
+
+def _select_face_providers() -> List[str]:
+    """为人脸检测选择最合适的 ONNX Runtime 执行后端。
+
+    优先级：
+    1. DmlExecutionProvider (优先，适合 Windows + DX12)
+    2. CUDAExecutionProvider
+    3. CPUExecutionProvider
+    """
+    providers = ort.get_available_providers()
+    if "DmlExecutionProvider" in providers:
+        return ["DmlExecutionProvider", "CPUExecutionProvider"]
+    if "CUDAExecutionProvider" in providers:
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    return ["CPUExecutionProvider"]
+
+
+def _init_face_detector_if_needed() -> None:
+    """懒加载人脸检测器 (SCRFD det_500m.onnx)。"""
+    global _FACE_DETECTOR, _FACE_DET_PROVIDERS, _FACE_DET_IS_DML
+
+    if _FACE_DETECTOR is not None:
+        return
+
+    if not _FACE_DET_MODEL_PATH.exists():
+        print(f"[FACE] det_500m.onnx not found at {_FACE_DET_MODEL_PATH}, face detection disabled.")
+        _FACE_DETECTOR = None
+        _FACE_DET_PROVIDERS = []
+        _FACE_DET_IS_DML = False
+        return
+
+    try:
+        providers = _select_face_providers()
+        _FACE_DET_PROVIDERS = providers
+        _FACE_DET_IS_DML = "DmlExecutionProvider" in providers
+        print(f"[FACE] providers={providers}, is_dml={_FACE_DET_IS_DML}")
+
+        # insightface 的 get_model 会创建 ORT Session，并使用传入 providers
+        _FACE_DETECTOR = insightface.model_zoo.get_model(str(_FACE_DET_MODEL_PATH), providers=providers)
+
+        # 兼容不同版本 prepare 参数
+        sig = inspect.signature(_FACE_DETECTOR.prepare)
+        kw = {}
+        if "ctx_id" in sig.parameters:
+            # DirectML / CPU 用 -1，CUDA 用 0
+            use_cuda = "CUDAExecutionProvider" in providers
+            kw["ctx_id"] = 0 if use_cuda else -1
+        if "input_size" in sig.parameters:
+            kw["input_size"] = (640, 640)
+        if "det_size" in sig.parameters:
+            kw["det_size"] = (640, 640)
+        if "det_thresh" in sig.parameters:
+            kw["det_thresh"] = 0.5
+        if "nms_thresh" in sig.parameters:
+            kw["nms_thresh"] = 0.4
+
+        _FACE_DETECTOR.prepare(**kw)
+
+        # 某些版本把阈值存在 det_thresh 属性里（没有就忽略）
+        if hasattr(_FACE_DETECTOR, "det_thresh"):
+            _FACE_DETECTOR.det_thresh = 0.5
+
+        print("[FACE] Face detector initialized successfully.")
+
+    except Exception as e:  # noqa: BLE001
+        print(f"[FACE] Failed to initialize face detector ({e}). Face detection disabled.")
+        _FACE_DETECTOR = None
+        _FACE_DET_PROVIDERS = []
+        _FACE_DET_IS_DML = False
 
 
 def preprocess_iqa_from_bgr(
@@ -215,7 +236,7 @@ def preprocess_iqa_from_bgr(
     h, w, _ = working.shape
     crop_size = 1280
     if h < crop_size or w < crop_size:
-        # 模拟 torchvision CenterCrop 对“小图”的行为：
+        # 模拟 torchvision CenterCrop 对"小图"的行为：
         # 先将短边缩放到 1280，再中心裁剪
         scale = crop_size / min(h, w)
         new_w = int(round(w * scale))
@@ -247,7 +268,7 @@ def preprocess_iqa_from_bgr(
 
 def infer_iqa_from_bgr(img_bgr: np.ndarray, color_space: str = "RGB") -> float:
     """直接从 BGR 图像计算 IQA 分数，返回标量评分（已 *20）。"""
-    _init_sessions_if_needed()
+    _init_iqa_sessions_if_needed()
 
     if len(_IQA_INPUT_NAMES) != 2:
         raise RuntimeError(f"Expected IQA ONNX model with 2 inputs, got {_IQA_INPUT_NAMES}")
@@ -260,7 +281,7 @@ def infer_iqa_from_bgr(img_bgr: np.ndarray, color_space: str = "RGB") -> float:
     }
 
     try:
-        if _IS_DML:
+        if _IQA_IS_DML:
             # DirectML Session 不允许多线程并发 Run，必须串行化
             with _IQA_RUN_LOCK:
                 outputs = _IQA_SESSION.run(None, inputs)
@@ -296,29 +317,40 @@ def detect_faces_from_bgr(img_bgr: np.ndarray, score_thresh: float = 0.5) -> dic
     if _FACE_DETECTOR is None:
         return {"faces": []}
 
-    # insightface detector 接收 BGR np.ndarray
-    sig = inspect.signature(_FACE_DETECTOR.detect)
-    kw = {}
-    if "input_size" in sig.parameters:
-        kw["input_size"] = (640, 640)
-    if "max_num" in sig.parameters:
-        kw["max_num"] = 0
-    if "metric" in sig.parameters:
-        kw["metric"] = "default"
+    try:
+        # insightface detector 接收 BGR np.ndarray
+        sig = inspect.signature(_FACE_DETECTOR.detect)
+        kw = {}
+        if "input_size" in sig.parameters:
+            kw["input_size"] = (640, 640)
+        if "max_num" in sig.parameters:
+            kw["max_num"] = 0
+        if "metric" in sig.parameters:
+            kw["metric"] = "default"
 
-    bboxes, _kpss = _FACE_DETECTOR.detect(img_bgr, **kw)
+        # 如果是 DirectML，使用互斥锁保护
+        if _FACE_DET_IS_DML:
+            with _FACE_DET_LOCK:
+                bboxes, _kpss = _FACE_DETECTOR.detect(img_bgr, **kw)
+        else:
+            bboxes, _kpss = _FACE_DETECTOR.detect(img_bgr, **kw)
 
-    faces: list[dict] = []
-    if bboxes is not None:
-        for bb in bboxes:
-            x1, y1, x2, y2, score = bb.astype(np.float32).tolist()
-            if score < score_thresh:
-                continue
-            faces.append(
-                {
-                    "bbox": [float(x1), float(y1), float(x2), float(y2)],
-                    "score": float(score),
-                }
-            )
+        faces: list[dict] = []
+        if bboxes is not None:
+            for bb in bboxes:
+                x1, y1, x2, y2, score = bb.astype(np.float32).tolist()
+                if score < score_thresh:
+                    continue
+                faces.append(
+                    {
+                        "bbox": [float(x1), float(y1), float(x2), float(y2)],
+                        "score": float(score),
+                    }
+                )
+        faces.sort(key=lambda x: x["score"], reverse=True)
 
-    return {"faces": faces}
+        return {"faces": faces}
+
+    except Exception as e:  # noqa: BLE001
+        print(f"[FACE] Face detection failed ({e}).")
+        return {"faces": []}

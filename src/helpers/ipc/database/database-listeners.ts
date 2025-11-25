@@ -29,6 +29,34 @@ export const initializeDatabase = () => {
 
     db = new Database(dbPath);
 
+    // 统一补齐 present/previous 表的所有列（含后续新增列），避免 no such column 报错
+    const tables = ["present", "previous"];
+    const columns = [
+      "fileSize INTEGER",
+      "info TEXT",
+      "date TEXT",
+      "groupId INTEGER",
+      "simRefPath TEXT",
+      "similarity REAL",
+      "IQA REAL",
+      "isEnabled INTEGER DEFAULT 1",
+      "histH BLOB",
+      "histS BLOB",
+      "histV BLOB",
+      "faceData TEXT",
+    ];
+    for (const table of tables) {
+      for (const col of columns) {
+        try {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN ${col};`);
+        } catch (e: any) {
+          if (!String(e?.message ?? "").includes("duplicate column name")) {
+            console.warn(`alter ${table} add ${col} failed:`, e?.message ?? e);
+          }
+        }
+      }
+    }
+
     console.info(`Database initialized: ${dbPath}`);
   } catch (error: any) {
     console.error(`Failed to initialize database: ${error?.message ?? error}`);

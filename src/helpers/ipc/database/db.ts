@@ -19,6 +19,9 @@ export interface PhotoExtend {
   similarity?: number;
   IQA?: number;
   isEnabled?: boolean;
+  // Python 端写入的 JSON 串，包含人脸检测结果等扩展信息
+  // 例如：{"faces":[{"bbox":[x1,y1,x2,y2],"score":0.9}, ...]}
+  faceData?: string;
 }
 
 // 初始化数据库（创建表）
@@ -39,7 +42,8 @@ export function initializeDatabase() {
             isEnabled INTEGER DEFAULT 1,
             histH BLOB,
             histS BLOB,
-            histV BLOB
+            histV BLOB,
+            faceData TEXT
         )
     `;
   const sqlPrevious = `
@@ -58,7 +62,8 @@ export function initializeDatabase() {
             isEnabled INTEGER DEFAULT 1,
             histH BLOB,
             histS BLOB,
-            histV BLOB
+            histV BLOB,
+            faceData TEXT
         )
     `;
   window.ElectronDB.exec(sqlPresent); // 调用 exec 执行 SQL
@@ -162,7 +167,8 @@ export function getPhotosExtend(): Promise<PhotoExtend[]> {
             groupId,
             similarity,
             IQA,
-            isEnabled
+            isEnabled,
+            faceData
         FROM present
     `;
   return window.ElectronDB.all(sql, []);
@@ -181,7 +187,8 @@ export function getEnabledPhotosExtend(): Promise<PhotoExtend[]> {
             groupId,
             similarity,
             IQA,
-            isEnabled
+            isEnabled,
+            faceData
         FROM present
         WHERE isEnabled = 1
     `;
@@ -245,8 +252,9 @@ export function getPhotosExtendByCriteria(
             date,
             groupId,
             similarity,
-            IQA,
-            isEnabled
+      IQA,
+      isEnabled,
+      faceData
         FROM present
         WHERE 1=1
     `;
@@ -282,8 +290,9 @@ export async function getPhotoExtendByPhoto(
             date,
             groupId,
             similarity,
-            IQA,
-            isEnabled
+      IQA,
+      isEnabled,
+      faceData
         FROM present
         WHERE fileName = @fileName AND filePath = @filePath
     `;

@@ -377,6 +377,7 @@ def process_and_group_images(
                         cache_data,
                         hist_cache,
                         iqa_cache,
+                        face_cache,
                         db_path,
                         update_progress,
                         include_head,
