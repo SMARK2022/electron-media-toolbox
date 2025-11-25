@@ -7,7 +7,7 @@ import {
   initializeDatabase,
   updatePhotoEnabledStatus,
   deletePhotoByPath,
-} from "@/helpers/db/db";
+} from "@/helpers/ipc/database/db";
 
 export type GalleryMode = "group" | "total";
 
@@ -57,6 +57,8 @@ interface PhotoFilterState {
     items: {
       id: string;
       label: string;
+      /** i18n key，前端可用 t(key, label) 渲染，方便后续统一管理 */
+      i18nKey?: string;
       icon?: string; // 前端根据 id 自行渲染具体 icon
     }[];
   }[];
@@ -142,8 +144,18 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
       id: "open",
       label: "Open",
       items: [
-        { id: "open-default", label: "Open", icon: "open" },
-        { id: "reveal-in-folder", label: "Show in folder", icon: "folder" },
+        {
+          id: "open-default",
+          label: "Open",
+          i18nKey: "photoContext.menu.openDefault",
+          icon: "open",
+        },
+        {
+          id: "reveal-in-folder",
+          label: "Show in folder",
+          i18nKey: "photoContext.menu.revealInFolder",
+          icon: "folder",
+        },
       ],
     },
     {
@@ -153,16 +165,19 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
         {
           id: "toggle-enabled",
           label: "Enable / Disable",
+          i18nKey: "photoContext.menu.toggleEnabled.baseLabel",
           icon: "toggle",
         },
         {
           id: "delete-db",
           label: "Remove (DB only)",
+          i18nKey: "photoContext.menu.deleteDb",
           icon: "delete-db",
         },
         {
           id: "delete-file",
           label: "Delete file",
+          i18nKey: "photoContext.menu.deleteFile",
           icon: "delete-file",
         },
       ],
@@ -171,7 +186,12 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
       id: "info",
       label: "Info",
       items: [
-        { id: "show-info", label: "Details", icon: "info" },
+        {
+          id: "show-info",
+          label: "Details",
+          i18nKey: "photoContext.menu.showInfo",
+          icon: "info",
+        },
       ],
     },
   ],
@@ -529,18 +549,40 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
         break;
       }
       case "show-info": {
-        try {
-          const res = await (window as any)?.ElectronAPI?.getPhotoMetadata?.(
-            photo.filePath,
-          );
-          if (res && res.success) {
-            get().fnOpenInfoDialog(photo, res.data ?? {});
-          } else {
-            console.error("[contextMenu] show-info failed:", res);
+        // 为避免阻塞渲染进程，这里不直接 await 元数据加载，而是
+        // 让元数据加载逻辑在一个微任务/下一个事件循环中异步执行，
+        // 并在数据返回后再通过 store 打开详情弹窗。
+        // 这样右键菜单点击后会立刻返回，不会拖慢 Grid 的交互。
+
+        // 1. 先关闭右键菜单（由调用方完成），这里只负责异步拉取数据
+        // 2. 使用 Promise.resolve().then(...) 将耗时操作放到后续调度
+        void Promise.resolve().then(async () => {
+          try {
+            const api = (window as any)?.ElectronAPI;
+            if (!api?.getPhotoMetadata) {
+              console.error(
+                "[contextMenu] show-info failed: ElectronAPI.getPhotoMetadata is not available",
+              );
+              return;
+            }
+
+            const res = await api.getPhotoMetadata(photo.filePath);
+            if (res && res.success) {
+              // 再次从 store 里拿最新的 photo 引用，避免潜在的引用过期
+              const latestState = get();
+              const latestPhoto =
+                latestState.lstAllPhotos.find(
+                  (p) => p.filePath === photo.filePath,
+                ) || photo;
+
+              latestState.fnOpenInfoDialog(latestPhoto, res.data ?? {});
+            } else {
+              console.error("[contextMenu] show-info failed:", res);
+            }
+          } catch (error) {
+            console.error("[contextMenu] show-info failed:", error);
           }
-        } catch (error) {
-          console.error("[contextMenu] show-info failed:", error);
-        }
+        });
         break;
       }
       default:

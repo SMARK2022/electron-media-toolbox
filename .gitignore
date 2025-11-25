@@ -46,6 +46,7 @@ __pycache__/
 .ipynb_checkpoints/
 venv/
 env/
+dev/
 # checkpoint/
 .nuitka-cache/
 

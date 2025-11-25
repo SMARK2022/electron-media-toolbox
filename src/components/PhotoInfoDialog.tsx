@@ -8,6 +8,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import ReactDOM from "react-dom";
 import { useTranslation } from "react-i18next";
 import {
   Camera,
@@ -313,7 +314,12 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
 
   const hasMetadata = Object.keys(flatData).length > 0;
 
-  return (
+  // 使用 Portal 固定挂载到 body，避免跟主布局一起被卸载 / 重绘，
+  // 减少打开弹窗时的整屏闪烁感，仅作为最顶层的悬浮遮罩出现。
+  // 如果希望进一步减少背景变暗带来的“闪黑”感，可以在 AlertDialog/Overlay
+  // 的样式中调低透明度或改为纯透明遮罩。
+
+  const dialogContent = (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden p-0">
         {/* 头部 + 高亮信息区 */}
@@ -539,4 +545,11 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
       </AlertDialogContent>
     </AlertDialog>
   );
+
+  // 如果在非浏览器环境（如 SSR）下渲染，则直接返回内容即可
+  if (typeof document === "undefined") {
+    return dialogContent;
+  }
+
+  return ReactDOM.createPortal(dialogContent, document.body);
 };

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import missing_icon from "@/assets/images/cat_missing.svg";
-import { Photo } from "@/helpers/db/db";
+import { Photo } from "@/helpers/ipc/database/db";
 import { cn } from "@/lib/utils";
 import {
   FolderOpen,
@@ -63,6 +63,7 @@ interface ContextMenuProps {
     items: {
       id: string;
       label: string;
+      i18nKey?: string;
       icon?: string;
     }[];
   }[];
@@ -155,36 +156,22 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
                 // 非筛选页（如 import / export）现在已被过滤掉，不会到达这里
                 const canToggleEnabled = page === "filter";
 
+                // 文案统一从 store 中的默认定义读取，如果提供了 i18nKey 则优先走 i18n
+                const baseLabel = item.i18nKey
+                  ? t(item.i18nKey, item.label)
+                  : item.label;
+
                 const dynamicLabel = isToggleItem
                   ? isEnabled
-                    ? t("photoContext.menu.toggleEnabled.disable", "标记为禁用")
-                    : t("photoContext.menu.toggleEnabled.enable", "标记为启用")
-                  : (() => {
-                      // 其他菜单项统一走 i18n，如果未配置则回落到原始 label
-                      switch (item.id) {
-                        case "open-default":
-                          return t("photoContext.menu.openDefault", "Open");
-                        case "reveal-in-folder":
-                          return t(
-                            "photoContext.menu.revealInFolder",
-                            "Show in folder",
-                          );
-                        case "delete-db":
-                          return t(
-                            "photoContext.menu.deleteDb",
-                            "Remove (DB only)",
-                          );
-                        case "delete-file":
-                          return t(
-                            "photoContext.menu.deleteFile",
-                            "Delete file",
-                          );
-                        case "show-info":
-                          return t("photoContext.menu.showInfo", "Details");
-                        default:
-                          return item.label;
-                      }
-                    })();
+                    ? t(
+                        "photoContext.menu.toggleEnabled.disable",
+                        "标记为禁用",
+                      )
+                    : t(
+                        "photoContext.menu.toggleEnabled.enable",
+                        "标记为启用",
+                      )
+                  : baseLabel;
 
                 const dynamicClassName = isToggleItem
                   ? canToggleEnabled
@@ -192,9 +179,11 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
                       ? "text-orange-600 hover:bg-orange-50 hover:text-orange-700"
                       : "text-green-600 hover:bg-green-50 hover:text-green-700"
                     : "text-gray-300 cursor-not-allowed"
-                  : item.id === "delete-db" || item.id === "delete-file"
-                    ? "text-red-600 hover:bg-red-50 hover:text-red-700"
-                    : undefined;
+                  : item.id === "delete-db"
+                    ? "text-orange-500 hover:bg-orange-50 hover:text-orange-600"
+                    : item.id === "delete-file"
+                      ? "text-red-600 hover:bg-red-50 hover:text-red-700"
+                      : undefined;
 
                 const isDisabled = isToggleItem && !canToggleEnabled;
 

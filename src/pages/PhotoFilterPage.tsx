@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/drawer";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { Photo } from "@/helpers/db/db";
+import { Photo } from "@/helpers/ipc/database/db";
 import {
   usePhotoFilterSelectors,
   type ServerData,
