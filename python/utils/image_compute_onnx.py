@@ -12,7 +12,7 @@ from utils.database import (
     save_cache_to_db,
     update_group_id_in_db,
 )
-from utils.iqa_onnx import infer_iqa_from_bgr, detect_faces_from_bgr
+from utils.inference_onnx import infer_iqa_from_bgr, detect_faces_from_bgr
 
 HSVHist = Tuple[np.ndarray, np.ndarray, np.ndarray]
 BINS: List[int] = [90, 128, 128]
