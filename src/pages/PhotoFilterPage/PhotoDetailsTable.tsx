@@ -370,17 +370,10 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
     setFocusRegion(null);
   }, [photo?.filePath]);
 
-  if (!photo) {
-    return (
-      <div className="flex h-full flex-col">
-        <PreviewPlaceholder height="calc((100vh - 180px))" />
-      </div>
-    );
-  }
-
+  // 从 photo 中解构字段，如果 photo 为空则使用默认值
   const {
-    fileName,
-    filePath,
+    fileName = "",
+    filePath = "",
     fileSize,
     info,
     date,
@@ -390,8 +383,9 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
     isEnabled,
     faceData,
     fileUrl,
-  } = photo;
+  } = photo ?? {};
 
+  // 将所有 hooks 移到条件返回之前，确保 hooks 调用顺序一致
   const faces = useMemo<FaceInfo[]>(() => {
     if (!faceData) return [];
     try {
@@ -422,11 +416,11 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
     [fileSize, similarity, IQA, date],
   );
 
-  const previewSrc = `local-resource://${filePath}`;
+  const previewSrc = filePath ? `local-resource://${filePath}` : "";
   const facePreviewSrc = previewSrc;
 
-  const handleToggle = async (checked: boolean) => {
-    if (isUpdating) return;
+  const handleToggle = useCallback(async (checked: boolean) => {
+    if (isUpdating || !filePath) return;
     setIsUpdating(true);
     try {
       await updatePhotoEnabledStatus(filePath, checked);
@@ -450,7 +444,7 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
     } finally {
       setIsUpdating(false);
     }
-  };
+  }, [isUpdating, filePath, updatePhotoEnabledStatus, setPhotos, setIsPreviewEnabled, onPhotoStatusChanged]);
 
   const handleFaceSelect = useCallback((face: FaceInfo, index: number) => {
     setActiveFaceIndex(index);
@@ -468,6 +462,15 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
   const faceHelper = t("photoDetailsTable.faceTapToFocus", {
     defaultValue: "点击头像以聚焦对应区域",
   });
+
+  // 条件返回移到所有 hooks 之后
+  if (!photo) {
+    return (
+      <div className="flex h-full flex-col">
+        <PreviewPlaceholder height="calc((100vh - 180px))" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">

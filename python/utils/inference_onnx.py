@@ -341,13 +341,25 @@ def detect_faces_from_bgr(img_bgr: np.ndarray, score_thresh: float = 0.5) -> dic
                 x1, y1, x2, y2, score = bb.astype(np.float32).tolist()
                 if score < score_thresh:
                     continue
-                faces.append(
-                    {
-                        "bbox": [float(x1), float(y1), float(x2), float(y2)],
-                        "score": float(score),
-                    }
-                )
-        faces.sort(key=lambda x: x["score"], reverse=True)
+                cx, cy = (x1 + x2) / 2, (y1 + y2) / 2  # 人脸中心点
+                faces.append({"bbox": [float(x1), float(y1), float(x2), float(y2)], "score": float(score), "cx": cx, "cy": cy})
+
+        # 按空间位置排序：拟合直线后按投影距离排序
+        if len(faces) >= 2:
+            pts = np.array([[f["cx"], f["cy"]] for f in faces])  # 提取中心点
+            mean = pts.mean(axis=0)  # 中心化
+            _, _, vh = np.linalg.svd(pts - mean, full_matrices=False)  # SVD 拟合主方向
+            direction = vh[0]  # 主方向向量
+            if direction[0] + direction[1] < 0:  # 确保方向指向右下（从左上开始排序）
+                direction = -direction
+            projs = [(pts[i] - mean) @ direction for i in range(len(faces))]  # 计算投影值
+            faces = [faces[i] for i in np.argsort(projs)]  # 按投影值排序
+        elif len(faces) == 1:
+            pass  # 单个人脸无需排序
+
+        for f in faces:  # 清理临时字段
+            f.pop("cx", None)
+            f.pop("cy", None)
 
         return {"faces": faces}
 
