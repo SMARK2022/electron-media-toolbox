@@ -31,11 +31,11 @@ import {
 } from "@/components/ui/drawer";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { Photo } from "@/lib/db";
+import { Photo } from "@/helpers/db/db";
 import {
   usePhotoFilterSelectors,
   type ServerData,
-} from "./PhotoFilterPage/usePhotoFilterStore"; // Zustand 领域 store：照片列表、预览、服务状态等统一在这里管理
+} from "../helpers/store/usePhotoFilterStore"; // Zustand 领域 store：照片列表、预览、服务状态等统一在这里管理
 import { GalleryPanel } from "./PhotoFilterPage/GalleryPanel"; // 左侧画廊 UI，只关心 gallery 相关的 slice
 import { SidePanel } from "./PhotoFilterPage/SidePanel"; // 右侧筛选 & 预览 UI，只关心 panel 相关的 slice
 import { usePhotoFilterEffects } from "./PhotoFilterPage/PhotoFilterEffects"; // 副作用 hook：初始化 / 轮询都集中到这里
@@ -204,33 +204,33 @@ function ServerStatusMonitorDrawer({
 export default function PhotoFilterSubpage() {
   const { t } = useTranslation();
   const {
-    photos,
-    previewPhotos,
-    similarityThreshold,
-    showDisabled,
-    sortedColumn,
-    serverStatus,
-    serverData,
-    leftWidthVw,
-    previewHeightPercent,
-    setShowDisabled,
-    setNeedUpdate,
-    setLeftWidthVw,
-    setPreviewHeightPercent,
-    selectPhotos,
-    togglePhotoEnabledFromGrid,
+    lstGalleryGroupedPhotos,
+    lstPreviewPhotoDetails,
+    numSimilarityThreshold,
+    boolShowDisabledPhotos,
+    strSortedColumnKey,
+    strServerStatusText,
+    objServerStatusData,
+    numLeftPaneWidthVw,
+    numPreviewHeightPercent,
+    fnSetShowDisabledPhotos,
+    fnSetServerPollingNeeded,
+    fnSetLeftPaneWidthVw,
+    fnSetPreviewHeightPercent,
+    fnSelectPreviewPhotos,
+    fnTogglePhotoEnabledFromGrid,
   } = usePhotoFilterSelectors();
 
   usePhotoFilterEffects(); // 初始化数据库 + 相册轮询 + 服务状态轮询，解耦出组件外
 
-  const initialLeftVwRef = React.useRef<number>(leftWidthVw); // 记录首次加载时的左侧宽度百分比
+  const initialLeftVwRef = React.useRef<number>(numLeftPaneWidthVw); // 记录首次加载时的左侧宽度百分比
   const minLeftVw = Math.max(8, initialLeftVwRef.current - 20); // 限制拖拽最小宽度，避免左侧太窄
   const maxLeftVw = Math.min(92, initialLeftVwRef.current + 20); // 限制拖拽最大宽度，避免遮挡右侧
 
   // 左右分栏宽度拖动相关 refs
   const draggingRef = React.useRef(false);
   const startXRef = React.useRef(0);
-  const startLeftRef = React.useRef(leftWidthVw);
+  const startLeftRef = React.useRef(numLeftPaneWidthVw);
 
   // 存放当前绑定到 window 的处理函数（用于卸载时统一移除，防止内存泄漏）
   const mouseMoveHandlerRef = React.useRef<((e: MouseEvent) => void) | null>(
@@ -246,7 +246,7 @@ export default function PhotoFilterSubpage() {
   const startMouseDrag = (clientX: number) => {
     draggingRef.current = true;
     startXRef.current = clientX;
-    startLeftRef.current = leftWidthVw;
+    startLeftRef.current = numLeftPaneWidthVw;
 
     const onMouseMove = (ev: MouseEvent) => {
       const deltaX = ev.clientX - startXRef.current;
@@ -254,7 +254,7 @@ export default function PhotoFilterSubpage() {
       let newLeft = startLeftRef.current + deltaVw;
       if (newLeft < minLeftVw) newLeft = minLeftVw;
       if (newLeft > maxLeftVw) newLeft = maxLeftVw;
-      setLeftWidthVw(Number(newLeft.toFixed(2)));
+    fnSetLeftPaneWidthVw(Number(newLeft.toFixed(2)));
     };
 
     const onMouseUp = () => {
@@ -279,7 +279,7 @@ export default function PhotoFilterSubpage() {
   const startTouchDrag = (clientX: number) => {
     draggingRef.current = true;
     startXRef.current = clientX;
-    startLeftRef.current = leftWidthVw;
+    startLeftRef.current = numLeftPaneWidthVw;
 
     const onTouchMove = (ev: TouchEvent) => {
       const touch = ev.touches[0];
@@ -289,7 +289,7 @@ export default function PhotoFilterSubpage() {
       let newLeft = startLeftRef.current + deltaVw;
       if (newLeft < minLeftVw) newLeft = minLeftVw;
       if (newLeft > maxLeftVw) newLeft = maxLeftVw;
-      setLeftWidthVw(Number(newLeft.toFixed(2)));
+    fnSetLeftPaneWidthVw(Number(newLeft.toFixed(2)));
     };
 
     const onTouchEnd = () => {
@@ -331,7 +331,7 @@ export default function PhotoFilterSubpage() {
   // ========== 预览图片高度拖动逻辑（右侧预览面板内部高度调节） ==========
   const previewDraggingRef = React.useRef(false);
   const previewStartYRef = React.useRef(0);
-  const previewStartHeightRef = React.useRef(previewHeightPercent);
+  const previewStartHeightRef = React.useRef(numPreviewHeightPercent);
 
   const previewMouseMoveHandlerRef = React.useRef<
     ((e: MouseEvent) => void) | null
@@ -345,7 +345,7 @@ export default function PhotoFilterSubpage() {
   const startPreviewMouseDrag = (clientY: number) => {
     previewDraggingRef.current = true;
     previewStartYRef.current = clientY;
-    previewStartHeightRef.current = previewHeightPercent;
+    previewStartHeightRef.current = numPreviewHeightPercent;
 
     const onMouseMove = (ev: MouseEvent) => {
       const deltaY = ev.clientY - previewStartYRef.current;
@@ -355,7 +355,7 @@ export default function PhotoFilterSubpage() {
       let newHeight = previewStartHeightRef.current + deltaPercent;
       if (newHeight < 20) newHeight = 20;
       if (newHeight > 70) newHeight = 70;
-      setPreviewHeightPercent(Number(newHeight.toFixed(1)));
+    fnSetPreviewHeightPercent(Number(newHeight.toFixed(1)));
     };
 
     const onMouseUp = () => {
@@ -382,7 +382,7 @@ export default function PhotoFilterSubpage() {
   const startPreviewTouchDrag = (clientY: number) => {
     previewDraggingRef.current = true;
     previewStartYRef.current = clientY;
-    previewStartHeightRef.current = previewHeightPercent;
+    previewStartHeightRef.current = numPreviewHeightPercent;
 
     const onTouchMove = (ev: TouchEvent) => {
       const touch = ev.touches[0];
@@ -392,7 +392,7 @@ export default function PhotoFilterSubpage() {
       let newHeight = previewStartHeightRef.current + deltaPercent;
       if (newHeight < 20) newHeight = 20;
       if (newHeight > 70) newHeight = 70;
-      setPreviewHeightPercent(Number(newHeight.toFixed(1)));
+    fnSetPreviewHeightPercent(Number(newHeight.toFixed(1)));
     };
 
     const onTouchEnd = () => {
@@ -452,15 +452,15 @@ export default function PhotoFilterSubpage() {
       const target = clickphotos[0];
 
       if (event === "Select") {
-        await selectPhotos(clickphotos);
+        await fnSelectPreviewPhotos(clickphotos);
         return;
       }
 
       if (event === "Change") {
-        await togglePhotoEnabledFromGrid(target);
+        await fnTogglePhotoEnabledFromGrid(target);
       }
     },
-    [selectPhotos, togglePhotoEnabledFromGrid],
+    [fnSelectPreviewPhotos, fnTogglePhotoEnabledFromGrid],
   );
 
   // 滑块变化由 SidePanel 内部直接操作 store 的 similarityThreshold
@@ -477,16 +477,16 @@ export default function PhotoFilterSubpage() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        similarity_threshold: similarityThreshold,
+        similarity_threshold: numSimilarityThreshold,
         db_path: dbPath,
-        show_disabled_photos: showDisabled,
+        show_disabled_photos: boolShowDisabledPhotos,
       }),
     });
 
     if (response.ok) {
       const data = await response.json();
       console.log("检测任务已添加到队列:", data);
-      setNeedUpdate(true);
+  fnSetServerPollingNeeded(true);
     } else {
       console.error("提交检测任务失败");
     }
@@ -495,27 +495,27 @@ export default function PhotoFilterSubpage() {
 
   // 当前高亮照片列表（只在 previewPhotos 变化时重建）
   const highlightPhotos = React.useMemo<Photo[]>(() => {
-    if (!previewPhotos.length) return [];
-    return previewPhotos.map((photo) => ({
+    if (!lstPreviewPhotoDetails.length) return [];
+    return lstPreviewPhotoDetails.map((photo) => ({
       fileName: photo.fileName,
       fileUrl: photo.fileUrl,
       filePath: photo.filePath,
       info: photo.info ?? "",
       isEnabled: photo.isEnabled ?? true,
     }));
-  }, [previewPhotos]);
+  }, [lstPreviewPhotoDetails]);
 
-  const totalPhotoCount = photos.flat().length;
+  const totalPhotoCount = lstGalleryGroupedPhotos.flat().length;
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-slate-50/60 px-4 py-2 dark:bg-gray-900">
       {/* 顶层左右分栏（左宽度可拖动），初始约 65vw，min/max = 初始 ±20vw */}
       <div className="flex w-full flex-1 items-stretch">
-        {/* 左侧：主画廊（宽度由 leftWidthVw 控制） */}
+        {/* 左侧：主画廊（宽度由 numLeftPaneWidthVw 控制） */}
         <div
           className="order-1"
           style={{
-            width: `${leftWidthVw}vw`,
+            width: `${numLeftPaneWidthVw}vw`,
             minWidth: `${minLeftVw}vw`,
             maxWidth: `${maxLeftVw}vw`,
           }}
@@ -535,7 +535,7 @@ export default function PhotoFilterSubpage() {
                   size="sm"
                   className="flex items-center gap-1.5 bg-blue-600 text-xs font-medium text-white shadow-sm hover:bg-blue-700"
                 >
-                  {serverData?.status !== "空闲中" ? (
+                  {objServerStatusData?.status !== "空闲中" ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <Play className="h-3.5 w-3.5 fill-current" />
@@ -544,8 +544,8 @@ export default function PhotoFilterSubpage() {
                 </Button>
 
                 <ServerStatusMonitorDrawer
-                  serverStatus={serverStatus}
-                  serverData={serverData}
+                  serverStatus={strServerStatusText}
+                  serverData={objServerStatusData}
                 />
               </div>
 
@@ -554,7 +554,7 @@ export default function PhotoFilterSubpage() {
                   htmlFor="disabled-display"
                   className="text-muted-foreground flex cursor-pointer items-center gap-1.5 text-[11px] font-normal"
                 >
-                  {showDisabled ? (
+                  {boolShowDisabledPhotos ? (
                     <Eye className="h-3.5 w-3.5" />
                   ) : (
                     <EyeOff className="h-3.5 w-3.5" />
@@ -565,8 +565,8 @@ export default function PhotoFilterSubpage() {
                 </Label>
                 <Switch
                   id="disabled-display"
-                  checked={showDisabled}
-                  onCheckedChange={setShowDisabled}
+                  checked={boolShowDisabledPhotos}
+                  onCheckedChange={fnSetShowDisabledPhotos}
                   className="scale-90"
                 />
               </div>
@@ -574,10 +574,21 @@ export default function PhotoFilterSubpage() {
           </div>
         </div>
 
+        {/* 中间：左右分栏拖动条 */}
+        <div
+          className="order-2 mx-1 flex w-[6px] cursor-ew-resize items-center justify-center select-none"
+          onMouseDown={(e) => startMouseDrag(e.clientX)}
+          onTouchStart={(e) => {
+            if (e.touches && e.touches[0]) startTouchDrag(e.touches[0].clientX);
+          }}
+        >
+          <div className="bg-muted/60 h-10 w-[2px] rounded-full" />
+        </div>
+
         {/* 右侧：筛选 & 预览面板 */}
-        <div className="order-3 ml-3 hidden min-w-[260px] flex-1 flex-col space-y-4 sm:flex">
+        <div className="order-3 hidden min-w-[260px] flex-1 flex-col space-y-4 sm:flex">
           <SidePanel
-            previewHeightPercent={previewHeightPercent}
+            previewHeightPercent={numPreviewHeightPercent}
             onStartPreviewMouseDrag={startPreviewMouseDrag}
             onStartPreviewTouchDrag={startPreviewTouchDrag}
           />

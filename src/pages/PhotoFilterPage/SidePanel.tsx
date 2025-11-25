@@ -6,7 +6,7 @@ import { CustomSlider } from "@/components/CustomSlider";
 import ImagePreview from "@/components/ImagePreview"; // 右侧大图预览组件
 import PhotoDetailsTable from "./PhotoDetailsTable"; // 预览下方的详细信息 & 开关表格
 import { AlertCircle, Image as ImageIcon, RotateCcw, Trash2 } from "lucide-react";
-import { usePhotoFilterSelectors } from "./usePhotoFilterStore"; // 只订阅与 SidePanel 相关的状态和 action
+import { usePhotoFilterSelectors } from "../../helpers/store/usePhotoFilterStore"; // 只订阅与 SidePanel 相关的状态和 action
 
 interface SidePanelProps {
   previewHeightPercent: number;
@@ -44,35 +44,35 @@ export const SidePanel: React.FC<SidePanelProps> = ({
 }) => {
   const { t } = useTranslation();
   const {
-    panelTab,
-    setPanelTab,
-    similarityThreshold,
-    setSimilarityThreshold,
-    disableRedundant,
-    enableAll,
-    previewPhotos,
-    isPreviewEnabled,
-    setReloadAlbumFlag,
-    updateFromDetailsPanel,
+    tabRightPanel,
+    fnSetRightPanelTab,
+    numSimilarityThreshold,
+    fnSetSimilarityThreshold,
+    fnDisableRedundantInGroups,
+    fnEnableAllPhotos,
+    lstPreviewPhotoDetails,
+    boolCurrentPreviewEnabled,
+    fnSetReloadAlbumRequested,
+    fnUpdateFromDetailsPanel,
   } = usePhotoFilterSelectors(); // 只关心 panelTab / slider / 预览 / 批量操作等
 
   const handleSliderChange = (value: number) => {
-    setSimilarityThreshold(value); // 修改阈值时直接写入 store（内部已负责持久化）
+    fnSetSimilarityThreshold(value); // 修改阈值时直接写入 store（内部已负责持久化）
   };
 
   const handleDisableRedundant = React.useCallback(async () => {
-    await disableRedundant(); // 调用 store 中的批量禁用逻辑
-  }, [disableRedundant]);
+    await fnDisableRedundantInGroups(); // 调用 store 中的批量禁用逻辑
+  }, [fnDisableRedundantInGroups]);
 
   const handleEnableAll = async () => {
-    await enableAll(); // 启用全部图片
+    await fnEnableAllPhotos(); // 启用全部图片
   };
 
   return (
     <Tabs
       id="side-pannel"
-      value={panelTab}
-      onValueChange={(val) => setPanelTab(val as "filter" | "preview")}
+      value={tabRightPanel}
+      onValueChange={(val) => fnSetRightPanelTab(val as "filter" | "preview")}
       className="bg-background/80 flex-1 rounded-xl p-3 shadow-sm"
     >
       <div className="mb-3 w-full">
@@ -102,7 +102,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
             min={0}
             max={1}
             step={0.01}
-            value={similarityThreshold}
+            value={numSimilarityThreshold}
             onChange={handleSliderChange}
           />
 
@@ -144,7 +144,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
         value="preview"
         className="mt-0 flex h-[calc(100vh-160px)] flex-col overflow-hidden border-0 bg-transparent p-0"
       >
-        {previewPhotos.length > 0 ? (
+  {lstPreviewPhotoDetails.length > 0 ? (
           <div className="flex h-full flex-col overflow-hidden">
             <div
               className="flex-shrink-0"
@@ -157,7 +157,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
               }}
             >
               <ImagePreview
-                src={`local-resource://${previewPhotos[0].filePath}`}
+                src={`local-resource://${lstPreviewPhotoDetails[0].filePath}`}
                 height="100%"
                 width="100%"
               />
@@ -185,12 +185,12 @@ export const SidePanel: React.FC<SidePanelProps> = ({
               }}
             >
               <PhotoDetailsTable
-                photo={previewPhotos[0]}
-                isPreviewEnabled={isPreviewEnabled}
+                photo={lstPreviewPhotoDetails[0]}
+                isPreviewEnabled={boolCurrentPreviewEnabled}
                 setIsPreviewEnabled={() => {}}
-                updatePhotoEnabledStatus={updateFromDetailsPanel}
+                updatePhotoEnabledStatus={fnUpdateFromDetailsPanel}
                 setPhotos={() => {}}
-                onPhotoStatusChanged={() => setReloadAlbumFlag(true)}
+                onPhotoStatusChanged={() => fnSetReloadAlbumRequested(true)}
               />
             </div>
           </div>

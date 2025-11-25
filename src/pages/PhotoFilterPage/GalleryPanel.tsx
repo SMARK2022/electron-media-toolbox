@@ -3,9 +3,9 @@ import { useTranslation } from "react-i18next";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Layers, Grid, Image as ImageIcon } from "lucide-react";
-import { Photo } from "@/lib/db";
+import { Photo } from "@/helpers/db/db";
 import { PhotoGridEnhance } from "@/components/PhotoGrid"; // 复用全局的增强版缩略图网格组件
-import { usePhotoFilterSelectors } from "./usePhotoFilterStore"; // 只订阅 gallery 相关状态（photos + mode）
+import { usePhotoFilterSelectors } from "../../helpers/store/usePhotoFilterStore"; // 只订阅 gallery 相关状态（photos + mode）
 
 interface GalleryGroupProps {
   group: Photo[];
@@ -57,13 +57,17 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = ({
   onPhotoClick,
 }) => {
   const { t } = useTranslation();
-  const { photos, galleryMode, setGalleryMode } = usePhotoFilterSelectors(); // 从 store 中取出画廊需要的最小状态
+  const {
+    lstGalleryGroupedPhotos,
+    modeGalleryView,
+    fnSetGalleryMode,
+  } = usePhotoFilterSelectors(); // 从 store 中取出画廊需要的最小状态
 
   return (
     <Tabs
       id="gallery-pannel"
-      value={galleryMode}
-      onValueChange={(val) => setGalleryMode(val as "group" | "total")}
+      value={modeGalleryView}
+      onValueChange={(val) => fnSetGalleryMode(val as "group" | "total")}
       className="space-y-3"
     >
   {/* 顶部工具栏：模式切换 + 总数提示 */}
@@ -98,19 +102,19 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = ({
 
   {/* Scrollable Gallery：宽度随左侧容器自适应 */}
       <ScrollArea className="mx-auto h-[calc(100vh-220px)] w-full rounded-xl border p-3 dark:bg-slate-900">
-        {photos.map((group, index) => (
+        {lstGalleryGroupedPhotos.map((group, index) => (
           <GalleryGroup
             key={group[0]?.filePath ?? `group-${index}`}
             group={group}
             index={index}
-            isGroupMode={galleryMode === "group"}
+            isGroupMode={modeGalleryView === "group"}
             groupLabel={t("filterPage.groupLabel") || "Group"}
             highlightPhotos={highlightPhotos}
             onPhotoClick={onPhotoClick}
           />
         ))}
 
-        {photos.length === 0 && (
+  {lstGalleryGroupedPhotos.length === 0 && (
           <div className="text-muted-foreground flex h-[calc(70vh-100px)] flex-col items-center justify-center text中心 text-center">
             <div className="mb-3 rounded-full bg-white p-4 shadow-sm">
               <ImageIcon className="h-8 w-8 opacity-30" />

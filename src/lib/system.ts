@@ -1,5 +1,5 @@
 import path from "path-browserify";
-import { PhotoExtend, Photo } from "@/lib/db";
+import { PhotoExtend, Photo } from "@/helpers/db/db";
 
 // 创建文件夹函数（允许文件夹已存在，文件夹存在也没问题）
 async function createFolder(folderPath: string): Promise<void> {

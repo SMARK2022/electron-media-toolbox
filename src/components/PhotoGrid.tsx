@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import missing_icon from "@/assets/images/cat_missing.svg";
-import { Photo } from "@/lib/db";
+import { Photo } from "@/helpers/db/db";
 import { cn } from "@/lib/utils";
 import {
   Eye,

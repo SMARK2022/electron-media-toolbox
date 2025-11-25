@@ -13,7 +13,7 @@ import {
   Percent,
   MapPin,
 } from "lucide-react";
-import { PhotoExtend } from "@/lib/db";
+import { PhotoExtend } from "@/helpers/db/db";
 import { cn } from "@/lib/utils";
 
 interface PhotoDetailsTableProps {

@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { usePhotoFilterSelectors, type ServerData } from "./usePhotoFilterStore"; // 复用同一领域 store 的 action / state
+import { usePhotoFilterSelectors, type ServerData } from "../../helpers/store/usePhotoFilterStore"; // 复用同一领域 store 的 action / state
 
 /**
  * 集中管理与 store 相关的副作用：
@@ -11,41 +11,41 @@ import { usePhotoFilterSelectors, type ServerData } from "./usePhotoFilterStore"
 export const usePhotoFilterEffects = () => {
   const { t } = useTranslation();
   const {
-    init,
-    needUpdate,
-    reloadAlbumFlag,
-    galleryMode,
-    showDisabled,
-    fetchEnabledPhotos,
-    fetchServerStatus,
-    setReloadAlbumFlag,
+    fnInitPage,
+    boolServerPollingNeeded,
+    boolReloadAlbumRequested,
+    modeGalleryView,
+    boolShowDisabledPhotos,
+    fnFetchEnabledPhotos,
+    fnFetchServerStatus,
+    fnSetReloadAlbumRequested,
   } = usePhotoFilterSelectors(); // 只解构副作用真正需要的字段，保持组件层与实现解耦
 
   // 初始化数据库 & 状态（页面挂载一次即可）
   React.useEffect(() => {
-    void init();
-  }, [init]);
+    void fnInitPage();
+  }, [fnInitPage]);
 
   // 轮询相册数据：每 4 秒刷新一次，只在 needUpdate 为 true 时执行
   React.useEffect(() => {
-    fetchEnabledPhotos();
+    fnFetchEnabledPhotos();
 
     const interval_photos = window.setInterval(() => {
-      if (needUpdate) {
-        fetchEnabledPhotos();
+      if (boolServerPollingNeeded) {
+        fnFetchEnabledPhotos();
       }
     }, 4000);
 
     return () => window.clearInterval(interval_photos);
-  }, [needUpdate, fetchEnabledPhotos]);
+  }, [boolServerPollingNeeded, fnFetchEnabledPhotos]);
 
   // 显式触发相册刷新：当 reloadAlbumFlag / showDisabled / galleryMode 变化时强制刷新
   React.useEffect(() => {
-    fetchEnabledPhotos();
-    if (reloadAlbumFlag) {
-      setReloadAlbumFlag(false);
+    fnFetchEnabledPhotos();
+    if (boolReloadAlbumRequested) {
+      fnSetReloadAlbumRequested(false);
     }
-  }, [reloadAlbumFlag, showDisabled, galleryMode, fetchEnabledPhotos, setReloadAlbumFlag]);
+  }, [boolReloadAlbumRequested, boolShowDisabledPhotos, modeGalleryView, fnFetchEnabledPhotos, fnSetReloadAlbumRequested]);
 
   // 轮询服务端状态：每 0.5 秒刷新一次，用 formatStatus 把原始数据映射到 UI 字符串
   React.useEffect(() => {
@@ -55,14 +55,14 @@ export const usePhotoFilterEffects = () => {
           data?.status || t("filterPage.serverUnreachable") || "Unknown",
       });
 
-    fetchServerStatus(formatStatus);
+    fnFetchServerStatus(formatStatus);
 
     const interval_status = window.setInterval(() => {
-      if (needUpdate) {
-        fetchServerStatus(formatStatus);
+      if (boolServerPollingNeeded) {
+        fnFetchServerStatus(formatStatus);
       }
     }, 500);
 
     return () => window.clearInterval(interval_status);
-  }, [needUpdate, fetchServerStatus, t]);
+  }, [boolServerPollingNeeded, fnFetchServerStatus, t]);
 };
