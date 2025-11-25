@@ -1,6 +1,6 @@
 import { PhotoGridEnhance } from "@/components/PhotoGrid";
 import React from "react";
-import { Photo } from "@/helpers/db/db";
+import { Photo } from "@/helpers/ipc/database/db";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 

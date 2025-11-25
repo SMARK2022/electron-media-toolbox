@@ -23,7 +23,7 @@ import {
   initializeDatabase,
   PhotoExtend,
   Photo,
-} from "@/helpers/db/db";
+} from "@/helpers/ipc/database/db";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { usePhotoFilterStore } from "@/helpers/store/usePhotoFilterStore";

@@ -20,7 +20,7 @@ import {
   initializeDatabase,
   PhotoExtend,
   Photo,
-} from "@/helpers/db/db";
+} from "@/helpers/ipc/database/db";
 import { copyPhotos, folderExists } from "@/lib/system";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";

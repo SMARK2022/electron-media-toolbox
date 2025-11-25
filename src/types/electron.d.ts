@@ -14,6 +14,7 @@ declare global {
       getThumbsCacheDir(): Promise<string>;
       runCommand(cmdStr: string, cmdPath?: string): Promise<string>;
       getPathForFile?(file: File): string;
+      getPhotoMetadata(filePath: string): Promise<any>;
     };
   }
 }

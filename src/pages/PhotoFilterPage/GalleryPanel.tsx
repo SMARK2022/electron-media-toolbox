@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Layers, Grid, Image as ImageIcon } from "lucide-react";
-import { Photo } from "@/helpers/db/db";
+import { Photo } from "@/helpers/ipc/database/db";
 import { PhotoGridEnhance } from "@/components/PhotoGrid"; // 复用全局的增强版缩略图网格组件
 import { usePhotoFilterSelectors } from "../../helpers/store/usePhotoFilterStore"; // 只订阅 gallery 相关状态（photos + mode）
 
