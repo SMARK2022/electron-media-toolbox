@@ -1,19 +1,8 @@
 // "use client";
 
-import { CustomSlider } from "@/components/CustomSlider";
-import ImagePreview from "@/components/ImagePreview";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  getPhotosExtendByCriteria,
-  getPhotosExtendByPhotos,
-  initializeDatabase,
-  updatePhotoEnabledStatus,
-  PhotoExtend,
-  Photo,
-} from "@/lib/db";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -30,7 +19,6 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 
-import { PhotoGridEnhance } from "@/components/PhotoGrid";
 import {
   Drawer,
   DrawerClose,
@@ -42,15 +30,16 @@ import {
   DrawerTrigger,
 } from "@/components/ui/drawer";
 import { Progress } from "@/components/ui/progress";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import PhotoDetailsTable from "./PhotoFilterPage/PhotoDetailsTable";
 import { cn } from "@/lib/utils";
-
-interface ServerData {
-  status: string;
-  task_queue_length: number;
-  workers: string[];
-}
+import { Photo } from "@/lib/db";
+import {
+  usePhotoFilterSelectors,
+  type ServerData,
+} from "./PhotoFilterPage/usePhotoFilterStore";
+import { GalleryPanel } from "./PhotoFilterPage/GalleryPanel";
+import { SidePanel } from "./PhotoFilterPage/SidePanel";
+import { usePhotoFilterEffects } from "./PhotoFilterPage/PhotoFilterEffects";
+import { PhotoGridEnhance } from "@/components/PhotoGrid";
 
 /**
  * 单个分组组件，使用 React.memo 避免无关重渲染
@@ -208,80 +197,42 @@ function ServerStatusMonitorDrawer({
   );
 }
 
-const PreviewPlaceholder: React.FC<{
-  width?: string;
-  height?: string;
-}> = ({ width, height }) => {
-  const { t } = useTranslation();
-
-  const style: React.CSSProperties = {
-    ...(width ? { width } : {}),
-    ...(height ? { height } : {}),
-  };
-
-  return (
-    <div
-      style={style}
-      className="border-muted-foreground/20 bg-muted/40 m-4 flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center"
-    >
-      <div className="bg-muted mb-3 rounded-full p-3 shadow-sm">
-        <ImageIcon className="text-muted-foreground/40 h-8 w-8" />
-      </div>
-      <p className="text-foreground text-sm font-medium">
-        {t("filterPage.previewPlaceholderTitle") ||
-          "Select a photo from the gallery to preview"}
-      </p>
-      <p className="text-muted-foreground mt-1 max-w-xs text-xs">
-        {t("filterPage.previewPlaceholderDesc") ||
-          "Click any thumbnail on the left to view details and toggle its enabled status."}
-      </p>
-    </div>
-  );
-};
-
 export default function PhotoFilterSubpage() {
   const { t } = useTranslation();
+  const {
+    photos,
+    previewPhotos,
+    galleryMode,
+    panelTab,
+    similarityThreshold,
+    showDisabled,
+    sortedColumn,
+    reloadAlbumFlag,
+    needUpdate,
+    serverStatus,
+    serverData,
+    isPreviewEnabled,
+    leftWidthVw,
+    previewHeightPercent,
+    setShowDisabled,
+    setReloadAlbumFlag,
+    setNeedUpdate,
+    setLeftWidthVw,
+    setPreviewHeightPercent,
+    selectPhotos,
+    togglePhotoEnabledFromGrid,
+    // 以下动作在子组件 / effect 中使用
+    // disableRedundant,
+    // enableAll,
+    // updateFromDetailsPanel,
+  } = usePhotoFilterSelectors();
 
-  // 相册视图：二维数组，每个子数组是一组照片
-  const [photos, setPhotos] = React.useState<Photo[][]>([]);
-  // 服务端状态（简要字符串 + 完整数据）
-  const [serverStatus, setServerStatus] = React.useState<string>(
-    t("filterPage.serverStatusPrefix", {
-      status: t("filterPage.serverStatusFetching"),
-    }),
-  );
-  const [serverData, setServerData] = React.useState<ServerData | null>(null);
+  // 统一副作用（初始化、轮询等）
+  usePhotoFilterEffects();
 
-  // 右侧预览面板的数据
-  const [preview_photos, setPreviewPhotos] = React.useState<PhotoExtend[]>([]);
-  const [opt_panelTabValue, setPannelTabValue] = React.useState("filter");
-  const [opt_galleryTabValue, setGalleryTabValue] = React.useState("group");
-
-  // 轮询控制：检测任务进行中时为 true，空闲且超时后置 false
-  const [bool_needUpdate, setUpdate] = React.useState<boolean>(true);
-  const [float_similarityThreshold, setSimilarityThreshold] =
-    React.useState<number>(() =>
-      parseFloat(sessionStorage.getItem("similarityThreshold") || "0.8"),
-    );
-
-  const [bool_showDisabled, setShowDisabledPhotos] =
-    React.useState<boolean>(false);
-  const [opt_sortedColumn, setSortedColumn] = React.useState("IQA");
-  const [bool_reloadAlbum, setReloadAlbum] = React.useState<boolean>(false);
-  const [bool_isPreviewEnabled, setIsPreviewEnabled] =
-    React.useState<boolean>(false);
-
-  // 可拖动分栏：左侧宽度（vw），初始为 65vw，允许在初始值的左右各 20vw 范围内拖动
-  const initialLeftVwRef = React.useRef<number>(65);
-  const [leftWidthVw, setLeftWidthVw] = React.useState<number>(
-    initialLeftVwRef.current,
-  );
+  const initialLeftVwRef = React.useRef<number>(leftWidthVw);
   const minLeftVw = Math.max(8, initialLeftVwRef.current - 20);
   const maxLeftVw = Math.min(92, initialLeftVwRef.current + 20);
-
-  // 预览面板内的可拖动：图片展示高度百分比，范围 20%~70%
-  const [previewHeightPercent, setPreviewHeightPercent] =
-    React.useState<number>(50);
 
   // 拖动相关 refs
   const draggingRef = React.useRef(false);
@@ -502,210 +453,24 @@ export default function PhotoFilterSubpage() {
     };
   }, []);
 
-  // 预览面板：当 preview_photos 变化时，同步当前预览图片的启用状态
-  React.useEffect(() => {
-    setIsPreviewEnabled(preview_photos[0]?.isEnabled ?? false);
-  }, [preview_photos]);
-
-  // 初始化数据库 & 记录本次提交时间
-  React.useEffect(() => {
-    const currentTime = Date.now();
-    sessionStorage.setItem("submitTime", currentTime.toString());
-    initializeDatabase();
-  }, []);
-
-  /**
-   * 根据当前视图模式（分组/整体）、排序方式、是否隐藏弃用照片，拉取相册数据。
-   * 使用 useCallback 保证给 setInterval 的永远是最新逻辑。
-   */
-  const fetchEnabledPhotos = React.useCallback(async () => {
-    // console.log("galleryTabValue", opt_galleryTabValue);
-    // console.log("showDisabledPhotos", bool_showDisabled);
-
-    try {
-      // group 模式：-1 表示“未分组/基础组”，total 模式：-2 表示“整体列表”
-      const undefinedGroupPhotos: PhotoExtend[] =
-        await getPhotosExtendByCriteria(
-          opt_galleryTabValue === "group" ? -1 : -2,
-          opt_sortedColumn,
-          !bool_showDisabled,
-        );
-
-      let groupId = 0;
-      let skippedGroup = 0;
-      const groupedPhotos: { [key: number]: Photo[] } = {};
-
-      // 先放入 undefinedGroup / total 列表作为第 0 组
-      if (undefinedGroupPhotos.length > 0) {
-        groupedPhotos[groupId] = undefinedGroupPhotos.map(
-          (photo: PhotoExtend): Photo => ({
-            fileName: photo.fileName,
-            fileUrl: photo.fileUrl,
-            filePath: photo.filePath,
-            info: (photo.IQA ?? 0).toString(),
-            isEnabled: photo.isEnabled ?? true,
-          }),
-        );
-        groupId++;
-      }
-
-      // 只有在“分组模式下”才继续拉后续 groupId
-      while (opt_galleryTabValue === "group") {
-        const currentGroupPhotos: PhotoExtend[] =
-          await getPhotosExtendByCriteria(
-            groupId + skippedGroup,
-            opt_sortedColumn,
-            !bool_showDisabled,
-          );
-        if (currentGroupPhotos.length === 0) {
-          if (skippedGroup < 20) {
-            skippedGroup++;
-            continue;
-          } else {
-            break;
-          }
-        }
-
-        groupedPhotos[groupId] = currentGroupPhotos.map(
-          (photo: PhotoExtend): Photo => ({
-            fileName: photo.fileName,
-            fileUrl: photo.fileUrl,
-            filePath: photo.filePath,
-            info: (photo.IQA ?? 0).toString(),
-            isEnabled: photo.isEnabled ?? true,
-          }),
-        );
-
-        groupId++;
-      }
-
-      setPhotos(Object.values(groupedPhotos));
-      console.log("照片更新一次");
-    } catch (error) {
-      console.error("获取启用照片失败:", error);
-    }
-  }, [opt_galleryTabValue, opt_sortedColumn, bool_showDisabled]);
-
-  /**
-   * 拉取服务端状态
-   */
-  const fetchServerStatus = React.useCallback(async () => {
-    console.log("更新状态标志 bool_needUpdate =", bool_needUpdate);
-    try {
-      const response = await fetch("http://localhost:8000/status");
-      if (response.ok) {
-        const data: ServerData = await response.json();
-        setServerStatus(
-          t("filterPage.serverStatusPrefix", {
-            status: data.status || t("filterPage.unknownStatus"),
-          }),
-        );
-        setServerData(data);
-
-        const submitTime = sessionStorage.getItem("submitTime");
-        if (submitTime) {
-          const currentTime = Date.now();
-          const timeDifference = (currentTime - parseInt(submitTime)) / 1000;
-
-          // 提交 6 秒后，如果状态仍然是空闲，则 5 秒后停止轮询
-          if (timeDifference > 2 && data.status === "空闲中") {
-            setTimeout(() => {
-              if (data.status === "空闲中") {
-                setUpdate(false);
-                fetchEnabledPhotos();
-                console.log("[STATUS] Server idle, stopping updates.");
-              } else {
-                setUpdate(true);
-              }
-            }, 600);
-          } else {
-            setUpdate(true);
-          }
-        }
-      } else {
-        setServerStatus(
-          t("filterPage.serverStatusPrefix", {
-            status: t("filterPage.serverUnreachable"),
-          }),
-        );
-      }
-    } catch {
-      setServerStatus(
-        t("filterPage.serverStatusPrefix", {
-          status: t("filterPage.serverRequestFailed"),
-        }),
-      );
-    }
-  }, [bool_needUpdate, t]);
-
   const handlePhotoClick = React.useCallback(
     async (clickphotos: Photo[], event: string) => {
       if (!clickphotos.length) return;
       const target = clickphotos[0];
 
       if (event === "Select") {
-        // 选择照片：获取扩展信息并显示预览
-        const extended = await getPhotosExtendByPhotos(clickphotos);
-        setPreviewPhotos(extended);
-        setPannelTabValue("preview");
+        await selectPhotos(clickphotos);
         return;
       }
 
       if (event === "Change") {
-        // 切换启用状态：更新数据库 + 本地状态
-        const newEnabled = !(target.isEnabled ?? true);
-
-        // 1) 更新数据库
-        await updatePhotoEnabledStatus(target.filePath, newEnabled);
-
-        // 2) 本地更新 photos
-        // 如果禁用且不显示禁用图片，则直接删除；否则只改 isEnabled 状态
-        setPhotos((prev) => {
-          if (!newEnabled && !bool_showDisabled) {
-            // 禁用且不显示：从分组中删除，并移除空分组
-            return prev
-              .map((group) =>
-                group.filter((p) => p.filePath !== target.filePath),
-              )
-              .filter((group) => group.length > 0); // 删除空分组
-          } else {
-            // 启用或显示禁用图片：只更新 isEnabled 状态
-            return prev.map((group) =>
-              group.map((p) =>
-                p.filePath === target.filePath
-                  ? { ...p, isEnabled: newEnabled }
-                  : p,
-              ),
-            );
-          }
-        });
-
-        // 3) 更新右侧 preview_photos
-        if (!newEnabled && !bool_showDisabled) {
-          // 禁用且不显示：清空预览
-          setPreviewPhotos([]);
-          setPannelTabValue("filter");
-        } else {
-          // 启用或显示禁用图片：更新预览的 isEnabled 状态
-          setPreviewPhotos((prevExt) =>
-            prevExt.map((p) =>
-              p.filePath === target.filePath
-                ? { ...p, isEnabled: newEnabled }
-                : p,
-            ),
-          );
-          setIsPreviewEnabled(newEnabled);
-          setPannelTabValue("preview");
-        }
+        await togglePhotoEnabledFromGrid(target);
       }
     },
-    [bool_showDisabled, setPhotos, setPreviewPhotos],
+    [selectPhotos, togglePhotoEnabledFromGrid],
   );
 
-  const handleSliderChange = (value: number) => {
-    setSimilarityThreshold(value);
-    sessionStorage.setItem("similarityThreshold", value.toString());
-  };
+  // 滑块变化由 SidePanel 内部直接操作 store 的 similarityThreshold
 
   const handleSubmit = async () => {
     const currentTime = Date.now();
@@ -719,138 +484,33 @@ export default function PhotoFilterSubpage() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        similarity_threshold: float_similarityThreshold,
+        similarity_threshold: similarityThreshold,
         db_path: dbPath,
-        show_disabled_photos: bool_showDisabled,
+        show_disabled_photos: showDisabled,
       }),
     });
 
     if (response.ok) {
       const data = await response.json();
       console.log("检测任务已添加到队列:", data);
-      setUpdate(true);
+      setNeedUpdate(true);
     } else {
       console.error("提交检测任务失败");
     }
   };
 
-  const handleDisableRedundant = React.useCallback(async () => {
-    try {
-      // 先更新数据库：每组只保留第 1 张，后面的都禁用
-      await Promise.all(
-        photos.map(async (group) => {
-          const updates = group
-            .slice(1)
-            .map((photo) => updatePhotoEnabledStatus(photo.filePath, false));
-          await Promise.all(updates);
-        }),
-      );
 
-      // 再本地更新 state
-      // 如果不显示禁用图片，则直接删除冗余照片；否则只改 isEnabled 状态
-      setPhotos((prev) => {
-        if (!bool_showDisabled) {
-          // 不显示禁用图片：只保留每个分组的第 1 张
-          return prev
-            .map((group) => (group.length > 0 ? [group[0]] : []))
-            .filter((group) => group.length > 0); // 删除空分组
-        } else {
-          // 显示禁用图片：每个分组的后面元素标记为禁用
-          return prev.map((group) =>
-            group.map((photo, idx) =>
-              idx === 0 ? photo : { ...photo, isEnabled: false },
-            ),
-          );
-        }
-      });
-      // 不再 setReloadAlbum(true)，必要时由轮询刷新
-    } catch (error) {
-      console.error("禁用冗余照片失败:", error);
-    }
-  }, [bool_showDisabled, photos]);
-
-  const handleEnableAll = async () => {
-    try {
-      await Promise.all(
-        photos
-          .flat()
-          .map((photo) => updatePhotoEnabledStatus(photo.filePath, true)),
-      );
-
-      setPhotos((prev) =>
-        prev.map((group) =>
-          group.map((photo) => ({ ...photo, isEnabled: true })),
-        ),
-      );
-    } catch (error) {
-      console.error("启用所有照片失败:", error);
-    }
-  };
-
-  // 组件卸载时简单清理预览数据
-  React.useEffect(() => {
-    return () => {
-      setPreviewPhotos([]);
-    };
-  }, []);
-
-  /**
-   * 轮询相册数据：每 4 秒刷新一次，受 bool_needUpdate 控制
-   */
-  React.useEffect(() => {
-    // 首次或依赖变化时，先拉一次
-    fetchEnabledPhotos();
-
-    const interval_photos = window.setInterval(() => {
-      if (bool_needUpdate) {
-        fetchEnabledPhotos();
-      }
-    }, 4000);
-
-    return () => window.clearInterval(interval_photos);
-  }, [bool_needUpdate, fetchEnabledPhotos]);
-
-  /**
-   * 显式触发相册刷新：
-   */
-  React.useEffect(() => {
-    fetchEnabledPhotos();
-    if (bool_reloadAlbum) {
-      setReloadAlbum(false);
-    }
-  }, [
-    bool_reloadAlbum,
-    bool_showDisabled,
-    opt_galleryTabValue,
-    fetchEnabledPhotos,
-  ]);
-
-  /**
-   * 轮询服务端状态：每 1 秒拉一次，受 bool_needUpdate 控制
-   */
-  React.useEffect(() => {
-    fetchServerStatus();
-
-    const interval_status = window.setInterval(() => {
-      if (bool_needUpdate) {
-        fetchServerStatus();
-      }
-    }, 500);
-
-    return () => window.clearInterval(interval_status);
-  }, [bool_needUpdate, fetchServerStatus]);
-
-  // 当前高亮照片列表（只在 preview_photos 变化时重建）
+  // 当前高亮照片列表（只在 previewPhotos 变化时重建）
   const highlightPhotos = React.useMemo<Photo[]>(() => {
-    if (!preview_photos.length) return [];
-    return preview_photos.map((photo) => ({
+    if (!previewPhotos.length) return [];
+    return previewPhotos.map((photo) => ({
       fileName: photo.fileName,
       fileUrl: photo.fileUrl,
       filePath: photo.filePath,
       info: photo.info ?? "",
       isEnabled: photo.isEnabled ?? true,
     }));
-  }, [preview_photos]);
+  }, [previewPhotos]);
 
   const totalPhotoCount = photos.flat().length;
 
@@ -868,74 +528,11 @@ export default function PhotoFilterSubpage() {
           }}
         >
           <div className="bg-background/80 flex h-[calc(100vh-85px)] w-full flex-col space-y-4 rounded-xl p-3 shadow-sm">
-            <Tabs
-              id="gallery-pannel"
-              value={opt_galleryTabValue}
-              onValueChange={setGalleryTabValue}
-              className="space-y-3"
-            >
-              {/* 顶部工具栏：模式切换 + 总数提示 */}
-              <div className="flex items-center justify-between gap-3">
-                <TabsList className="bg-muted/70 grid w-[280px] grid-cols-2">
-                  <TabsTrigger
-                    value="group"
-                    className="flex items-center gap-1.5 text-sm"
-                  >
-                    <Layers className="h-3.5 w-3.5" />
-                    {t("filterPage.galleryMode")}
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="total"
-                    className="flex items-center gap-1.5 text-sm"
-                  >
-                    <Grid className="h-3.5 w-3.5" />
-                    {t("filterPage.totalMode")}
-                  </TabsTrigger>
-                </TabsList>
-
-                <div className="text-muted-foreground flex items-center gap-3 text-sm">
-                  <div className="bg-muted flex items-center gap-1 rounded-full px-2 py-1">
-                    <ImageIcon className="text-muted-foreground/80 h-3.5 w-3.5" />
-                    <span className="font-sm">
-                      {t("labels.totalPhotosLabel")}:
-                    </span>
-                    <span className="rounded-full bg-blue-50 px-1.5 font-mono text-[14px] text-blue-700">
-                      {totalPhotoCount}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Scrollable Gallery：宽度随左侧 65% 容器自适应 */}
-              <ScrollArea className="mx-auto h-[calc(100vh-220px)] w-full rounded-xl border p-3 dark:bg-slate-900">
-                {photos.map((group, index) => (
-                  <GalleryGroup
-                    key={group[0]?.filePath ?? `group-${index}`}
-                    group={group}
-                    index={index}
-                    isGroupMode={opt_galleryTabValue === "group"}
-                    groupLabel={t("filterPage.groupLabel") || "Group"}
-                    highlightPhotos={highlightPhotos}
-                    onPhotoClick={handlePhotoClick}
-                  />
-                ))}
-
-                {photos.length === 0 && (
-                  <div className="text-muted-foreground flex h-[calc(70vh-100px)] flex-col items-center justify-center text-center">
-                    <div className="mb-3 rounded-full bg-white p-4 shadow-sm">
-                      <ImageIcon className="h-8 w-8 opacity-30" />
-                    </div>
-                    <p className="text-sm font-medium">
-                      {t("filterPage.noPhotosFoundTitle") || "No photos found"}
-                    </p>
-                    <p className="text-muted-foreground mt-1 max-w-xs text-xs">
-                      {t("filterPage.noPhotosFoundDesc") ||
-                        "Try adjusting filters, importing more photos, or running a new detection task."}
-                    </p>
-                  </div>
-                )}
-              </ScrollArea>
-            </Tabs>
+            <GalleryPanel
+              totalPhotoCount={totalPhotoCount}
+              highlightPhotos={highlightPhotos}
+              onPhotoClick={handlePhotoClick}
+            />
 
             {/* 底部：提交任务 + 服务端状态 + 显示弃用开关 */}
             <div className="bg-background flex items-center justify-between rounded-lg border px-3 py-2 text-xs shadow-sm">
@@ -964,7 +561,7 @@ export default function PhotoFilterSubpage() {
                   htmlFor="disabled-display"
                   className="text-muted-foreground flex cursor-pointer items-center gap-1.5 text-[11px] font-normal"
                 >
-                  {bool_showDisabled ? (
+                  {showDisabled ? (
                     <Eye className="h-3.5 w-3.5" />
                   ) : (
                     <EyeOff className="h-3.5 w-3.5" />
@@ -975,8 +572,8 @@ export default function PhotoFilterSubpage() {
                 </Label>
                 <Switch
                   id="disabled-display"
-                  checked={bool_showDisabled}
-                  onCheckedChange={setShowDisabledPhotos}
+                  checked={showDisabled}
+                  onCheckedChange={setShowDisabled}
                   className="scale-90"
                 />
               </div>
@@ -984,161 +581,13 @@ export default function PhotoFilterSubpage() {
           </div>
         </div>
 
-        {/* 中间：拖拽手柄（仅在 sm 及以上显示） */}
-        <div
-          className="hidden items-stretch sm:flex md:order-2"
-          style={{
-            width: 12,
-            cursor: "ew-resize",
-            userSelect: "none",
-            touchAction: "none",
-          }}
-          onMouseDown={(e) => startMouseDrag(e.clientX)}
-          onTouchStart={(e) => {
-            if (e.touches && e.touches[0]) startTouchDrag(e.touches[0].clientX);
-          }}
-        >
-          <div className="bg-muted/30 hover:bg-muted/50 mx-auto h-full w-1 rounded" />
-        </div>
-
-        {/* 右侧：筛选 / 预览面板（剩余空间，响应式隐藏小屏幕） */}
-        <div className="hidden flex-1 flex-col space-y-4 sm:flex md:order-3">
-          <Tabs
-            id="side-pannel"
-            value={opt_panelTabValue}
-            onValueChange={setPannelTabValue}
-            className="bg-background/80 flex-1 rounded-xl p-3 shadow-sm"
-          >
-            <div className="mb-3 w-full">
-              <TabsList className="bg-muted/70 grid grid-cols-2">
-                <TabsTrigger
-                  value="filter"
-                  className="flex items-center gap-1.5 text-xs"
-                >
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  {t("filterPage.filterTab")}
-                </TabsTrigger>
-                <TabsTrigger
-                  value="preview"
-                  className="flex items-center gap-1.5 text-xs"
-                >
-                  <ImageIcon className="h-3.5 w-3.5" />
-                  {t("filterPage.previewTab")}
-                </TabsTrigger>
-              </TabsList>
-            </div>
-
-            <TabsContent
-              value="filter"
-              className="mt-0 border-0 bg-transparent p-0"
-            >
-              <div className="space-y-4">
-                <CustomSlider
-                  label={t("filterPage.similarityThresholdLabel")}
-                  description={t("filterPage.similarityThresholdDesc")}
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={float_similarityThreshold}
-                  onChange={handleSliderChange}
-                />
-
-                <div className="flex justify-between gap-3">
-                  <Button
-                    onClick={handleDisableRedundant}
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 justify-start gap-2 text-red-600 hover:bg-red-50 hover:text-red-700"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    {t("filterPage.disableRedundant")}
-                  </Button>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <Button
-                    onClick={handleEnableAll}
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 justify-start gap-2"
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                    {t("filterPage.enableAll")}
-                  </Button>
-                </div>
-
-                <div className="mt-3 rounded-md bg-blue-50 p-3 text-xs text-blue-800">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                    <p className="leading-relaxed whitespace-pre-wrap">
-                      {t("filterPage.filterHint")}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent
-              value="preview"
-              className="mt-0 flex h-[calc(100vh-160px)] flex-col overflow-hidden border-0 bg-transparent p-0"
-            >
-              {preview_photos.length > 0 ? (
-                <div className="flex h-full flex-col overflow-hidden">
-                  {/* 图片展示部分：高度由 previewHeightPercent 控制 */}
-                  <div
-                    className="flex-shrink-0"
-                    style={{
-                      height: `${previewHeightPercent}%`,
-                      minHeight: "20%",
-                      maxHeight: "70%",
-                      width: "100%", // 添加这行
-                      display: "flex", // 添加这行
-                    }}
-                  >
-                    <ImagePreview
-                      src={`local-resource://${preview_photos[0].filePath}`}
-                      height="100%"
-                      width="100%"
-                    />
-                  </div>
-
-                  {/* 拖动条：竖直方向，cursor-ns-resize */}
-                  <div
-                    className="bg-muted/20 hover:bg-muted/40 flex flex-shrink-0 cursor-ns-resize items-center justify-center transition-colors select-none"
-                    style={{
-                      height: 8,
-                      touchAction: "none",
-                    }}
-                    onMouseDown={(e) => startPreviewMouseDrag(e.clientY)}
-                    onTouchStart={(e) => {
-                      if (e.touches && e.touches[0])
-                        startPreviewTouchDrag(e.touches[0].clientY);
-                    }}
-                  >
-                    <div className="bg-muted/60 h-1.5 w-10 rounded-full" />
-                  </div>
-
-                  {/* 表格部分：占用剩余空间，用 ScrollArea 包装 */}
-                  <div
-                    className="flex-1 overflow-hidden"
-                    style={{
-                      maxHeight: `${100 - previewHeightPercent}%`,
-                    }}
-                  >
-                    <PhotoDetailsTable
-                      photo={preview_photos[0]}
-                      isPreviewEnabled={bool_isPreviewEnabled}
-                      setIsPreviewEnabled={setIsPreviewEnabled}
-                      updatePhotoEnabledStatus={updatePhotoEnabledStatus}
-                      setPhotos={setPhotos}
-                      onPhotoStatusChanged={() => setReloadAlbum(true)}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <PreviewPlaceholder height={"calc((100vh - 180px))"} />
-              )}
-            </TabsContent>
-          </Tabs>
+        {/* 右侧：筛选 & 预览面板 */}
+        <div className="order-3 ml-3 hidden min-w-[260px] flex-1 flex-col space-y-4 sm:flex">
+          <SidePanel
+            previewHeightPercent={previewHeightPercent}
+            onStartPreviewMouseDrag={startPreviewMouseDrag}
+            onStartPreviewTouchDrag={startPreviewTouchDrag}
+          />
         </div>
       </div>
     </div>
