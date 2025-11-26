@@ -19,6 +19,14 @@ export interface ServerData {
   workers: string[];
 }
 
+// 眨眼统计信息（每张图片的眼睛状态统计）
+export interface EyeStatistics {
+  filePath: string; // 图片路径，作为唯一标识
+  closedEyesCount: number; // 闭眼人脸数（eyeOpen < 0.15）
+  suspiciousCount: number; // 疑似闭眼（0.15 <= eyeOpen <= 0.20）
+  openEyesCount: number; // 正常睁眼（eyeOpen > 0.20）
+}
+
 interface PhotoFilterState {
   // 通用照片状态（3 个页面复用）
   lstAllPhotos: Photo[]; // 当前相册中所有照片（扁平列表）
@@ -39,6 +47,9 @@ interface PhotoFilterState {
   objServerStatusData: ServerData | null;
   numLeftPaneWidthVw: number;
   numPreviewHeightPercent: number;
+
+  // 眨眼统计数据（自动从 faceData 计算）
+  lstPhotosEyeStats: Map<string, EyeStatistics>; // filePath -> EyeStatistics，用于快速查询某张图片的眨眼统计
 
   // 磁盘删除确认对话框状态
   boolShowDeleteConfirm: boolean; // 是否展示“删除文件”确认弹窗
@@ -82,6 +93,9 @@ interface PhotoFilterState {
   fnSetServerStatusText: (value: string) => void;
   fnSetServerStatusData: (value: ServerData | null) => void;
   fnSetCurrentPreviewEnabled: (value: boolean) => void;
+
+  // 眨眼统计计算 action
+  fnCalculateEyeStats: (photos: PhotoExtend[]) => void; // 根据 photos 的 faceData 字段计算眨眼统计并更新 store
 
   // 删除确认弹窗相关 actions
   fnOpenDeleteConfirm: (photo: Photo) => void;
@@ -127,6 +141,9 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   objServerStatusData: null, // 原始服务端状态数据
   numLeftPaneWidthVw: 65, // 左侧画廊分栏宽度（vw 单位），用于拖拽持久
   numPreviewHeightPercent: 50, // 右侧预览区高度（相对 SidePanel 百分比）
+
+  // 眨眼统计数据初始化
+  lstPhotosEyeStats: new Map(),
 
   // 删除文件确认弹窗初始状态
   boolShowDeleteConfirm: false,
@@ -222,7 +239,54 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   fnSetServerStatusData: (value) => set({ objServerStatusData: value }), // 直接设置服务端原始数据
   fnSetCurrentPreviewEnabled: (value) => set({ boolCurrentPreviewEnabled: value }), // 仅更新预览开关，不写 DB
 
-  // 打开“删除文件”确认弹窗，并记录待删除的照片
+  // 计算眨眼统计：根据 photos 的 faceData 字段计算每张图片的眨眼统计
+  fnCalculateEyeStats: (photos: PhotoExtend[]) => {
+    const newStatsMap = new Map<string, EyeStatistics>();
+
+    photos.forEach((photo) => {
+      try {
+        // 从 faceData JSON 字符串中解析面部信息
+        const faceData = photo.faceData ? JSON.parse(photo.faceData) : { faces: [] };
+        const faces = faceData.faces || [];
+
+        // 统计眨眼状态
+        let closedEyesCount = 0;
+        let suspiciousCount = 0;
+        let openEyesCount = 0;
+
+        faces.forEach((face: any) => {
+          const eyeOpen = face.eye_open ?? 1.0; // 默认睁眼
+          if (eyeOpen < 0.15) {
+            closedEyesCount++;
+          } else if (eyeOpen <= 0.20) {
+            suspiciousCount++;
+          } else {
+            openEyesCount++;
+          }
+        });
+
+        newStatsMap.set(photo.filePath, {
+          filePath: photo.filePath,
+          closedEyesCount,
+          suspiciousCount,
+          openEyesCount,
+        });
+      } catch (error) {
+        console.error(`计算 ${photo.filePath} 的眨眼统计失败:`, error);
+        // 如果解析失败，设置为默认值
+        newStatsMap.set(photo.filePath, {
+          filePath: photo.filePath,
+          closedEyesCount: 0,
+          suspiciousCount: 0,
+          openEyesCount: 0,
+        });
+      }
+    });
+
+    set({ lstPhotosEyeStats: newStatsMap });
+  },
+
+  // 打开"删除文件"确认弹窗，并记录待删除的照片
   fnOpenDeleteConfirm: (photo) =>
     set({ boolShowDeleteConfirm: true, objPendingDeletePhoto: photo }),
 
@@ -248,17 +312,18 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   fnFetchEnabledPhotos: async () => {
     const { modeGalleryView, strSortedColumnKey, boolShowDisabledPhotos } = get();
     try {
-  const undefinedGroupPhotos: PhotoExtend[] = await getPhotosExtendByCriteria(
+      const undefinedGroupPhotos: PhotoExtend[] = await getPhotosExtendByCriteria(
         modeGalleryView === "group" ? -1 : -2,
         strSortedColumnKey,
         !boolShowDisabledPhotos,
       );
 
-  let numCurrentGroupId = 0; // 当前有效分组 ID
-  let numSkippedGroupCount = 0; // 连续跳过的空组计数，用于提前结束循环
-  const mapGroupedPhotosById: { [key: number]: Photo[] } = {}; // groupId -> Photo 列表
+      let numCurrentGroupId = 0; // 当前有效分组 ID
+      let numSkippedGroupCount = 0; // 连续跳过的空组计数，用于提前结束循环
+      const mapGroupedPhotosById: { [key: number]: Photo[] } = {}; // groupId -> Photo 列表
+      const allPhotoExtends: PhotoExtend[] = []; // 收集所有的 PhotoExtend，用于计算眨眼统计
 
-  if (undefinedGroupPhotos.length > 0) {
+      if (undefinedGroupPhotos.length > 0) {
         mapGroupedPhotosById[numCurrentGroupId] = undefinedGroupPhotos.map((photo): Photo => ({
           fileName: photo.fileName,
           fileUrl: photo.fileUrl,
@@ -266,10 +331,11 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
           info: (photo.IQA ?? 0).toString(),
           isEnabled: photo.isEnabled ?? true,
         }));
+        allPhotoExtends.push(...undefinedGroupPhotos);
         numCurrentGroupId++;
       }
 
-  while (modeGalleryView === "group") {
+      while (modeGalleryView === "group") {
         const currentGroupPhotos: PhotoExtend[] = await getPhotosExtendByCriteria(
           numCurrentGroupId + numSkippedGroupCount,
           strSortedColumnKey,
@@ -291,11 +357,14 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
           info: (photo.IQA ?? 0).toString(),
           isEnabled: photo.isEnabled ?? true,
         }));
-
+        allPhotoExtends.push(...currentGroupPhotos);
         numCurrentGroupId++;
       }
 
-  set({ lstGalleryGroupedPhotos: Object.values(mapGroupedPhotosById) }); // 最终转换为二维数组供画廊消费
+      set({ lstGalleryGroupedPhotos: Object.values(mapGroupedPhotosById) }); // 最终转换为二维数组供画廊消费
+
+      // 计算眨眼统计
+      get().fnCalculateEyeStats(allPhotoExtends);
     } catch (error) {
       console.error("获取启用照片失败:", error);
     }

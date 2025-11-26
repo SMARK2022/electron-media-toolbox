@@ -9,6 +9,9 @@ import {
   CheckCircle2,
   XCircle,
   ExternalLink,
+  Eye,
+  EyeOff,
+  AlertCircle,
 } from "lucide-react";
 import {
   usePhotoFilterStore,
@@ -511,7 +514,7 @@ export function PhotoGridEnhance({
               onContextMenu={(e) => handleContextMenu(e, photo, index)}
               onFocus={() => setFocusedIndex(index)}
             >
-              <LazyImageContainer photo={photo} />
+              <LazyImageContainer photo={photo} page={page} />
 
               {/* 选中高光效果 */}
               {highlighted && (
@@ -628,13 +631,18 @@ export function PhotoGridEnhance({
 // ========== 懒加载图片组件（保持原有显示逻辑）==========
 interface LazyImageContainerProps {
   photo: Photo;
+  page?: PhotoPage; // 当前所在业务页面，用于决定是否显示眨眼指示器
 }
 
-function LazyImageContainer({ photo }: LazyImageContainerProps) {
+function LazyImageContainer({ photo, page = "filter" }: LazyImageContainerProps) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [hasError, setHasError] = useState(false);
+
+  // 从 store 中读取眨眼统计数据
+  const lstPhotosEyeStats = usePhotoFilterStore((s) => s.lstPhotosEyeStats);
+  const eyeStats = lstPhotosEyeStats.get(photo.filePath);
 
   // 进入视口后再加载
   useEffect(() => {
@@ -696,6 +704,9 @@ function LazyImageContainer({ photo }: LazyImageContainerProps) {
 
   const displayName = ellipsizeMiddle(photo.fileName);
 
+  // 只在筛选页面显示眨眼统计指示器
+  const showEyeStats = page === "filter" && eyeStats && (eyeStats.closedEyesCount > 0 || eyeStats.suspiciousCount > 0 || eyeStats.openEyesCount > 0);
+
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-white">
       {/* 图片区域 */}
@@ -712,6 +723,33 @@ function LazyImageContainer({ photo }: LazyImageContainerProps) {
         />
         {/* 悬浮遮罩 */}
         <div className="pointer-events-none absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/5" />
+
+        {/* 眨眼统计指示器：圆角矩形分为三个区域 */}
+        {showEyeStats && (
+          <div className="absolute top-2 right-2 flex items-center gap-0 rounded-full border border-white/20 bg-black/40 shadow-md backdrop-blur-sm overflow-hidden">
+            {/* 闭眼区域 */}
+            {eyeStats.closedEyesCount > 0 && (
+              <div className="flex items-center gap-0.5 bg-red-500/80 px-1.5 py-1 text-[8px] text-white font-semibold">
+                <EyeOff className="h-2.5 w-2.5" />
+                <span>{eyeStats.closedEyesCount}</span>
+              </div>
+            )}
+            {/* 疑似闭眼区域 */}
+            {eyeStats.suspiciousCount > 0 && (
+              <div className="flex items-center gap-0.5 bg-amber-500/80 px-1.5 py-1 text-[8px] text-white font-semibold">
+                <AlertCircle className="h-2.5 w-2.5" />
+                <span>{eyeStats.suspiciousCount}</span>
+              </div>
+            )}
+            {/* 正常睁眼区域 */}
+            {eyeStats.openEyesCount > 0 && (
+              <div className="flex items-center gap-0.5 bg-emerald-500/80 px-1.5 py-1 text-[8px] text-white font-semibold">
+                <Eye className="h-2.5 w-2.5" />
+                <span>{eyeStats.openEyesCount}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 信息区域 */}
