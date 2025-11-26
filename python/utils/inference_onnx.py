@@ -82,7 +82,7 @@ _BLINK_SESSION: Optional[ort.InferenceSession] = None
 _BLINK_INPUT_NAME: str = ""
 _BLINK_IS_DML = False
 # 106->68 映射表 (dlib风格)
-_MAP_106_TO_68 = np.array([1,10,12,14,16,3,5,7,0,23,21,19,32,30,28,26,17,43,48,49,51,50,102,103,104,105,101,72,73,74,86,78,79,80,85,84,35,41,42,39,37,36,89,95,96,93,91,90,52,64,63,71,67,68,61,58,59,53,56,55,65,66,62,70,69,57,60,54], dtype=np.int64)
+_MAP_106_TO_68 = np.array([1, 10, 12, 14, 16, 3, 5, 7, 0, 23, 21, 19, 32, 30, 28, 26, 17, 43, 48, 49, 51, 50, 102, 103, 104, 105, 101, 72, 73, 74, 86, 78, 79, 80, 85, 84, 35, 41, 42, 39, 37, 36, 89, 95, 96, 93, 91, 90, 52, 64, 63, 71, 67, 68, 61, 58, 59, 53, 56, 55, 65, 66, 62, 70, 69, 57, 60, 54], dtype=np.int64)
 _RIGHT_EYE_IDX = list(range(36, 42))
 _LEFT_EYE_IDX = list(range(42, 48))
 
@@ -294,7 +294,7 @@ def _run_blink_batch(img_bgr: np.ndarray, faces: List[dict]) -> None:
                 ear_r = _eye_aspect_ratio(lm68[_RIGHT_EYE_IDX])
                 ear_l = _eye_aspect_ratio(lm68[_LEFT_EYE_IDX])
                 # 平方根均值: ((sqrt(a)+sqrt(b))/2)^2
-                eye_open = ((np.sqrt(ear_l) + np.sqrt(ear_r)) / 2.0) ** 2
+                eye_open = np.sqrt((ear_l**2 + ear_r**2) / 2)
                 faces[idx]["eye_open"] = float(eye_open)
 
     except Exception as e:
