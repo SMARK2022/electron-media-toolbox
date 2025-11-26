@@ -344,9 +344,26 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   },
 
   fnTogglePhotoEnabledFromGrid: async (target: Photo) => {
-    const { boolShowDisabledPhotos } = get();
+    const { boolShowDisabledPhotos, lstGalleryGroupedPhotos } = get();
   const newEnabled = !(target.isEnabled ?? true); // 反转启用状态
   await updatePhotoEnabledStatus(target.filePath, newEnabled); // 写入数据库
+
+    // 禁用图片时，需要找到下一张（或上一张）图片作为新的预览焦点
+    let nextPreviewPhoto: Photo | null = null;
+    if (!newEnabled && !boolShowDisabledPhotos) {
+      // 在所有分组中找到当前图片的位置，并选择相邻的图片
+      const flatPhotos = lstGalleryGroupedPhotos.flat();
+      const currentIndex = flatPhotos.findIndex((p) => p.filePath === target.filePath);
+
+      if (currentIndex !== -1) {
+        // 优先选择下一张，如果没有则选择上一张
+        if (currentIndex < flatPhotos.length - 1) {
+          nextPreviewPhoto = flatPhotos[currentIndex + 1];
+        } else if (currentIndex > 0) {
+          nextPreviewPhoto = flatPhotos[currentIndex - 1];
+        }
+      }
+    }
 
     set((state) => {
       let nextPhotos: Photo[][];
@@ -373,6 +390,11 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
         boolCurrentPreviewEnabled: newEnabled,
       };
     });
+
+    // 如果禁用了图片且找到了下一张预览图，自动选中它
+    if (!newEnabled && !boolShowDisabledPhotos && nextPreviewPhoto) {
+      await get().fnSelectPreviewPhotos([nextPreviewPhoto]);
+    }
   },
 
   fnDisableRedundantInGroups: async () => {

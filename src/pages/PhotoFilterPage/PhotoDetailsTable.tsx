@@ -163,6 +163,9 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
   // 记录上一张图片的 filePath，用于检测图片切换
   const prevFilePathRef = useRef<string>("");
 
+  // 标记当前图片是否已经完成人脸匹配（避免重复匹配）
+  const matchedForCurrentPhotoRef = useRef<string>("");
+
   // 图片尺寸缓存（用于人脸追踪）
   const [imageSize, setImageSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
@@ -203,6 +206,7 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
   }, [faceData]);
 
   // 图片切换时：尝试匹配人脸并自动聚焦
+  // 注意：需要等待 imageSize 更新后才能进行匹配
   useEffect(() => {
     const isNewPhoto = filePath !== prevFilePathRef.current;
 
@@ -210,56 +214,73 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
       // 标记为图片切换后的首次聚焦（禁用动画）
       setIsFirstFocusAfterSwitch(true);
 
-      // 如果追踪模式激活且有人脸追踪状态，尝试匹配
-      if (
-        isTrackingActive &&
-        faceTrackerRef.current.hasTracking() &&
-        faces.length > 0 &&
-        imageSize.width > 0
-      ) {
-        const matchResult = faceTrackerRef.current.findMatch(
-          faces as TrackerFaceInfo[],
-          imageSize,
-        );
+      // 先记录新的 filePath，并重置匹配标记
+      prevFilePathRef.current = filePath;
+      matchedForCurrentPhotoRef.current = ""; // 重置匹配标记
 
-        console.log("[FaceTracker] Match result:", matchResult);
-
-        if (matchResult.matchedIndex !== null && matchResult.confidence > 0.3) {
-          // 找到匹配的人脸，自动聚焦
-          const matchedFace = faces[matchResult.matchedIndex];
-          setActiveFaceIndex(matchResult.matchedIndex);
-          setFocusRegion({
-            bbox: matchedFace.bbox,
-            zoomFactor: 1.25,
-            requestId: Date.now(),
-          });
-
-          // 更新追踪状态
-          faceTrackerRef.current.setTrackedFace(
-            matchedFace as TrackerFaceInfo,
-            matchResult.matchedIndex,
-            imageSize,
-            faces.length,
-          );
-        } else {
-          // 没有匹配，清除选中状态但保持追踪模式
-          setActiveFaceIndex(null);
-          setFocusRegion(null);
-        }
-      } else {
-        // 没有追踪状态或没有人脸，清除选中
+      // 如果追踪模式未激活或没有人脸数据，直接清除选中状态
+      if (!isTrackingActive || !faceTrackerRef.current.hasTracking() || faces.length === 0) {
         setActiveFaceIndex(null);
         setFocusRegion(null);
       }
-
-      prevFilePathRef.current = filePath;
+      // 如果追踪模式激活但 imageSize 还未更新（为0），则等待 imageSize 更新后再匹配
+      // 这种情况会在下面的 imageSize 监听 effect 中处理
 
       // 延迟重置首次聚焦标记（给图片加载和聚焦一点时间）
       setTimeout(() => {
         setIsFirstFocusAfterSwitch(false);
       }, 150);
     }
-  }, [filePath, faces, imageSize, isTrackingActive]);
+  }, [filePath, faces, isTrackingActive]);
+
+  // 当 imageSize 更新且处于追踪模式时，尝试匹配人脸
+  useEffect(() => {
+    // 检查是否已经为当前图片完成了匹配
+    if (matchedForCurrentPhotoRef.current === filePath) {
+      return; // 已经匹配过了，跳过
+    }
+
+    if (
+      isTrackingActive &&
+      faceTrackerRef.current.hasTracking() &&
+      faces.length > 0 &&
+      imageSize.width > 0 &&
+      imageSize.height > 0
+    ) {
+      // 标记已为当前图片完成匹配
+      matchedForCurrentPhotoRef.current = filePath;
+
+      const matchResult = faceTrackerRef.current.findMatch(
+        faces as TrackerFaceInfo[],
+        imageSize,
+      );
+
+      console.log("[FaceTracker] Match result:", matchResult);
+
+      if (matchResult.matchedIndex !== null && matchResult.confidence > 0.3) {
+        // 找到匹配的人脸，自动聚焦
+        const matchedFace = faces[matchResult.matchedIndex];
+        setActiveFaceIndex(matchResult.matchedIndex);
+        setFocusRegion({
+          bbox: matchedFace.bbox,
+          zoomFactor: 1.25,
+          requestId: Date.now(),
+        });
+
+        // 更新追踪状态
+        faceTrackerRef.current.setTrackedFace(
+          matchedFace as TrackerFaceInfo,
+          matchResult.matchedIndex,
+          imageSize,
+          faces.length,
+        );
+      } else {
+        // 没有匹配，清除选中状态但保持追踪模式（等待下一张图片继续匹配）
+        setActiveFaceIndex(null);
+        setFocusRegion(null);
+      }
+    }
+  }, [filePath, imageSize, faces, isTrackingActive]);
 
   // 当图片加载完成时获取尺寸（通过隐藏的 img 元素）
   useEffect(() => {
