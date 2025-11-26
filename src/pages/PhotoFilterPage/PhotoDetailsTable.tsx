@@ -194,6 +194,7 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
         .map((item: any) => ({
           bbox: item?.bbox as [number, number, number, number],
           score: typeof item?.score === "number" ? item.score : undefined,
+          eye_open: typeof item?.eye_open === "number" ? item.eye_open : undefined,
         }))
         .filter(
           (face: FaceInfo) =>

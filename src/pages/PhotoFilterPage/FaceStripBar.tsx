@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { ScanFace } from "lucide-react";
+import { ScanFace, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type FaceInfo = {
   bbox: [number, number, number, number];
   score?: number;
+  eye_open?: number; // 眨眼程度 (0.0 - 1.0)
 };
 
 interface FaceThumbnailProps {
@@ -28,6 +29,22 @@ const FaceThumbnail: React.FC<FaceThumbnailProps> = ({
 }) => {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+
+  // 眨眼状态逻辑
+  const eyeOpen = face.eye_open ?? 1.0;
+  let EyeStatusIcon = Eye;
+  let eyeStatusColor = "text-emerald-600 bg-emerald-50 border-emerald-200"; // 正常 (> 0.20)
+  let eyeStatusText = "正常";
+
+  if (eyeOpen < 0.15) {
+    EyeStatusIcon = EyeOff;
+    eyeStatusColor = "text-red-600 bg-red-50 border-red-200"; // 闭眼
+    eyeStatusText = "闭眼";
+  } else if (eyeOpen <= 0.20) {
+    EyeStatusIcon = AlertCircle;
+    eyeStatusColor = "text-amber-600 bg-amber-50 border-amber-200"; // 怀疑
+    eyeStatusText = "疑似闭眼";
+  }
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -145,6 +162,19 @@ const FaceThumbnail: React.FC<FaceThumbnailProps> = ({
         <div className="absolute inset-x-0 bottom-0 bg-black/60 py-0.5 font-mono text-[8px] text-white opacity-0 transition-opacity group-hover:opacity-100">
           {`${Math.round(score)}%`}
         </div>
+
+        {/* 右上角眨眼状态指示器 */}
+        {face.eye_open !== undefined && (
+          <div
+            className={cn(
+              "absolute top-0.5 right-0.5 p-[2px] rounded-full border shadow-sm backdrop-blur-sm transition-transform hover:scale-110 z-10",
+              eyeStatusColor
+            )}
+            title={`${eyeStatusText} (睁眼度: ${face.eye_open.toFixed(3)})`}
+          >
+            <EyeStatusIcon className="w-2.5 h-2.5" />
+          </div>
+        )}
       </div>
       <span className="font-mono">Face {index + 1}</span>
     </button>
@@ -173,6 +203,13 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
 }) => {
   if (!faces.length || !imageSrc) return null;
 
+  // 统计闭眼数量
+  const closedEyesCount = faces.filter(f => (f.eye_open ?? 1) < 0.15).length;
+  const suspiciousCount = faces.filter(f => {
+    const v = f.eye_open ?? 1;
+    return v >= 0.15 && v <= 0.20;
+  }).length;
+
   return (
     <div
       className={cn(
@@ -194,6 +231,22 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
             <span className="rounded-full bg-emerald-100/80 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">
               人像追踪模式
             </span>
+          )}
+
+          {/* 闭眼/疑似闭眼统计 Badge */}
+          {(closedEyesCount > 0 || suspiciousCount > 0) && (
+            <div className="flex gap-1 ml-1">
+              {closedEyesCount > 0 && (
+                <span className="flex items-center gap-0.5 text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium dark:bg-red-900/50 dark:text-red-300">
+                  <EyeOff className="w-2.5 h-2.5" /> {closedEyesCount}
+                </span>
+              )}
+              {suspiciousCount > 0 && (
+                <span className="flex items-center gap-0.5 text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium dark:bg-amber-900/50 dark:text-amber-300">
+                  <AlertCircle className="w-2.5 h-2.5" /> {suspiciousCount}
+                </span>
+              )}
+            </div>
           )}
         </div>
         <span
