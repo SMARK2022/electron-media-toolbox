@@ -8,14 +8,12 @@ import cv2
 import sys
 import inspect
 
-import insightface
+from .model_zoo.model_zoo import get_retinaface_model
 
 # 控制是否启用人脸检测的全局开关（数据库字段仍会保留）
 ENABLE_FACE_DETECTION: bool = True
 # 控制是否启用眨眼检测的全局开关
 ENABLE_BLINK_DETECTION: bool = True
-# 眨眼检测最大 batch size
-_BLINK_MAX_BATCH: int = 4
 
 
 def _select_ort_providers() -> List[str]:
@@ -81,6 +79,7 @@ _BLINK_MODEL_PATH = Path(get_resource_path("checkpoint/2d106det_batch.onnx"))
 _BLINK_SESSION: Optional[ort.InferenceSession] = None
 _BLINK_INPUT_NAME: str = ""
 _BLINK_IS_DML = False
+_BLINK_MAX_BATCH: int = 4  # 眨眼检测最大 batch size
 # 106->68 映射表 (dlib风格)
 _MAP_106_TO_68 = np.array([1, 10, 12, 14, 16, 3, 5, 7, 0, 23, 21, 19, 32, 30, 28, 26, 17, 43, 48, 49, 51, 50, 102, 103, 104, 105, 101, 72, 73, 74, 86, 78, 79, 80, 85, 84, 35, 41, 42, 39, 37, 36, 89, 95, 96, 93, 91, 90, 52, 64, 63, 71, 67, 68, 61, 58, 59, 53, 56, 55, 65, 66, 62, 70, 69, 57, 60, 54], dtype=np.int64)
 _RIGHT_EYE_IDX = list(range(36, 42))
@@ -95,7 +94,7 @@ _OCEC_INPUT_NAME: str = ""
 _OCEC_INPUT_H: int = 30
 _OCEC_INPUT_W: int = 48
 _OCEC_IS_DML = False
-_OCEC_MAX_BATCH: int = 8
+_OCEC_MAX_BATCH: int = 8  # 眨眼检测最大 batch size
 
 # ============================================================================
 # 🔧 新增：全局 DirectML 总锁（用于协调所有 DML Session）
@@ -180,7 +179,7 @@ def _init_face_detector_if_needed() -> None:
         print(f"[FACE] providers={providers}, is_dml={_FACE_DET_IS_DML}")
 
         # insightface 的 get_model 会创建 ORT Session，并使用传入 providers
-        _FACE_DETECTOR = insightface.model_zoo.get_model(str(_FACE_DET_MODEL_PATH), providers=providers)
+        _FACE_DETECTOR = get_retinaface_model(str(_FACE_DET_MODEL_PATH), providers=providers)
 
         # 兼容不同版本 prepare 参数
         sig = inspect.signature(_FACE_DETECTOR.prepare)
