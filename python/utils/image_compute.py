@@ -110,7 +110,7 @@ def ensure_hist_cached(
         img_bgr = cv_imread(file_path)
     hist_cache[file_path] = compute_centered_hsv_histogram(img_bgr, BINS)
     elapsed = time.time() - start_time
-    print(f"[ensure_hist_cached] {file_path} histogram computed in {elapsed:.3f}s")
+    # print(f"[ensure_hist_cached] {file_path} histogram computed in {elapsed:.3f}s")
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ def ensure_iqa_cached(
     iqa_cache[file_path] = float(iqa_value)
 
     elapsed = time.time() - start_time
-    print(f"[ensure_iqa_cached] {file_path} IQA computed in {elapsed:.3f}s")
+    # print(f"[ensure_iqa_cached] {file_path} IQA computed in {elapsed:.3f}s")
 
 
 def ensure_face_cached(
@@ -156,7 +156,7 @@ def ensure_face_cached(
     face_info = detect_faces_from_bgr(img_bgr, score_thresh=0.5)
     face_cache[file_path] = face_info
     elapsed = time.time() - start_time
-    print(f"[ensure_face_cached] {file_path} face detection computed in {elapsed:.3f}s")
+    # print(f"[ensure_face_cached] {file_path} face detection computed in {elapsed:.3f}s")
 
 
 # ---------------------------------------------------------------------------

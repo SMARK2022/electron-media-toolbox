@@ -12,21 +12,19 @@ import insightface
 
 # 控制是否启用人脸检测的全局开关（数据库字段仍会保留）
 ENABLE_FACE_DETECTION: bool = True
+# 控制是否启用眨眼检测的全局开关
+ENABLE_BLINK_DETECTION: bool = True
+# 眨眼检测最大 batch size
+_BLINK_MAX_BATCH: int = 4
 
 
 def _select_ort_providers() -> List[str]:
-    """选择最合适的 ONNX Runtime 执行后端。
-
-    优先级：
-    1. CUDAExecutionProvider
-    2. DmlExecutionProvider (DirectML, 适合 Windows + DX12 显卡)
-    3. CPUExecutionProvider
-    """
+    """选择最合适的 ONNX Runtime 执行后端。优先级: DML > CUDA > CPU"""
     providers = ort.get_available_providers()
-    if "CUDAExecutionProvider" in providers:
-        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
     if "DmlExecutionProvider" in providers:
         return ["DmlExecutionProvider", "CPUExecutionProvider"]
+    if "CUDAExecutionProvider" in providers:
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
     return ["CPUExecutionProvider"]
 
 
@@ -65,7 +63,6 @@ _IQA_CHECKPOINT_ONNX = Path(get_resource_path("checkpoint/lar_iqa.onnx"))
 _IQA_SESSION: Optional[ort.InferenceSession] = None
 _IQA_SESSION_CPU: Optional[ort.InferenceSession] = None
 _IQA_INPUT_NAMES: List[str] = []
-_IQA_RUN_LOCK = threading.Lock()
 _IQA_IS_DML = False
 
 # ============================================================================
@@ -74,8 +71,24 @@ _IQA_IS_DML = False
 _FACE_DET_MODEL_PATH = Path(get_resource_path("checkpoint/det_500m.onnx"))
 _FACE_DETECTOR = None
 _FACE_DET_PROVIDERS: List[str] = []
-_FACE_DET_LOCK = threading.Lock()
 _FACE_DET_IS_DML = False
+
+# ============================================================================
+# 眨眼检测模型相关全局变量 (2d106det)
+# ============================================================================
+_BLINK_MODEL_PATH = Path(get_resource_path("checkpoint/2d106det_batch.onnx"))
+_BLINK_SESSION: Optional[ort.InferenceSession] = None
+_BLINK_INPUT_NAME: str = ""
+_BLINK_IS_DML = False
+# 106->68 映射表 (dlib风格)
+_MAP_106_TO_68 = np.array([1,10,12,14,16,3,5,7,0,23,21,19,32,30,28,26,17,43,48,49,51,50,102,103,104,105,101,72,73,74,86,78,79,80,85,84,35,41,42,39,37,36,89,95,96,93,91,90,52,64,63,71,67,68,61,58,59,53,56,55,65,66,62,70,69,57,60,54], dtype=np.int64)
+_RIGHT_EYE_IDX = list(range(36, 42))
+_LEFT_EYE_IDX = list(range(42, 48))
+
+# ============================================================================
+# 🔧 新增：全局 DirectML 总锁（用于协调所有 DML Session）
+# ============================================================================
+_GLOBAL_DML_LOCK = threading.Lock()
 
 
 def _init_iqa_sessions_if_needed() -> None:
@@ -134,22 +147,6 @@ def _init_iqa_sessions_if_needed() -> None:
         _IQA_IS_DML = False
 
 
-def _select_face_providers() -> List[str]:
-    """为人脸检测选择最合适的 ONNX Runtime 执行后端。
-
-    优先级：
-    1. DmlExecutionProvider (优先，适合 Windows + DX12)
-    2. CUDAExecutionProvider
-    3. CPUExecutionProvider
-    """
-    providers = ort.get_available_providers()
-    if "DmlExecutionProvider" in providers:
-        return ["DmlExecutionProvider", "CPUExecutionProvider"]
-    if "CUDAExecutionProvider" in providers:
-        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
-    return ["CPUExecutionProvider"]
-
-
 def _init_face_detector_if_needed() -> None:
     """懒加载人脸检测器 (SCRFD det_500m.onnx)。"""
     global _FACE_DETECTOR, _FACE_DET_PROVIDERS, _FACE_DET_IS_DML
@@ -165,7 +162,7 @@ def _init_face_detector_if_needed() -> None:
         return
 
     try:
-        providers = _select_face_providers()
+        providers = _select_ort_providers()
         _FACE_DET_PROVIDERS = providers
         _FACE_DET_IS_DML = "DmlExecutionProvider" in providers
         print(f"[FACE] providers={providers}, is_dml={_FACE_DET_IS_DML}")
@@ -204,17 +201,114 @@ def _init_face_detector_if_needed() -> None:
         _FACE_DET_IS_DML = False
 
 
+def _init_blink_session_if_needed() -> None:
+    """懒加载眨眼检测模型 (2d106det_batch.onnx)。"""
+    global _BLINK_SESSION, _BLINK_INPUT_NAME, _BLINK_IS_DML
+    if _BLINK_SESSION is not None:
+        return
+    if not _BLINK_MODEL_PATH.exists():
+        print(f"[BLINK] 2d106det_batch.onnx not found at {_BLINK_MODEL_PATH}, blink detection disabled.")
+        return
+    try:
+        providers = _select_ort_providers()
+        so = ort.SessionOptions()
+        if "DmlExecutionProvider" in providers:
+            so.enable_mem_pattern = False
+            so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+            so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
+        else:
+            so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        _BLINK_SESSION = ort.InferenceSession(str(_BLINK_MODEL_PATH), sess_options=so, providers=providers)
+        _BLINK_INPUT_NAME = _BLINK_SESSION.get_inputs()[0].name
+        _BLINK_IS_DML = "DmlExecutionProvider" in _BLINK_SESSION.get_providers()
+        print(f"[BLINK] Loaded model from {_BLINK_MODEL_PATH}, providers={_BLINK_SESSION.get_providers()}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[BLINK] Failed to init session ({e}). Blink detection disabled.")
+        _BLINK_SESSION = None
+
+
+def _eye_aspect_ratio(eye_pts: np.ndarray) -> float:
+    """EAR = (||p2-p6|| + ||p3-p5||) / (2 * ||p1-p4||)"""
+    A = np.linalg.norm(eye_pts[1] - eye_pts[5])
+    B = np.linalg.norm(eye_pts[2] - eye_pts[4])
+    C = np.linalg.norm(eye_pts[0] - eye_pts[3])
+    return float((A + B) / (2.0 * C)) if C > 1e-6 else 0.0
+
+
+def _expand_bbox(bbox: Tuple[float, float, float, float], img_shape: Tuple[int, ...], scale: float = 1.2) -> Tuple[int, int, int, int]:
+    """扩展 bbox 并裁剪到图像边界内。"""
+    h, w = img_shape[:2]
+    x1, y1, x2, y2 = bbox
+    cx, cy = (x1 + x2) * 0.5, (y1 + y2) * 0.5
+    bw, bh = (x2 - x1) * scale, (y2 - y1) * scale
+    return max(0, int(cx - bw * 0.5)), max(0, int(cy - bh * 0.5)), min(w, int(cx + bw * 0.5)), min(h, int(cy + bh * 0.5))
+
+
+def _run_blink_batch(img_bgr: np.ndarray, faces: List[dict]) -> None:
+    """批量运行眨眼检测，将 eye_open 写入每个 face dict。"""
+    if not ENABLE_BLINK_DETECTION or _BLINK_SESSION is None or not faces:
+        return
+
+    try:
+        n = len(faces)
+        patches: List[np.ndarray] = []
+        metas: List[Tuple[int, int, int, int]] = []  # (ex1, ey1, w, h)
+
+        for f in faces:
+            x1, y1, x2, y2 = f["bbox"]
+            ex1, ey1, ex2, ey2 = _expand_bbox((x1, y1, x2, y2), img_bgr.shape, 1.2)
+            if ex2 <= ex1 or ey2 <= ey1:
+                patches.append(None)
+                metas.append((0, 0, 0, 0))
+                continue
+            patch = img_bgr[ey1:ey2, ex1:ex2]
+            patch = cv2.resize(patch, (192, 192))
+            patch = cv2.cvtColor(patch, cv2.COLOR_BGR2RGB).astype(np.float32).transpose(2, 0, 1)
+            patches.append(patch)
+            metas.append((ex1, ey1, ex2 - ex1, ey2 - ey1))
+
+        # 分 batch 推理
+        for start in range(0, n, _BLINK_MAX_BATCH):
+            end = min(start + _BLINK_MAX_BATCH, n)
+            valid_idx = [i for i in range(start, end) if patches[i] is not None]
+            if not valid_idx:
+                continue
+
+            batch = np.ascontiguousarray(np.stack([patches[i] for i in valid_idx], axis=0))
+
+            # 🔧 使用全局 DML 锁保护所有 DirectML 推理
+            if _BLINK_IS_DML:
+                with _GLOBAL_DML_LOCK:
+                    out = _BLINK_SESSION.run(None, {_BLINK_INPUT_NAME: batch})[0]
+            else:
+                out = _BLINK_SESSION.run(None, {_BLINK_INPUT_NAME: batch})[0]
+
+            out = out.reshape(len(valid_idx), 106, 2)
+            for j, idx in enumerate(valid_idx):
+                lm = (out[j] + 1.0) / 2.0  # [-1,1] -> [0,1]
+                ex1, ey1, wf, hf = metas[idx]
+                lm[:, 0] = lm[:, 0] * wf + ex1
+                lm[:, 1] = lm[:, 1] * hf + ey1
+                lm68 = lm[_MAP_106_TO_68]
+                ear_r = _eye_aspect_ratio(lm68[_RIGHT_EYE_IDX])
+                ear_l = _eye_aspect_ratio(lm68[_LEFT_EYE_IDX])
+                # 平方根均值: ((sqrt(a)+sqrt(b))/2)^2
+                eye_open = ((np.sqrt(ear_l) + np.sqrt(ear_r)) / 2.0) ** 2
+                faces[idx]["eye_open"] = float(eye_open)
+
+    except Exception as e:
+        print(f"[BLINK] Error during blink detection: {e}")
+        # 确保所有 face 都有 eye_open 字段，即使失败
+        for f in faces:
+            if "eye_open" not in f:
+                f["eye_open"] = 0.0
+
+
 def preprocess_iqa_from_bgr(
     img_bgr: np.ndarray,
     color_space: str = "RGB",
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """根据 IQA 模型需求，对 BGR 图像做前处理，输出两个 NCHW Tensor。
-
-    - BGR -> RGB
-    - authentic 分支: Resize 到 384x384
-    - synthetic 分支: CenterCrop 到 1280x1280
-    - 归一化 & 标准化
-    """
+    """根据 IQA 模型需求，对 BGR 图像做前处理，输出两个 NCHW Tensor。"""
     # BGR -> RGB
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
@@ -236,7 +330,6 @@ def preprocess_iqa_from_bgr(
     h, w, _ = working.shape
     crop_size = 1280
     if h < crop_size or w < crop_size:
-        # 模拟 torchvision CenterCrop 对"小图"的行为：
         # 先将短边缩放到 1280，再中心裁剪
         scale = crop_size / min(h, w)
         new_w = int(round(w * scale))
@@ -281,9 +374,9 @@ def infer_iqa_from_bgr(img_bgr: np.ndarray, color_space: str = "RGB") -> float:
     }
 
     try:
+        # 🔧 使用全局 DML 锁
         if _IQA_IS_DML:
-            # DirectML Session 不允许多线程并发 Run，必须串行化
-            with _IQA_RUN_LOCK:
+            with _GLOBAL_DML_LOCK:
                 outputs = _IQA_SESSION.run(None, inputs)
         else:
             outputs = _IQA_SESSION.run(None, inputs)
@@ -291,34 +384,33 @@ def infer_iqa_from_bgr(img_bgr: np.ndarray, color_space: str = "RGB") -> float:
         print(f"[IQA] GPU/DirectML inference failed ({e}), falling back to CPUExecutionProvider.")
         outputs = _IQA_SESSION_CPU.run(None, inputs)
 
-    # 假定第一个输出是标量或 [1,1] 形式
     score_array = outputs[0]
     score = float(np.asarray(score_array).reshape(-1)[0])
     return float(score) * 20.0
 
 
 def detect_faces_from_bgr(img_bgr: np.ndarray, score_thresh: float = 0.5) -> dict:
-    """在 BGR 图像上做人脸检测，返回易于前端消费的 JSON 结构。
+    """在 BGR 图像上做人脸检测 + 眨眼检测，返回易于前端消费的 JSON 结构。
 
     返回示例：
     {
         "faces": [
-            {"bbox": [x1, y1, x2, y2], "score": 0.93},
+            {"bbox": [x1, y1, x2, y2], "score": 0.93, "eye_open": 0.25},
             ...
         ]
     }
     仅保留 score >= score_thresh 的人脸。
     """
     if not ENABLE_FACE_DETECTION:
-        # 若关闭开关，则返回空结构（数据库仍保留列）
         return {"faces": []}
 
     _init_face_detector_if_needed()
+    _init_blink_session_if_needed()
     if _FACE_DETECTOR is None:
         return {"faces": []}
 
     try:
-        # insightface detector 接收 BGR np.ndarray
+        # 🔧 使用全局 DML 锁保护整个人脸检测流程
         sig = inspect.signature(_FACE_DETECTOR.detect)
         kw = {}
         if "input_size" in sig.parameters:
@@ -328,9 +420,9 @@ def detect_faces_from_bgr(img_bgr: np.ndarray, score_thresh: float = 0.5) -> dic
         if "metric" in sig.parameters:
             kw["metric"] = "default"
 
-        # 如果是 DirectML，使用互斥锁保护
+        # 使用全局锁保护所有 DirectML 操作
         if _FACE_DET_IS_DML:
-            with _FACE_DET_LOCK:
+            with _GLOBAL_DML_LOCK:
                 bboxes, _kpss = _FACE_DETECTOR.detect(img_bgr, **kw)
         else:
             bboxes, _kpss = _FACE_DETECTOR.detect(img_bgr, **kw)
@@ -341,28 +433,34 @@ def detect_faces_from_bgr(img_bgr: np.ndarray, score_thresh: float = 0.5) -> dic
                 x1, y1, x2, y2, score = bb.astype(np.float32).tolist()
                 if score < score_thresh:
                     continue
-                cx, cy = (x1 + x2) / 2, (y1 + y2) / 2  # 人脸中心点
+                cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
                 faces.append({"bbox": [float(x1), float(y1), float(x2), float(y2)], "score": float(score), "cx": cx, "cy": cy})
 
-        # 按空间位置排序：拟合直线后按投影距离排序
+        # 按空间位置排序
         if len(faces) >= 2:
-            pts = np.array([[f["cx"], f["cy"]] for f in faces])  # 提取中心点
-            mean = pts.mean(axis=0)  # 中心化
-            _, _, vh = np.linalg.svd(pts - mean, full_matrices=False)  # SVD 拟合主方向
-            direction = vh[0]  # 主方向向量
-            if direction[0] + direction[1] < 0:  # 确保方向指向右下（从左上开始排序）
+            pts = np.array([[f["cx"], f["cy"]] for f in faces])
+            mean = pts.mean(axis=0)
+            _, _, vh = np.linalg.svd(pts - mean, full_matrices=False)
+            direction = vh[0]
+            if direction[0] + direction[1] < 0:
                 direction = -direction
-            projs = [(pts[i] - mean) @ direction for i in range(len(faces))]  # 计算投影值
-            faces = [faces[i] for i in np.argsort(projs)]  # 按投影值排序
-        elif len(faces) == 1:
-            pass  # 单个人脸无需排序
+            projs = [(pts[i] - mean) @ direction for i in range(len(faces))]
+            faces = [faces[i] for i in np.argsort(projs)]
 
-        for f in faces:  # 清理临时字段
+        for f in faces:
             f.pop("cx", None)
             f.pop("cy", None)
+
+        # 批量眨眼检测
+        print("[FACE] Running blink detection on detected faces...")
+        _run_blink_batch(img_bgr, faces)
+        print(f"[FACE] Detected {len(faces)} faces with blink status.")
 
         return {"faces": faces}
 
     except Exception as e:  # noqa: BLE001
         print(f"[FACE] Face detection failed ({e}).")
+        import traceback
+
+        traceback.print_exc()  # 🔧 打印完整堆栈
         return {"faces": []}

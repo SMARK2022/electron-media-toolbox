@@ -4,6 +4,22 @@ import sys
 import traceback
 from datetime import datetime
 
+import asyncio
+import io
+import time
+import threading  # 新增：用于后台退出线程
+import numpy as np
+import cv2
+
+from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+
+from utils.image_compute import process_and_group_images  # 使用 ONNX 版本的图像处理函数
+from utils.thumbnails import generate_thumbnails, get_thumbnail
+
 # ============================
 # 环境检测 & 日志基础设施
 # ============================
@@ -61,22 +77,6 @@ _log("Python runtime started.")
 # ============================
 # 正文 import
 # ============================
-
-import asyncio
-import io
-import time
-import threading  # 新增：用于后台退出线程
-import numpy as np
-import cv2
-
-from fastapi import FastAPI, Request
-from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
-
-from utils.image_compute import process_and_group_images  # 使用 ONNX 版本的图像处理函数
-from utils.thumbnails import generate_thumbnails, get_thumbnail
 
 
 # ============================
