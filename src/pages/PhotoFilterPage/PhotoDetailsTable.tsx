@@ -154,8 +154,11 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
   // 人脸追踪器实例（持久化）
   const faceTrackerRef = useRef<FaceTracker>(new FaceTracker());
 
-  // 是否禁用自动聚焦（用户手动交互后禁用）
-  const [autoFocusDisabled, setAutoFocusDisabled] = useState(false);
+  // 追踪模式是否激活（用户选择人脸后激活，手动交互后取消）
+  const [isTrackingActive, setIsTrackingActive] = useState(false);
+
+  // 是否为图片切换后的首次聚焦（用于禁用动画）
+  const [isFirstFocusAfterSwitch, setIsFirstFocusAfterSwitch] = useState(false);
 
   // 记录上一张图片的 filePath，用于检测图片切换
   const prevFilePathRef = useRef<string>("");
@@ -204,11 +207,12 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
     const isNewPhoto = filePath !== prevFilePathRef.current;
 
     if (isNewPhoto) {
-      // 重置自动聚焦禁用状态（新图片允许自动聚焦）
-      setAutoFocusDisabled(false);
+      // 标记为图片切换后的首次聚焦（禁用动画）
+      setIsFirstFocusAfterSwitch(true);
 
-      // 如果有人脸追踪状态，尝试匹配
+      // 如果追踪模式激活且有人脸追踪状态，尝试匹配
       if (
+        isTrackingActive &&
         faceTrackerRef.current.hasTracking() &&
         faces.length > 0 &&
         imageSize.width > 0
@@ -238,7 +242,7 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
             faces.length,
           );
         } else {
-          // 没有匹配，清除追踪和选中状态
+          // 没有匹配，清除选中状态但保持追踪模式
           setActiveFaceIndex(null);
           setFocusRegion(null);
         }
@@ -249,8 +253,13 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
       }
 
       prevFilePathRef.current = filePath;
+
+      // 延迟重置首次聚焦标记（给图片加载和聚焦一点时间）
+      setTimeout(() => {
+        setIsFirstFocusAfterSwitch(false);
+      }, 150);
     }
-  }, [filePath, faces, imageSize]);
+  }, [filePath, faces, imageSize, isTrackingActive]);
 
   // 当图片加载完成时获取尺寸（通过隐藏的 img 元素）
   useEffect(() => {
@@ -318,7 +327,7 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
       requestId: Date.now(),
     });
 
-    // 用户手动选择人脸时，更新追踪状态
+    // 用户手动选择人脸时，更新追踪状态并激活追踪模式
     if (imageSize.width > 0) {
       faceTrackerRef.current.setTrackedFace(
         face as TrackerFaceInfo,
@@ -326,25 +335,26 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
         imageSize,
         faces.length,
       );
+      // 激活追踪模式
+      setIsTrackingActive(true);
     }
-
-    // 重新启用自动聚焦（用户选择了新的人脸）
-    setAutoFocusDisabled(false);
   }, [imageSize, faces.length]);
 
-  // 用户手动交互时禁用自动聚焦
+  // 用户手动交互时取消追踪模式
   const handleUserInteraction = useCallback(() => {
-    setAutoFocusDisabled(true);
-    console.log("[FaceTracker] Auto-focus disabled due to user interaction");
+    // 清除追踪状态
+    faceTrackerRef.current.clearTracking();
+    setIsTrackingActive(false);
+    setActiveFaceIndex(null);
+    setFocusRegion(null);
+    console.log("[FaceTracker] Tracking cancelled due to user interaction");
   }, []);
-
-  const isTrackingMode = activeFaceIndex !== null || faceTrackerRef.current.hasTracking();
 
   const faceLabel = t("photoDetailsTable.faceDetected", {
     count: faces.length,
     defaultValue: `检测到 ${faces.length} 个人脸`,
   });
-  const faceHelper = isTrackingMode
+  const faceHelper = isTrackingActive
     ? t("photoDetailsTable.faceTrackingMode", {
         defaultValue: "人像追踪模式已开启，自动跟随同一人物",
       })
@@ -375,8 +385,9 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
           src={previewSrc}
           height="100%"
           width="100%"
-          focusRegion={autoFocusDisabled ? undefined : (focusRegion ?? undefined)}
+          focusRegion={focusRegion ?? undefined}
           onUserInteraction={handleUserInteraction}
+          disableFocusAnimation={isFirstFocusAfterSwitch}
         />
       </div>
 
@@ -477,7 +488,7 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
             onFaceSelect={handleFaceSelect}
             label={faceLabel}
             helperLabel={faceHelper}
-            isTrackingMode={isTrackingMode}
+            isTrackingMode={isTrackingActive}
           />
 
           <ScrollArea className="flex-1">

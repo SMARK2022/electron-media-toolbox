@@ -16,6 +16,11 @@ interface ImagePreviewProps {
    * 用于通知父组件禁用自动聚焦功能
    */
   onUserInteraction?: () => void;
+  /**
+   * 是否禁用聚焦动画（用于图片切换时避免不连贯感）
+   * 当为 true 时，focusRegion 变化不会触发动画，而是直接跳转
+   */
+  disableFocusAnimation?: boolean;
 }
 
 const clamp = (value: number, min: number, max: number) =>
@@ -27,6 +32,7 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   height,
   focusRegion,
   onUserInteraction,
+  disableFocusAnimation = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -49,6 +55,9 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   const [showZoomBadge, setShowZoomBadge] = useState(false);
   const zoomBadgeTimer = useRef<NodeJS.Timeout | null>(null);
   const focusRegionRef = useRef<PreviewFocusRegion | null>(null);
+
+  // 防抖 resize 定时器
+  const resizeDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // 缩放限制（相对于自适应尺寸）
   const MIN_SCALE = 1; // 最小就是自适应大小
@@ -165,7 +174,7 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   );
 
   const focusOnRegion = useCallback(
-    (region: PreviewFocusRegion | null) => {
+    (region: PreviewFocusRegion | null, skipAnimation: boolean = false) => {
       if (
         !region ||
         !containerSize.width ||
@@ -211,8 +220,11 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
 
       setScale(clampedScale);
       setPosition(clampedPos);
-      setIsAnimating(true);
-      triggerZoomBadge();
+      // 如果 skipAnimation 为 true，则不启用动画（直接跳转）
+      setIsAnimating(!skipAnimation);
+      if (!skipAnimation) {
+        triggerZoomBadge();
+      }
       return true;
     },
     [
@@ -232,17 +244,29 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
     setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
   };
 
-  // 监听容器尺寸变化
+  // 监听容器尺寸变化（添加防抖以避免拖拽时高频计算）
   useEffect(() => {
     if (!containerRef.current) return;
 
     const resizeObserver = new ResizeObserver(() => {
-      // 容器变化时保持当前缩放，只调整位置
-      fitToContainer(false);
+      // 清除之前的防抖定时器
+      if (resizeDebounceRef.current) {
+        clearTimeout(resizeDebounceRef.current);
+      }
+      // 使用 100ms 防抖延迟
+      resizeDebounceRef.current = setTimeout(() => {
+        // 容器变化时保持当前缩放，只调整位置
+        fitToContainer(false);
+      }, 100);
     });
 
     resizeObserver.observe(containerRef.current);
-    return () => resizeObserver.disconnect();
+    return () => {
+      resizeObserver.disconnect();
+      if (resizeDebounceRef.current) {
+        clearTimeout(resizeDebounceRef.current);
+      }
+    };
   }, [fitToContainer]);
 
   // 图片加载后自适应（区分首次加载和切换图片）
@@ -258,13 +282,14 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   useEffect(() => {
     if (!focusRegion) return;
     focusRegionRef.current = focusRegion;
-    focusOnRegion(focusRegion);
-  }, [focusRegion, focusOnRegion]);
+    // 使用 disableFocusAnimation 参数控制是否跳过动画
+    focusOnRegion(focusRegion, disableFocusAnimation);
+  }, [focusRegion, focusOnRegion, disableFocusAnimation]);
 
   useEffect(() => {
     if (!focusRegionRef.current) return;
-    focusOnRegion(focusRegionRef.current);
-  }, [focusOnRegion, imageSize, containerSize, baseScale]);
+    focusOnRegion(focusRegionRef.current, disableFocusAnimation);
+  }, [focusOnRegion, imageSize, containerSize, baseScale, disableFocusAnimation]);
 
   // 滚轮缩放（以鼠标为中心）
   const handleWheel = (e: React.WheelEvent) => {
