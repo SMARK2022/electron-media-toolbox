@@ -11,6 +11,11 @@ interface ImagePreviewProps {
   width?: string | number;
   height?: string | number;
   focusRegion?: PreviewFocusRegion;
+  /**
+   * 当用户手动交互（拖拽、缩放、双击）修改视图时触发的回调
+   * 用于通知父组件禁用自动聚焦功能
+   */
+  onUserInteraction?: () => void;
 }
 
 const clamp = (value: number, min: number, max: number) =>
@@ -21,6 +26,7 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   width,
   height,
   focusRegion,
+  onUserInteraction,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -265,6 +271,9 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
     e.preventDefault();
     if (isDragging) return;
 
+    // 通知父组件用户进行了手动交互
+    onUserInteraction?.();
+
     // 计算新缩放比例（相对于自适应尺寸）
     const delta = -Math.sign(e.deltaY) * ZOOM_SPEED;
     let newScale = scale + delta * scale;
@@ -298,6 +307,8 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
     setIsDragging(true);
     setIsAnimating(false);
     setLastMousePosition({ x: e.clientX, y: e.clientY });
+    // 通知父组件用户进行了手动交互
+    onUserInteraction?.();
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -326,6 +337,8 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     triggerZoomBadge(); // 双击也显示提示
+    // 通知父组件用户进行了手动交互
+    onUserInteraction?.();
 
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
