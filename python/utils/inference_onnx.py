@@ -87,6 +87,17 @@ _RIGHT_EYE_IDX = list(range(36, 42))
 _LEFT_EYE_IDX = list(range(42, 48))
 
 # ============================================================================
+# OCEC 眼睛开闭分类模型相关全局变量
+# ============================================================================
+_OCEC_MODEL_PATH = Path(get_resource_path("checkpoint/ocec_l.onnx"))
+_OCEC_SESSION: Optional[ort.InferenceSession] = None
+_OCEC_INPUT_NAME: str = ""
+_OCEC_INPUT_H: int = 30
+_OCEC_INPUT_W: int = 48
+_OCEC_IS_DML = False
+_OCEC_MAX_BATCH: int = 8
+
+# ============================================================================
 # 🔧 新增：全局 DirectML 总锁（用于协调所有 DML Session）
 # ============================================================================
 _GLOBAL_DML_LOCK = threading.Lock()
@@ -228,12 +239,48 @@ def _init_blink_session_if_needed() -> None:
         _BLINK_SESSION = None
 
 
+def _init_ocec_session_if_needed() -> None:
+    """懒加载 OCEC 眼睛开闭分类模型。"""
+    global _OCEC_SESSION, _OCEC_INPUT_NAME, _OCEC_INPUT_H, _OCEC_INPUT_W, _OCEC_IS_DML
+    if _OCEC_SESSION is not None:
+        return
+    if not _OCEC_MODEL_PATH.exists():
+        print(f"[OCEC] ocec_l.onnx not found at {_OCEC_MODEL_PATH}, OCEC disabled.")
+        return
+    try:
+        providers = _select_ort_providers()
+        so = ort.SessionOptions()
+        if "DmlExecutionProvider" in providers:
+            so.enable_mem_pattern = False
+            so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+            so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
+        else:
+            so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        _OCEC_SESSION = ort.InferenceSession(str(_OCEC_MODEL_PATH), sess_options=so, providers=providers)
+        inp = _OCEC_SESSION.get_inputs()[0]
+        _OCEC_INPUT_NAME = inp.name
+        shape = inp.shape
+        _OCEC_INPUT_H = int(shape[2]) if shape[2] else 30
+        _OCEC_INPUT_W = int(shape[3]) if shape[3] else 48
+        _OCEC_IS_DML = "DmlExecutionProvider" in _OCEC_SESSION.get_providers()
+        print(f"[OCEC] Loaded model from {_OCEC_MODEL_PATH}, input=({_OCEC_INPUT_H},{_OCEC_INPUT_W}), providers={_OCEC_SESSION.get_providers()}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[OCEC] Failed to init session ({e}). OCEC disabled.")
+        _OCEC_SESSION = None
+
+
 def _eye_aspect_ratio(eye_pts: np.ndarray) -> float:
     """EAR = (||p2-p6|| + ||p3-p5||) / (2 * ||p1-p4||)"""
     A = np.linalg.norm(eye_pts[1] - eye_pts[5])
     B = np.linalg.norm(eye_pts[2] - eye_pts[4])
     C = np.linalg.norm(eye_pts[0] - eye_pts[3])
     return float((A + B) / (2.0 * C)) if C > 1e-6 else 0.0
+
+
+def _ear_to_p_open(ear: float) -> float:
+    """将 EAR 转换为睁眼概率 [0,1]，使用 sigmoid(55*(ear-0.15))"""
+    p = 1.0 / (1.0 + np.exp(-55.0 * (ear - 0.15)))
+    return float(np.clip(p, 0.0, 1.0))
 
 
 def _expand_bbox(bbox: Tuple[float, float, float, float], img_shape: Tuple[int, ...], scale: float = 1.2) -> Tuple[int, int, int, int]:
@@ -245,14 +292,27 @@ def _expand_bbox(bbox: Tuple[float, float, float, float], img_shape: Tuple[int, 
     return max(0, int(cx - bw * 0.5)), max(0, int(cy - bh * 0.5)), min(w, int(cx + bw * 0.5)), min(h, int(cy + bh * 0.5))
 
 
-def _run_blink_batch(img_bgr: np.ndarray, faces: List[dict]) -> None:
-    """批量运行眨眼检测，将 eye_open 写入每个 face dict。"""
+def _compute_eye_bbox(eye_pts: np.ndarray, img_shape: Tuple[int, ...], scale: float = 2.0) -> Optional[Tuple[int, int, int, int]]:
+    """基于单眼 6 点计算外接矩形并放大 scale 倍，返回 (x1, y1, x2, y2) 或 None。"""
+    if eye_pts is None or len(eye_pts) < 6:
+        return None
+    h, w = img_shape[:2]
+    min_xy, max_xy = eye_pts.min(axis=0), eye_pts.max(axis=0)
+    cx, cy = (min_xy[0] + max_xy[0]) * 0.5, (min_xy[1] + max_xy[1]) * 0.5
+    bw, bh = max((max_xy[0] - min_xy[0]) * scale, 10), max((max_xy[1] - min_xy[1]) * scale, 10)
+    ex1, ey1 = max(0, int(cx - bw * 0.5)), max(0, int(cy - bh * 0.5))
+    ex2, ey2 = min(w, int(cx + bw * 0.5)), min(h, int(cy + bh * 0.5))
+    return (ex1, ey1, ex2, ey2) if ex2 > ex1 and ey2 > ey1 else None
+
+
+def _run_blink_landmark(img_bgr: np.ndarray, faces: List[dict]) -> None:
+    """批量运行 2d106det 关键点检测，计算双眼 EAR 概率并保存眼部区域到 faces。"""
     if not ENABLE_BLINK_DETECTION or _BLINK_SESSION is None or not faces:
         return
 
     try:
         n = len(faces)
-        patches: List[np.ndarray] = []
+        patches: List[Optional[np.ndarray]] = []
         metas: List[Tuple[int, int, int, int]] = []  # (ex1, ey1, w, h)
 
         for f in faces:
@@ -262,8 +322,7 @@ def _run_blink_batch(img_bgr: np.ndarray, faces: List[dict]) -> None:
                 patches.append(None)
                 metas.append((0, 0, 0, 0))
                 continue
-            patch = img_bgr[ey1:ey2, ex1:ex2]
-            patch = cv2.resize(patch, (192, 192))
+            patch = cv2.resize(img_bgr[ey1:ey2, ex1:ex2], (192, 192))
             patch = cv2.cvtColor(patch, cv2.COLOR_BGR2RGB).astype(np.float32).transpose(2, 0, 1)
             patches.append(patch)
             metas.append((ex1, ey1, ex2 - ex1, ey2 - ey1))
@@ -276,8 +335,6 @@ def _run_blink_batch(img_bgr: np.ndarray, faces: List[dict]) -> None:
                 continue
 
             batch = np.ascontiguousarray(np.stack([patches[i] for i in valid_idx], axis=0))
-
-            # 🔧 使用全局 DML 锁保护所有 DirectML 推理
             if _BLINK_IS_DML:
                 with _GLOBAL_DML_LOCK:
                     out = _BLINK_SESSION.run(None, {_BLINK_INPUT_NAME: batch})[0]
@@ -291,18 +348,101 @@ def _run_blink_batch(img_bgr: np.ndarray, faces: List[dict]) -> None:
                 lm[:, 0] = lm[:, 0] * wf + ex1
                 lm[:, 1] = lm[:, 1] * hf + ey1
                 lm68 = lm[_MAP_106_TO_68]
+
+                # 计算双眼 EAR 并转换为概率
                 ear_r = _eye_aspect_ratio(lm68[_RIGHT_EYE_IDX])
                 ear_l = _eye_aspect_ratio(lm68[_LEFT_EYE_IDX])
-                # 平方根均值: ((sqrt(a)+sqrt(b))/2)^2
-                eye_open = np.sqrt((ear_l**2 + ear_r**2) / 2)
-                faces[idx]["eye_open"] = float(eye_open)
+                prob_r_ear = _ear_to_p_open(ear_r)
+                prob_l_ear = _ear_to_p_open(ear_l)
+
+                # 计算眼部 2 倍外接矩形
+                right_bbox = _compute_eye_bbox(lm68[_RIGHT_EYE_IDX], img_bgr.shape, scale=2.0)
+                left_bbox = _compute_eye_bbox(lm68[_LEFT_EYE_IDX], img_bgr.shape, scale=2.0)
+
+                # 保存到 face dict
+                faces[idx]["_ear_prob_r"] = prob_r_ear
+                faces[idx]["_ear_prob_l"] = prob_l_ear
+                faces[idx]["_eye_bbox_r"] = right_bbox
+                faces[idx]["_eye_bbox_l"] = left_bbox
 
     except Exception as e:
-        print(f"[BLINK] Error during blink detection: {e}")
-        # 确保所有 face 都有 eye_open 字段，即使失败
+        print(f"[BLINK] Error during landmark detection: {e}")
+
+
+def _run_ocec_batch(img_bgr: np.ndarray, faces: List[dict]) -> None:
+    """批量运行 OCEC 模型对眼部区域进行开闭眼分类，融合 EAR 概率得到最终 eye_open。"""
+    if _OCEC_SESSION is None:
+        # 无 OCEC 模型时直接使用 EAR 概率
         for f in faces:
-            if "eye_open" not in f:
-                f["eye_open"] = 0.0
+            pr = f.pop("_ear_prob_r", 0.5)
+            pl = f.pop("_ear_prob_l", 0.5)
+            f.pop("_eye_bbox_r", None)
+            f.pop("_eye_bbox_l", None)
+            f["eye_open"] = float(np.sqrt((pr**2 + pl**2) / 2.0))
+        return
+
+    try:
+        # 收集所有需要推理的眼部 patch
+        eye_patches: List[Optional[np.ndarray]] = []  # 每个 face 有 [右眼, 左眼]
+        for f in faces:
+            for key in ("_eye_bbox_r", "_eye_bbox_l"):
+                bbox = f.get(key)
+                if bbox is None:
+                    eye_patches.append(None)
+                    continue
+                x1, y1, x2, y2 = bbox
+                crop = img_bgr[y1:y2, x1:x2]
+                if crop.size == 0:
+                    eye_patches.append(None)
+                    continue
+                resized = cv2.resize(crop, (_OCEC_INPUT_W, _OCEC_INPUT_H))
+                rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+                eye_patches.append(rgb.transpose(2, 0, 1))
+
+        # OCEC 批量推理
+        ocec_probs = [None] * len(eye_patches)
+        total = len(eye_patches)
+        for start in range(0, total, _OCEC_MAX_BATCH):
+            end = min(start + _OCEC_MAX_BATCH, total)
+            valid_idx = [i for i in range(start, end) if eye_patches[i] is not None]
+            if not valid_idx:
+                continue
+            batch = np.ascontiguousarray(np.stack([eye_patches[i] for i in valid_idx], axis=0), dtype=np.float32)
+            if _OCEC_IS_DML:
+                with _GLOBAL_DML_LOCK:
+                    out = _OCEC_SESSION.run(None, {_OCEC_INPUT_NAME: batch})[0]
+            else:
+                out = _OCEC_SESSION.run(None, {_OCEC_INPUT_NAME: batch})[0]
+            out = np.clip(out.flatten(), 0.0, 1.0)
+            for j, idx in enumerate(valid_idx):
+                ocec_probs[idx] = float(out[j])
+
+        # 融合概率并计算最终 eye_open
+        for i, f in enumerate(faces):
+            pr_ear = f.pop("_ear_prob_r", 0.5)
+            pl_ear = f.pop("_ear_prob_l", 0.5)
+            f.pop("_eye_bbox_r", None)
+            f.pop("_eye_bbox_l", None)
+
+            pr_ocec = ocec_probs[i * 2]
+            pl_ocec = ocec_probs[i * 2 + 1]
+
+            # 融合：(EAR概率 + OCEC概率) / 2
+            prob_r = (pr_ear + pr_ocec) / 2.0 if pr_ocec is not None else pr_ear
+            prob_l = (pl_ear + pl_ocec) / 2.0 if pl_ocec is not None else pl_ear
+
+            # 双眼综合：sqrt((L^2 + R^2) / 2)
+            f["eye_open"] = float(np.sqrt((prob_r**2 + prob_l**2) / 2.0))
+
+    except Exception as e:
+        print(f"[OCEC] Error during OCEC inference: {e}")
+        # 降级到仅使用 EAR 概率
+        for f in faces:
+            pr = f.pop("_ear_prob_r", 0.5)
+            pl = f.pop("_ear_prob_l", 0.5)
+            f.pop("_eye_bbox_r", None)
+            f.pop("_eye_bbox_l", None)
+            f["eye_open"] = float(np.sqrt((pr**2 + pl**2) / 2.0))
 
 
 def preprocess_iqa_from_bgr(
@@ -407,6 +547,7 @@ def detect_faces_from_bgr(img_bgr: np.ndarray, score_thresh: float = 0.5) -> dic
 
     _init_face_detector_if_needed()
     _init_blink_session_if_needed()
+    _init_ocec_session_if_needed()
     if _FACE_DETECTOR is None:
         return {"faces": []}
 
@@ -452,8 +593,10 @@ def detect_faces_from_bgr(img_bgr: np.ndarray, score_thresh: float = 0.5) -> dic
             f.pop("cx", None)
             f.pop("cy", None)
 
-        # 批量眨眼检测
-        _run_blink_batch(img_bgr, faces)
+        # 批量关键点检测 + EAR 计算 + 眼部区域提取
+        _run_blink_landmark(img_bgr, faces)
+        # 批量 OCEC 推理 + 融合概率得到最终 eye_open
+        _run_ocec_batch(img_bgr, faces)
 
         return {"faces": faces}
 
