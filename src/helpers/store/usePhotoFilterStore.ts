@@ -350,6 +350,8 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
 
     // 禁用图片时，需要找到下一张（或上一张）图片作为新的预览焦点
     let nextPreviewPhoto: Photo | null = null;
+    let nextPreviewExtended: PhotoExtend[] = [];
+
     if (!newEnabled && !boolShowDisabledPhotos) {
       // 在所有分组中找到当前图片的位置，并选择相邻的图片
       const flatPhotos = lstGalleryGroupedPhotos.flat();
@@ -361,6 +363,15 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
           nextPreviewPhoto = flatPhotos[currentIndex + 1];
         } else if (currentIndex > 0) {
           nextPreviewPhoto = flatPhotos[currentIndex - 1];
+        }
+      }
+
+      // 预先获取下一张图片的扩展信息，避免中间状态
+      if (nextPreviewPhoto) {
+        try {
+          nextPreviewExtended = await getPhotosExtendByPhotos([nextPreviewPhoto]);
+        } catch (error) {
+          console.error("获取下一张预览图片失败:", error);
         }
       }
     }
@@ -383,6 +394,16 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
         p.filePath === target.filePath ? { ...p, isEnabled: newEnabled } : p,
       );
 
+      // 如果禁用图片且有下一张预览图，直接切换（避免中间空状态）
+      if (!newEnabled && !boolShowDisabledPhotos && nextPreviewExtended.length > 0) {
+        return {
+          lstGalleryGroupedPhotos: nextPhotos,
+          lstPreviewPhotoDetails: nextPreviewExtended,
+          tabRightPanel: "preview",
+          boolCurrentPreviewEnabled: nextPreviewExtended[0]?.isEnabled ?? false,
+        };
+      }
+
       return {
         lstGalleryGroupedPhotos: nextPhotos,
         lstPreviewPhotoDetails: newEnabled || boolShowDisabledPhotos ? nextPreview : [],
@@ -390,11 +411,6 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
         boolCurrentPreviewEnabled: newEnabled,
       };
     });
-
-    // 如果禁用了图片且找到了下一张预览图，自动选中它
-    if (!newEnabled && !boolShowDisabledPhotos && nextPreviewPhoto) {
-      await get().fnSelectPreviewPhotos([nextPreviewPhoto]);
-    }
   },
 
   fnDisableRedundantInGroups: async () => {
