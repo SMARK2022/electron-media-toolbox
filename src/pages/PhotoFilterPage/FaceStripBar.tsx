@@ -203,7 +203,8 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
 }) => {
   if (!faces.length || !imageSrc) return null;
 
-  // 统计闭眼数量
+  // 统计睁眼/闭眼数量
+  const openEyesCount = faces.filter(f => (f.eye_open ?? 1) > 0.20).length;
   const closedEyesCount = faces.filter(f => (f.eye_open ?? 1) < 0.15).length;
   const suspiciousCount = faces.filter(f => {
     const v = f.eye_open ?? 1;
@@ -215,7 +216,7 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
       className={cn(
         "w-full border-b border-slate-200/70 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/20",
         isTrackingMode &&
-          "bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-300/70 dark:border-emerald-600/70",
+          "border-emerald-300/70 bg-emerald-50/70 dark:border-emerald-600/70 dark:bg-emerald-950/40",
       )}
     >
       <div className="flex items-center justify-between px-3.5 py-1.5 text-[11px] text-slate-600 dark:text-slate-300">
@@ -223,7 +224,9 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
           <ScanFace
             className={cn(
               "h-3.5 w-3.5",
-              isTrackingMode ? "text-emerald-600 dark:text-emerald-400" : "text-indigo-500",
+              isTrackingMode
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-indigo-500",
             )}
           />
           <span>{label}</span>
@@ -233,17 +236,24 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
             </span>
           )}
 
-          {/* 闭眼/疑似闭眼统计 Badge */}
-          {(closedEyesCount > 0 || suspiciousCount > 0) && (
-            <div className="flex gap-1 ml-1">
+          {/* 睁眼/闭眼/疑似闭眼统计 Badge */}
+          {(openEyesCount > 0 ||
+            closedEyesCount > 0 ||
+            suspiciousCount > 0) && (
+            <div className="ml-1 flex gap-1">
               {closedEyesCount > 0 && (
-                <span className="flex items-center gap-0.5 text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium dark:bg-red-900/50 dark:text-red-300">
-                  <EyeOff className="w-2.5 h-2.5" /> {closedEyesCount}
+                <span className="flex items-center gap-0.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-medium text-red-700 dark:bg-red-900/50 dark:text-red-300">
+                  <EyeOff className="h-2.5 w-2.5" /> {closedEyesCount}
                 </span>
               )}
               {suspiciousCount > 0 && (
-                <span className="flex items-center gap-0.5 text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium dark:bg-amber-900/50 dark:text-amber-300">
-                  <AlertCircle className="w-2.5 h-2.5" /> {suspiciousCount}
+                <span className="flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                  <AlertCircle className="h-2.5 w-2.5" /> {suspiciousCount}
+                </span>
+              )}
+              {openEyesCount > 0 && (
+                <span className="flex items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                  <Eye className="h-2.5 w-2.5" /> {openEyesCount}
                 </span>
               )}
             </div>

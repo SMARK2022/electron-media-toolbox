@@ -1,4 +1,6 @@
+import json
 import sqlite3
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple, Callable, Optional, Any
@@ -16,6 +18,142 @@ from utils.inference_onnx import infer_iqa_from_bgr, detect_faces_from_bgr
 
 HSVHist = Tuple[np.ndarray, np.ndarray, np.ndarray]
 BINS: List[int] = [90, 128, 128]
+
+
+# ---------------------------------------------------------------------------
+# 线程安全的数据库管理器
+# ---------------------------------------------------------------------------
+
+
+class DBManager:
+    """线程安全的数据库管理器，用于在多线程环境下实时缓存数据到数据库。"""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._lock = threading.Lock()
+        # 缓存 filePath -> row_id 的映射，避免重复查询
+        self._file_id_cache: Dict[str, int] = {}
+        self._cache_initialized = False
+
+    def _ensure_cache_initialized(self, cursor: sqlite3.Cursor) -> None:
+        """初始化 filePath -> row_id 缓存。"""
+        if self._cache_initialized:
+            return
+        cursor.execute("SELECT id, filePath FROM present")
+        for row_id, file_path in cursor.fetchall():
+            self._file_id_cache[file_path] = row_id
+        self._cache_initialized = True
+
+    def _get_row_id(self, cursor: sqlite3.Cursor, file_path: str) -> Optional[int]:
+        """获取文件对应的数据库行 ID。"""
+        if file_path in self._file_id_cache:
+            return self._file_id_cache[file_path]
+        cursor.execute("SELECT id FROM present WHERE filePath = ?", (file_path,))
+        row = cursor.fetchone()
+        if row:
+            self._file_id_cache[file_path] = row[0]
+            return row[0]
+        return None
+
+    def update_hist(self, file_path: str, hist: HSVHist) -> None:
+        """实时更新直方图数据到数据库。"""
+        h, s, v = hist
+        h_blob = h.astype(np.float32).tobytes()
+        s_blob = s.astype(np.float32).tobytes()
+        v_blob = v.astype(np.float32).tobytes()
+
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            try:
+                self._ensure_cache_initialized(cursor)
+                row_id = self._get_row_id(cursor, file_path)
+                if row_id:
+                    cursor.execute(
+                        """
+                        UPDATE present
+                        SET histH = ?, histS = ?, histV = ?
+                        WHERE id = ?
+                        """,
+                        (h_blob, s_blob, v_blob, row_id),
+                    )
+                    conn.commit()
+            finally:
+                conn.close()
+
+    def update_iqa(self, file_path: str, iqa_value: float) -> None:
+        """实时更新 IQA 数据到数据库。"""
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            try:
+                self._ensure_cache_initialized(cursor)
+                row_id = self._get_row_id(cursor, file_path)
+                if row_id:
+                    cursor.execute(
+                        """
+                        UPDATE present
+                        SET IQA = ?
+                        WHERE id = ?
+                        """,
+                        (float(iqa_value), row_id),
+                    )
+                    conn.commit()
+            finally:
+                conn.close()
+
+    def update_face(self, file_path: str, face_info: dict) -> None:
+        """实时更新人脸检测数据到数据库。"""
+        try:
+            face_json = json.dumps(face_info, ensure_ascii=False)
+        except Exception:
+            return
+
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            try:
+                self._ensure_cache_initialized(cursor)
+                row_id = self._get_row_id(cursor, file_path)
+                if row_id:
+                    cursor.execute(
+                        """
+                        UPDATE present
+                        SET faceData = ?
+                        WHERE id = ?
+                        """,
+                        (face_json, row_id),
+                    )
+                    conn.commit()
+            finally:
+                conn.close()
+
+    def update_similarity(
+        self, file_path: str, ref_path: str, similarity: float, iqa_value: float
+    ) -> None:
+        """实时更新相似度数据到数据库。"""
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            try:
+                self._ensure_cache_initialized(cursor)
+                row_id = self._get_row_id(cursor, file_path)
+                if row_id:
+                    cursor.execute(
+                        """
+                        UPDATE present
+                        SET simRefPath = ?, similarity = ?, IQA = ?
+                        WHERE id = ?
+                        """,
+                        (ref_path, similarity, iqa_value, row_id),
+                    )
+                    conn.commit()
+            finally:
+                conn.close()
+
+
+# 全局数据库管理器实例（在 process_and_group_images 中初始化）
+_db_manager: Optional[DBManager] = None
 
 # ---------------------------------------------------------------------------
 # 图像读取
@@ -98,19 +236,23 @@ def ensure_hist_cached(
     img_bgr: Optional[np.ndarray] = None,
 ) -> None:
     """
-    确保某张图的 HSV 直方图已缓存。
+    确保某张图的 HSV 直方图已缓存，并实时写入数据库。
     img_bgr:
         可选的预加载 BGR 图像（用于和 IQA 复用 IO）。
     """
+    global _db_manager
+
     if file_path in hist_cache:
         return
 
-    start_time = time.time()
     if img_bgr is None:
         img_bgr = cv_imread(file_path)
-    hist_cache[file_path] = compute_centered_hsv_histogram(img_bgr, BINS)
-    elapsed = time.time() - start_time
-    # print(f"[ensure_hist_cached] {file_path} histogram computed in {elapsed:.3f}s")
+    hist = compute_centered_hsv_histogram(img_bgr, BINS)
+    hist_cache[file_path] = hist
+
+    # 实时写入数据库
+    if _db_manager is not None:
+        _db_manager.update_hist(file_path, hist)
 
 
 # ---------------------------------------------------------------------------
@@ -120,14 +262,14 @@ def ensure_iqa_cached(
     img_bgr: Optional[np.ndarray] = None,
 ) -> None:
     """
-    确保某张图的 IQA 已缓存。
+    确保某张图的 IQA 已缓存，并实时写入数据库。
     img_bgr:
         可选的预加载 BGR 图像（用于和 HSV 复用 IO）。
     """
+    global _db_manager
+
     if file_path in iqa_cache:
         return
-
-    start_time = time.time()
 
     if img_bgr is None:
         img_bgr = cv_imread(file_path)
@@ -136,8 +278,9 @@ def ensure_iqa_cached(
     iqa_value = infer_iqa_from_bgr(img_bgr, color_space="RGB")
     iqa_cache[file_path] = float(iqa_value)
 
-    elapsed = time.time() - start_time
-    # print(f"[ensure_iqa_cached] {file_path} IQA computed in {elapsed:.3f}s")
+    # 实时写入数据库
+    if _db_manager is not None:
+        _db_manager.update_iqa(file_path, iqa_value)
 
 
 def ensure_face_cached(
@@ -145,18 +288,21 @@ def ensure_face_cached(
     face_cache: Dict[str, dict],
     img_bgr: Optional[np.ndarray] = None,
 ) -> None:
-    """确保某张图的人脸检测结果已缓存。"""
+    """确保某张图的人脸检测结果已缓存，并实时写入数据库。"""
+    global _db_manager
+
     if file_path in face_cache:
         return
 
     if img_bgr is None:
         img_bgr = cv_imread(file_path)
 
-    start_time = time.time()
     face_info = detect_faces_from_bgr(img_bgr, score_thresh=0.5)
     face_cache[file_path] = face_info
-    elapsed = time.time() - start_time
-    # print(f"[ensure_face_cached] {file_path} face detection computed in {elapsed:.3f}s")
+
+    # 实时写入数据库
+    if _db_manager is not None:
+        _db_manager.update_face(file_path, face_info)
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +353,10 @@ def compute_similarity_and_IQA(
     )
     iqa_value = iqa_cache[file_path]
 
+    # 实时写入数据库
+    if _db_manager is not None:
+        _db_manager.update_similarity(file_path, ref_path, similarity, iqa_value)
+
     print(f"[compute_similarity_and_IQA] pair=({file_path}, {ref_path}) similarity={similarity:.4f}, IQA={iqa_value:.4f}")
     return similarity, iqa_value
 
@@ -223,7 +373,6 @@ def process_pair_batch(
     hist_cache: Dict[str, HSVHist],
     iqa_cache: Dict[str, float],
     face_cache: Dict[str, dict],
-    db_path: str,
     update_progress: Callable[[str, int, int, int], Any],
     include_first_self_pair: bool = False,
     first_enabled_file: Optional[str] = None,
@@ -242,70 +391,31 @@ def process_pair_batch(
     if total_pairs == 0 and not include_first_self_pair:
         return
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    # 若是“第一段”，且首个启用图片还未计算 IQA，则先补算一次
+    if include_first_self_pair and first_enabled_file is not None:
+        if first_enabled_file not in iqa_cache:
+            print(f"[process_pair_batch] worker {worker_id} pre-computing IQA for first enabled: {first_enabled_file}")
+            img_first = cv_imread(first_enabled_file)
+            ensure_hist_cached(first_enabled_file, hist_cache, img_first)
+            ensure_iqa_cached(first_enabled_file, iqa_cache, img_first)
+            ensure_face_cached(first_enabled_file, face_cache, img_first)
 
-    try:
-        # 若是“第一段”，且首个启用图片还未计算 IQA，则先补算一次
-        if include_first_self_pair and first_enabled_file is not None:
-            if first_enabled_file not in iqa_cache:
-                print(f"[process_pair_batch] worker {worker_id} pre-computing IQA for first enabled: {first_enabled_file}")
-                img_first = cv_imread(first_enabled_file)
-                ensure_hist_cached(first_enabled_file, hist_cache, img_first)
-                ensure_iqa_cached(first_enabled_file, iqa_cache, img_first)
-                ensure_face_cached(first_enabled_file, face_cache, img_first)
-
-                # 同步一次 IQA 到 DB（后续 save_cache_to_db 也会再次覆盖一次）
-                cursor.execute(
-                    "SELECT id FROM present WHERE filePath = ?",
-                    (first_enabled_file,),
-                )
-                row = cursor.fetchone()
-                if row:
-                    cursor.execute(
-                        """
-                        UPDATE present
-                        SET IQA = ?
-                        WHERE id = ?
-                        """,
-                        (iqa_cache[first_enabled_file], row[0]),
-                    )
-                    conn.commit()
-
-        for idx, (file_path, ref_path) in enumerate(pairs):
-            if (file_path, ref_path) in cache_data:
-                update_progress("多线程分析中", worker_id, idx + 1, total_pairs)
-                continue
-
-            similarity, iqa_value = compute_similarity_and_IQA(
-                file_path,
-                ref_path,
-                hist_cache,
-                iqa_cache,
-                face_cache,
-            )
-
-            cache_data[(file_path, ref_path)] = (similarity, iqa_value)
-
-            cursor.execute(
-                "SELECT id FROM present WHERE filePath = ?",
-                (file_path,),
-            )
-            row = cursor.fetchone()
-            if row:
-                cursor.execute(
-                    """
-                    UPDATE present
-                    SET simRefPath = ?, similarity = ?, IQA = ?
-                    WHERE id = ?
-                    """,
-                    (ref_path, similarity, iqa_value, row[0]),
-                )
-
-            conn.commit()
+    for idx, (file_path, ref_path) in enumerate(pairs):
+        if (file_path, ref_path) in cache_data:
             update_progress("多线程分析中", worker_id, idx + 1, total_pairs)
-    finally:
-        conn.close()
+            continue
+
+        similarity, iqa_value = compute_similarity_and_IQA(
+            file_path,
+            ref_path,
+            hist_cache,
+            iqa_cache,
+            face_cache,
+        )
+
+        cache_data[(file_path, ref_path)] = (similarity, iqa_value)
+
+        update_progress("多线程分析中", worker_id, idx + 1, total_pairs)
 
 
 def process_and_group_images(
@@ -317,6 +427,9 @@ def process_and_group_images(
     """
     主流程：读取 DB、计算相似度 & IQA、完成分组并写回 groupId。
     """
+    global _db_manager
+    _db_manager = DBManager(db_path)
+
     start_time = time.time()
 
     (
@@ -378,7 +491,6 @@ def process_and_group_images(
                         hist_cache,
                         iqa_cache,
                         face_cache,
-                        db_path,
                         update_progress,
                         include_head,
                         first_enabled_file,
@@ -504,4 +616,5 @@ def process_and_group_images(
     print(f"Average Time per Image: {average_time_per_image:.2f} seconds")
     update_progress("已完成分析分组", 0, total_images, max(total_images, 1))
 
+    _db_manager = None
     return groups

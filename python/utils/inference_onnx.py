@@ -68,9 +68,10 @@ _IQA_IS_DML = False
 # ============================================================================
 # 人脸检测模型相关全局变量
 # ============================================================================
-_FACE_DET_MODEL_PATH = Path(get_resource_path("checkpoint/det_500m.onnx"))
+_FACE_DET_MODEL_PATH = Path(get_resource_path("checkpoint/det_10g.onnx"))
 _FACE_DETECTOR = None
 _FACE_DET_PROVIDERS: List[str] = []
+_FACE_DET_SIZE = (1280, 1280)
 _FACE_DET_IS_DML = False
 
 # ============================================================================
@@ -178,9 +179,9 @@ def _init_face_detector_if_needed() -> None:
             use_cuda = "CUDAExecutionProvider" in providers
             kw["ctx_id"] = 0 if use_cuda else -1
         if "input_size" in sig.parameters:
-            kw["input_size"] = (640, 640)
+            kw["input_size"] = _FACE_DET_SIZE
         if "det_size" in sig.parameters:
-            kw["det_size"] = (640, 640)
+            kw["det_size"] = _FACE_DET_SIZE
         if "det_thresh" in sig.parameters:
             kw["det_thresh"] = 0.5
         if "nms_thresh" in sig.parameters:
@@ -414,7 +415,7 @@ def detect_faces_from_bgr(img_bgr: np.ndarray, score_thresh: float = 0.5) -> dic
         sig = inspect.signature(_FACE_DETECTOR.detect)
         kw = {}
         if "input_size" in sig.parameters:
-            kw["input_size"] = (640, 640)
+            kw["input_size"] = _FACE_DET_SIZE
         if "max_num" in sig.parameters:
             kw["max_num"] = 0
         if "metric" in sig.parameters:
@@ -452,9 +453,7 @@ def detect_faces_from_bgr(img_bgr: np.ndarray, score_thresh: float = 0.5) -> dic
             f.pop("cy", None)
 
         # 批量眨眼检测
-        print("[FACE] Running blink detection on detected faces...")
         _run_blink_batch(img_bgr, faces)
-        print(f"[FACE] Detected {len(faces)} faces with blink status.")
 
         return {"faces": faces}
 
