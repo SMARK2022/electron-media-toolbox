@@ -2,11 +2,19 @@ import React, { useEffect, useState } from "react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { ScanFace, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getEyeState, countEyeStates, type EyeState } from "@/helpers/store/usePhotoFilterStore";
 
 export type FaceInfo = {
   bbox: [number, number, number, number];
   score?: number;
   eye_open?: number; // 眨眼程度 (0.0 - 1.0)
+};
+
+// 眼睛状态样式映射（仅样式相关，阈值逻辑由 store 统一管理）
+const EYE_STATE_CONFIG: Record<EyeState, { icon: typeof Eye; color: string; text: string }> = {
+  open: { icon: Eye, color: "text-emerald-600 bg-emerald-50 border-emerald-200", text: "正常" },
+  suspicious: { icon: AlertCircle, color: "text-amber-600 bg-amber-50 border-amber-200", text: "疑似闭眼" },
+  closed: { icon: EyeOff, color: "text-red-600 bg-red-50 border-red-200", text: "闭眼" },
 };
 
 interface FaceThumbnailProps {
@@ -30,21 +38,9 @@ const FaceThumbnail: React.FC<FaceThumbnailProps> = ({
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // 眨眼状态逻辑
-  const eyeOpen = face.eye_open ?? 1.0;
-  let EyeStatusIcon = Eye;
-  let eyeStatusColor = "text-emerald-600 bg-emerald-50 border-emerald-200"; // 正常 (> 0.20)
-  let eyeStatusText = "正常";
-
-  if (eyeOpen < 0.15) {
-    EyeStatusIcon = EyeOff;
-    eyeStatusColor = "text-red-600 bg-red-50 border-red-200"; // 闭眼
-    eyeStatusText = "闭眼";
-  } else if (eyeOpen <= 0.20) {
-    EyeStatusIcon = AlertCircle;
-    eyeStatusColor = "text-amber-600 bg-amber-50 border-amber-200"; // 怀疑
-    eyeStatusText = "疑似闭眼";
-  }
+  // 使用统一的眼睛状态判断
+  const eyeState = getEyeState(face.eye_open);
+  const { icon: EyeStatusIcon, color: eyeStatusColor, text: eyeStatusText } = EYE_STATE_CONFIG[eyeState];
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -170,7 +166,7 @@ const FaceThumbnail: React.FC<FaceThumbnailProps> = ({
               "absolute top-0.5 right-0.5 p-[2px] rounded-full border shadow-sm backdrop-blur-sm transition-transform hover:scale-110 z-10",
               eyeStatusColor
             )}
-            title={`${eyeStatusText} (睁眼度: ${face.eye_open.toFixed(3)})`}
+            title={`${eyeStatusText} (睁眼度: ${(face.eye_open ?? 0).toFixed(3)})`}
           >
             <EyeStatusIcon className="w-2.5 h-2.5" />
           </div>
@@ -203,13 +199,8 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
 }) => {
   if (!faces.length || !imageSrc) return null;
 
-  // 统计睁眼/闭眼数量
-  const openEyesCount = faces.filter(f => (f.eye_open ?? 1) > 0.20).length;
-  const closedEyesCount = faces.filter(f => (f.eye_open ?? 1) < 0.15).length;
-  const suspiciousCount = faces.filter(f => {
-    const v = f.eye_open ?? 1;
-    return v >= 0.15 && v <= 0.20;
-  }).length;
+  // 使用统一的统计函数
+  const { closed: closedEyesCount, suspicious: suspiciousCount, open: openEyesCount } = countEyeStates(faces);
 
   return (
     <div

@@ -1,1 +1,0 @@
-conda activate ML && python web_api.py

@@ -53,7 +53,6 @@ set "OUTPUT_DIR=out"
 
 REM ONNX 模型文件（.onnx + .onnx.data，放在 python/checkpoint 下）
 set "MODEL_DIR=checkpoint"
-set "MODEL_NAME=lar_iqa.onnx"
 
 REM 并行 C 编译 job 数
 set "JOBS=%NUMBER_OF_PROCESSORS%"
@@ -96,8 +95,10 @@ echo [*] 使用 Nuitka 编译 %MAIN_FILE% 为单文件 exe (--mode=onefile) ...
   --assume-yes-for-downloads ^
   --windows-console-mode=attach ^
   --lto=no ^
-  --include-data-file="%MODEL_DIR%\%MODEL_NAME%=%MODEL_DIR%\%MODEL_NAME%" ^
-  --include-data-file="%MODEL_DIR%\%MODEL_NAME%.data=%MODEL_DIR%\%MODEL_NAME%.data" ^
+  --include-data-file="%MODEL_DIR%\lar_iqa.onnx=%MODEL_DIR%\lar_iqa.onnx" ^
+  --include-data-file="%MODEL_DIR%\2d106det_batch.onnx=%MODEL_DIR%\2d106det_batch.onnx" ^
+  --include-data-file="%MODEL_DIR%\det_10g.onnx=%MODEL_DIR%\det_10g.onnx" ^
+  --include-data-file="%MODEL_DIR%\ocec_l.onnx=%MODEL_DIR%\ocec_l.onnx" ^
   "%MAIN_FILE%"
 
 echo.

@@ -19,12 +19,43 @@ export interface ServerData {
   workers: string[];
 }
 
+// ============================================================================
+// 眨眼状态阈值常量 & 工具函数（统一管理，避免多处硬编码）
+// ============================================================================
+/** 闭眼阈值：eye_open < 此值 判定为闭眼 */
+export const EYE_THRESHOLD_CLOSED = 0.3;
+/** 疑似闭眼阈值：eye_open <= 此值 且 >= CLOSED 判定为疑似 */
+export const EYE_THRESHOLD_SUSPICIOUS = 0.5;
+
+/** 眼睛状态枚举 */
+export type EyeState = "open" | "suspicious" | "closed";
+
+/** 根据 eye_open 值判断眼睛状态 */
+export function getEyeState(eyeOpen: number | undefined): EyeState {
+  const v = eyeOpen ?? 1.0;
+  if (v < EYE_THRESHOLD_CLOSED) return "closed";
+  if (v <= EYE_THRESHOLD_SUSPICIOUS) return "suspicious";
+  return "open";
+}
+
+/** 根据 faces 数组统计各状态数量 */
+export function countEyeStates(faces: { eye_open?: number }[]): { closed: number; suspicious: number; open: number } {
+  let closed = 0, suspicious = 0, open = 0;
+  for (const f of faces) {
+    const state = getEyeState(f.eye_open);
+    if (state === "closed") closed++;
+    else if (state === "suspicious") suspicious++;
+    else open++;
+  }
+  return { closed, suspicious, open };
+}
+
 // 眨眼统计信息（每张图片的眼睛状态统计）
 export interface EyeStatistics {
   filePath: string; // 图片路径，作为唯一标识
-  closedEyesCount: number; // 闭眼人脸数（eyeOpen < 0.15）
-  suspiciousCount: number; // 疑似闭眼（0.15 <= eyeOpen <= 0.20）
-  openEyesCount: number; // 正常睁眼（eyeOpen > 0.20）
+  closedEyesCount: number; // 闭眼人脸数
+  suspiciousCount: number; // 疑似闭眼
+  openEyesCount: number; // 正常睁眼
 }
 
 interface PhotoFilterState {
@@ -245,41 +276,19 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
 
     photos.forEach((photo) => {
       try {
-        // 从 faceData JSON 字符串中解析面部信息
         const faceData = photo.faceData ? JSON.parse(photo.faceData) : { faces: [] };
         const faces = faceData.faces || [];
-
-        // 统计眨眼状态
-        let closedEyesCount = 0;
-        let suspiciousCount = 0;
-        let openEyesCount = 0;
-
-        faces.forEach((face: any) => {
-          const eyeOpen = face.eye_open ?? 1.0; // 默认睁眼
-          if (eyeOpen < 0.15) {
-            closedEyesCount++;
-          } else if (eyeOpen <= 0.20) {
-            suspiciousCount++;
-          } else {
-            openEyesCount++;
-          }
-        });
+        const { closed, suspicious, open } = countEyeStates(faces);
 
         newStatsMap.set(photo.filePath, {
           filePath: photo.filePath,
-          closedEyesCount,
-          suspiciousCount,
-          openEyesCount,
+          closedEyesCount: closed,
+          suspiciousCount: suspicious,
+          openEyesCount: open,
         });
       } catch (error) {
         console.error(`计算 ${photo.filePath} 的眨眼统计失败:`, error);
-        // 如果解析失败，设置为默认值
-        newStatsMap.set(photo.filePath, {
-          filePath: photo.filePath,
-          closedEyesCount: 0,
-          suspiciousCount: 0,
-          openEyesCount: 0,
-        });
+        newStatsMap.set(photo.filePath, { filePath: photo.filePath, closedEyesCount: 0, suspiciousCount: 0, openEyesCount: 0 });
       }
     });
 
