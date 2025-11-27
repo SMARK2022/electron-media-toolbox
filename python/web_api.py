@@ -408,7 +408,7 @@ if __name__ == "__main__":
 
             uvicorn.run(
                 app,
-                host="0.0.0.0",
+                host="127.0.0.1",
                 port=8000,
                 reload=False,
                 log_config=log_config,
@@ -417,7 +417,7 @@ if __name__ == "__main__":
             # 开发环境：用 uvicorn 默认日志配置，在控制台看 log 即可
             uvicorn.run(
                 app,
-                host="0.0.0.0",
+                host="127.0.0.1",
                 port=8000,
                 reload=False,
             )
