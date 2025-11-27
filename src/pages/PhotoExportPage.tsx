@@ -17,7 +17,6 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   getPhotosExtendByCriteria,
-  initializeDatabase,
   PhotoExtend,
   Photo,
 } from "@/helpers/ipc/database/db";
@@ -29,38 +28,22 @@ import { usePhotoFilterStore } from "@/helpers/store/usePhotoFilterStore";
 
 export default function PhotoExportSubpage() {
   const { t } = useTranslation();
-  // 从全局 store 读取最新的相册照片列表
   const photos = usePhotoFilterStore((s) => s.lstAllPhotos);
   const fnSetAllPhotos = usePhotoFilterStore((s) => s.fnSetAllPhotos);
   const fnSetCurrentPage = usePhotoFilterStore((s) => s.fnSetCurrentPage);
   const [folderName, setFolderName] = useState<string>("");
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
   const [copyInProgress, setCopyInProgress] = useState<boolean>(false);
-  const [folderExistsStatus, setFolderExistsStatus] = useState<boolean | null>(
-    null,
-  );
+  const [folderExistsStatus, setFolderExistsStatus] = useState<boolean | null>(null);
 
-  const handleFolderChange = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const inputPath = event.target.value;
-    const normalizedPath = inputPath.replace(/\\/g, "/").trim();
+  const handleFolderChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const normalizedPath = event.target.value.replace(/\\/g, "/").trim();
     setFolderName(normalizedPath);
-
-    if (!normalizedPath) {
-      setFolderExistsStatus(null);
-      return;
-    }
-
-    const exists = await folderExists(normalizedPath);
-    setFolderExistsStatus(exists);
+    setFolderExistsStatus(normalizedPath ? await folderExists(normalizedPath) : null);
   };
 
   const submitPhotosCopy = async () => {
-    if (!folderName || photos.length === 0) {
-      return;
-    }
-
+    if (!folderName || photos.length === 0) return;
     setIsDialogOpen(true);
     setCopyInProgress(true);
     try {
@@ -70,28 +53,19 @@ export default function PhotoExportSubpage() {
     }
   };
 
+  // 获取启用照片用于导出
   const fetchEnabledPhotos = async () => {
     try {
-      const undefinedGroupPhotos = await getPhotosExtendByCriteria(
-        -2,
-        "IQA",
-        true,
+      const photos = await getPhotosExtendByCriteria(-2, "IQA", true);
+      fnSetAllPhotos(
+        photos.map((p: PhotoExtend) => ({
+          fileName: p.fileName,
+          fileUrl: p.fileUrl,
+          filePath: p.filePath,
+          info: (p.IQA || 0).toString(),
+          isEnabled: p.isEnabled,
+        })),
       );
-
-      let groupedPhotos: Photo[] = [];
-
-      if (undefinedGroupPhotos.length > 0) {
-        groupedPhotos = undefinedGroupPhotos.map((photo: PhotoExtend) => ({
-          fileName: photo.fileName,
-          fileUrl: photo.fileUrl,
-          filePath: photo.filePath,
-          info: (photo.IQA || 0).toString(),
-          isEnabled: photo.isEnabled,
-        }));
-      }
-
-      // 将可导出的启用照片同步到全局列表，方便其他页面共用
-      fnSetAllPhotos(groupedPhotos);
     } catch (error) {
       console.error("获取启用照片失败:", error);
       fnSetAllPhotos([]);
@@ -99,13 +73,9 @@ export default function PhotoExportSubpage() {
   };
 
   useEffect(() => {
-    const currentTime = Date.now();
-    sessionStorage.setItem("submitTime", currentTime.toString());
-    initializeDatabase();
-    void fetchEnabledPhotos();
-    // 记录当前页面为导出页，用于右键菜单等行为区分
     fnSetCurrentPage("export");
-  }, []);
+    void fetchEnabledPhotos();
+  }, [fnSetCurrentPage]);
 
   const isExportDisabled = !folderName || photos.length === 0;
 

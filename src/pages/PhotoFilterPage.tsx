@@ -22,65 +22,17 @@ import { cn } from "@/lib/utils";
 import { Photo } from "@/helpers/ipc/database/db";
 import {
   usePhotoFilterSelectors,
+  usePhotoFilterStore,
   type ServerData,
-} from "../helpers/store/usePhotoFilterStore"; // Zustand 领域 store：照片列表、预览、服务状态等统一在这里管理
-import { GalleryPanel } from "./PhotoFilterPage/GalleryPanel"; // 左侧画廊 UI，只关心 gallery 相关的 slice
-import { SidePanel } from "./PhotoFilterPage/SidePanel"; // 右侧筛选 & 预览 UI，只关心 panel 相关的 slice
-import { usePhotoFilterEffects } from "./PhotoFilterPage/PhotoFilterEffects"; // 副作用 hook：初始化 / 轮询都集中到这里
-import { PhotoGridEnhance } from "@/components/PhotoGrid"; // 旧版 GalleryGroup 仍然引用的增强网格组件
+} from "../helpers/store/usePhotoFilterStore";
+import { PhotoService } from "@/helpers/services/PhotoService";
+import { GalleryPanel } from "./PhotoFilterPage/GalleryPanel";
+import { SidePanel } from "./PhotoFilterPage/SidePanel";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
 /**
  * 单个分组组件，使用 React.memo 避免无关重渲染
- * 只有 group 本身的引用变化时才会重渲染这组
  */
-// 旧版的分组渲染组件，目前已由 `GalleryPanel` 内部实现更合理的版本
-// 如果后续不再直接从本文件使用，可以考虑完全移除以进一步精简入口组件
-const GalleryGroup = React.memo(
-  ({
-    group,
-    index,
-    isGroupMode,
-    groupLabel,
-    highlightPhotos,
-    onPhotoClick,
-  }: {
-    group: Photo[];
-    index: number;
-    isGroupMode: boolean;
-    groupLabel: string;
-    highlightPhotos: Photo[];
-    onPhotoClick?: (photos: Photo[], event: string) => void | Promise<void>;
-  }) => {
-    // 每组的 key 建议用首张的 filePath，避免 index 导致的错乱
-    const header =
-      isGroupMode && group.length > 0 ? (
-        <div className="mb-1 flex items-center gap-2 px-1 pt-1 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
-          <span>
-            {groupLabel} {index + 1}
-          </span>
-          <div className="h-px flex-1 bg-slate-200 dark:bg-slate-400" />
-        </div>
-      ) : null;
-
-    return (
-      <div
-        key={group[0]?.filePath ?? `group-${index}`}
-        className="mb-2 last:mb-0"
-      >
-        {header}
-        {/* 注意：当前项目真正使用的分组渲染已经迁移到 `GalleryPanel` 中，
-            这里保留仅为了兼容旧引用或快速对比；如果不再需要可整体删除。*/}
-        <PhotoGridEnhance
-          photos={group}
-          onPhotoClick={onPhotoClick}
-          highlightPhotos={highlightPhotos}
-        />
-      </div>
-    );
-  },
-);
-GalleryGroup.displayName = "GalleryGroup"; // 便于在 React DevTools 中识别组件名称
 
 function ServerStatusMonitorDrawer({
   serverStatus,
@@ -103,7 +55,7 @@ function ServerStatusMonitorDrawer({
           <span className="max-w-[19vw] truncate">{serverStatus}</span>
         </Button>
       </DrawerTrigger>
-      <DrawerContent className="bg-background max-h-[80vh] max-w-xl translate-y-0 border-t sm:rounded-t-xl sm:border grid grid-rows-[auto_1fr_auto] overflow-hidden">
+      <DrawerContent className="bg-background grid max-h-[80vh] max-w-xl translate-y-0 grid-rows-[auto_1fr_auto] overflow-hidden border-t sm:rounded-t-xl sm:border">
         <DrawerHeader className="border-b pb-4">
           <div className="flex items-center justify-between">
             <div>
@@ -163,16 +115,19 @@ function ServerStatusMonitorDrawer({
                           <span className="truncate">
                             {t("filterPage.workerLabel")} {index + 1}
                           </span>
-                          <span className="text-foreground font-mono text-xs ml-2 flex-shrink-0">
+                          <span className="text-foreground ml-2 flex-shrink-0 font-mono text-xs">
                             {workerStatus}
                           </span>
                         </div>
-                        <Progress value={parseFloat(workerStatus)} className="w-full" />
+                        <Progress
+                          value={parseFloat(workerStatus)}
+                          className="w-full"
+                        />
                       </div>
                     ),
                   )}
                   {!serverData?.workers?.length && (
-                    <p className="text-muted-foreground text-center text-xs py-4">
+                    <p className="text-muted-foreground py-4 text-center text-xs">
                       {t("filterPage.noWorkerInfo") ||
                         "No worker info available."}
                     </p>
@@ -203,21 +158,37 @@ export default function PhotoFilterSubpage() {
     lstPreviewPhotoDetails,
     numSimilarityThreshold,
     boolShowDisabledPhotos,
-    strSortedColumnKey,
     strServerStatusText,
     objServerStatusData,
     numLeftPaneWidthVw,
     numPreviewHeightPercent,
     fnSetShowDisabledPhotos,
-    fnSetServerPollingNeeded,
     fnSetLeftPaneWidthVw,
     fnSetPreviewHeightPercent,
     fnSelectPreviewPhotos,
     fnTogglePhotoEnabledFromGrid,
   } = usePhotoFilterSelectors();
 
-  usePhotoFilterEffects(); // 初始化数据库 + 相册轮询 + 服务状态轮询，解耦出组件外
+  // ========== PhotoFilterEffects 逻辑直接嵌入 ==========
+  const fnSetCurrentPage = usePhotoFilterStore((s: any) => s.fnSetCurrentPage);
+  const modeGalleryView = usePhotoFilterStore((s: any) => s.modeGalleryView);
 
+  // 进入页面时设置标识
+  React.useEffect(() => {
+    fnSetCurrentPage("filter");
+  }, [fnSetCurrentPage]);
+
+  // 配置变化时刷新（使用 ref 防止首次触发）
+  const isFirstMountRef = React.useRef(true);
+  React.useEffect(() => {
+    if (isFirstMountRef.current) {
+      isFirstMountRef.current = false;
+      return;
+    }
+    PhotoService.requestRefresh();
+  }, [boolShowDisabledPhotos, modeGalleryView]);
+
+  // ========== 左右分栏拖动逻辑 ==========
   const initialLeftVwRef = React.useRef<number>(numLeftPaneWidthVw); // 记录首次加载时的左侧宽度百分比
   const minLeftVw = Math.max(8, initialLeftVwRef.current - 20); // 限制拖拽最小宽度，避免左侧太窄
   const maxLeftVw = Math.min(92, initialLeftVwRef.current + 20); // 限制拖拽最大宽度，避免遮挡右侧
@@ -458,33 +429,11 @@ export default function PhotoFilterSubpage() {
     [fnSelectPreviewPhotos, fnTogglePhotoEnabledFromGrid],
   );
 
-  // 滑块变化由 SidePanel 内部直接操作 store 的 similarityThreshold
-
   const handleSubmit = async () => {
-    const currentTime = Date.now();
-    sessionStorage.setItem("submitTime", currentTime.toString());
-
-    const dbPath = await window.ElectronDB.getDbPath();
-
-    const response = await fetch("http://127.0.0.1:8000/detect_images", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        similarity_threshold: numSimilarityThreshold,
-        db_path: dbPath,
-        show_disabled_photos: boolShowDisabledPhotos,
-      }),
+    await PhotoService.submitDetectionTask({
+      similarityThreshold: numSimilarityThreshold,
+      showDisabledPhotos: boolShowDisabledPhotos,
     });
-
-    if (response.ok) {
-      const data = await response.json();
-      console.log("检测任务已添加到队列:", data);
-      fnSetServerPollingNeeded(true);
-    } else {
-      console.error("提交检测任务失败");
-    }
   };
 
   // 当前高亮照片列表（只在 previewPhotos 变化时重建）

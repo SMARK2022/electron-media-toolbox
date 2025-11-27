@@ -6,6 +6,7 @@ import { CustomSlider } from "@/components/CustomSlider";
 import PhotoDetailsTable from "./PhotoDetailsTable"; // 预览下方的详细信息 & 开关表格
 import { AlertCircle, Image as ImageIcon, RotateCcw, Trash2 } from "lucide-react";
 import { usePhotoFilterSelectors } from "../../helpers/store/usePhotoFilterStore"; // 只订阅与 SidePanel 相关的状态和 action
+import { PhotoService } from "@/helpers/services/PhotoService";
 
 interface SidePanelProps {
   previewHeightPercent: number;
@@ -28,7 +29,6 @@ export const SidePanel: React.FC<SidePanelProps> = ({
     fnEnableAllPhotos,
     lstPreviewPhotoDetails,
     boolCurrentPreviewEnabled,
-    fnSetReloadAlbumRequested,
     fnUpdateFromDetailsPanel,
   } = usePhotoFilterSelectors(); // 只关心 panelTab / slider / 预览 / 批量操作等
 
@@ -126,7 +126,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
           setIsPreviewEnabled={() => {}}
           updatePhotoEnabledStatus={fnUpdateFromDetailsPanel}
           setPhotos={() => {}}
-          onPhotoStatusChanged={() => fnSetReloadAlbumRequested(true)}
+          onPhotoStatusChanged={() => PhotoService.requestRefresh()}
           previewHeightPercent={previewHeightPercent}
           onStartPreviewMouseDrag={onStartPreviewMouseDrag}
           onStartPreviewTouchDrag={onStartPreviewTouchDrag}

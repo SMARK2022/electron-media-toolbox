@@ -109,9 +109,7 @@ interface PhotoFilterState {
   fnSetAllPhotos: (photos: Photo[]) => void;
   fnSetCurrentPage: (page: PhotoPage) => void;
   fnSetCurrentSelectedPhoto: (photo: Photo | null) => void;
-
-  // actions
-  fnInitPage: () => Promise<void>; // 页面初始化时调用：初始化数据库 & 提交时间戳
+  fnSetGalleryGroupedPhotos: (groups: Photo[][]) => void;
   fnSetGalleryMode: (mode: GalleryMode) => void;
   fnSetRightPanelTab: (tab: "filter" | "preview") => void;
   fnSetSimilarityThreshold: (value: number) => void;
@@ -125,32 +123,23 @@ interface PhotoFilterState {
   fnSetServerStatusData: (value: ServerData | null) => void;
   fnSetCurrentPreviewEnabled: (value: boolean) => void;
 
-  // 眨眼统计计算 action
-  fnCalculateEyeStats: (photos: PhotoExtend[]) => void; // 根据 photos 的 faceData 字段计算眨眼统计并更新 store
+  // 眨眼统计
+  fnCalculateEyeStats: (photos: PhotoExtend[]) => void;
 
-  // 删除确认弹窗相关 actions
+  // 对话框
   fnOpenDeleteConfirm: (photo: Photo) => void;
   fnCloseDeleteConfirm: () => void;
   fnSetSkipDeleteConfirm: (skip: boolean) => void;
-
-  // 详情弹窗相关 actions
   fnOpenInfoDialog: (photo: Photo, metadata: Record<string, any>) => void;
   fnCloseInfoDialog: () => void;
 
-  fnFetchEnabledPhotos: () => Promise<void>; // 从数据库读取当前 gallery 模式下的启用图片并分组
-  fnFetchServerStatus: (formatStatus: (data: ServerData | null) => string) => Promise<void>; // 轮询后端 /status 并根据状态控制 needUpdate
-  fnSelectPreviewPhotos: (photos: Photo[]) => Promise<void>; // 从 grid 选中若干图片，刷新右侧 preview 列表
-  fnTogglePhotoEnabledFromGrid: (photo: Photo) => Promise<void>; // 在 grid 中点击开关启用/禁用，并同步到预览 & DB
-  fnDisableRedundantInGroups: () => Promise<void>; // 禁用每组中除第一张外的其他照片
-  fnEnableAllPhotos: () => Promise<void>; // 启用当前相册中所有照片
-  fnUpdateFromDetailsPanel: (filePath: string, enabled: boolean) => Promise<void>; // 从详情面板切换启用状态
-
-  // 右键菜单行为（由 PhotoGridEnhance 调用）
-  fnHandleContextMenuAction: (
-    actionId: string,
-    photo: Photo,
-    page: PhotoPage,
-  ) => Promise<void>;
+  // 业务操作
+  fnSelectPreviewPhotos: (photos: Photo[]) => Promise<void>;
+  fnTogglePhotoEnabledFromGrid: (photo: Photo) => Promise<void>;
+  fnDisableRedundantInGroups: () => Promise<void>;
+  fnEnableAllPhotos: () => Promise<void>;
+  fnUpdateFromDetailsPanel: (filePath: string, enabled: boolean) => Promise<void>;
+  fnHandleContextMenuAction: (actionId: string, photo: Photo, page: PhotoPage) => Promise<void>;
 }
 
 export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
@@ -244,15 +233,11 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     },
   ],
 
-  fnInitPage: async () => {
-    const currentTime = Date.now();
-    sessionStorage.setItem("submitTime", currentTime.toString());
-    await initializeDatabase();
-  },
-
+  // ===== Actions 实现 =====
   fnSetAllPhotos: (photos) => set({ lstAllPhotos: photos }),
   fnSetCurrentPage: (page) => set({ currentPage: page }),
   fnSetCurrentSelectedPhoto: (photo) => set({ currentSelectedPhoto: photo }),
+  fnSetGalleryGroupedPhotos: (groups) => set({ lstGalleryGroupedPhotos: groups }),
 
   fnSetGalleryMode: (mode) => set({ modeGalleryView: mode }), // 切换画廊展示模式
   fnSetRightPanelTab: (tab) => set({ tabRightPanel: tab }), // 切换右侧 Tab
@@ -303,122 +288,22 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   fnCloseDeleteConfirm: () =>
     set({ boolShowDeleteConfirm: false, objPendingDeletePhoto: null }),
 
-  // 设置是否跳过删除确认（谨慎使用，可在对话框中勾选）
   fnSetSkipDeleteConfirm: (skip) => set({ boolSkipDeleteConfirm: skip }),
 
-  // 打开详情弹窗并记录元数据
   fnOpenInfoDialog: (photo, metadata) =>
-    set({
-      boolShowInfoDialog: true,
-      objInfoPhoto: photo,
-      objInfoMetadata: metadata,
-    }),
+    set({ boolShowInfoDialog: true, objInfoPhoto: photo, objInfoMetadata: metadata }),
 
-  // 关闭详情弹窗
   fnCloseInfoDialog: () =>
     set({ boolShowInfoDialog: false, objInfoPhoto: null, objInfoMetadata: null }),
 
-  fnFetchEnabledPhotos: async () => {
-    const { modeGalleryView, strSortedColumnKey, boolShowDisabledPhotos } = get();
-    try {
-      const undefinedGroupPhotos: PhotoExtend[] = await getPhotosExtendByCriteria(
-        modeGalleryView === "group" ? -1 : -2,
-        strSortedColumnKey,
-        !boolShowDisabledPhotos,
-      );
-
-      let numCurrentGroupId = 0; // 当前有效分组 ID
-      let numSkippedGroupCount = 0; // 连续跳过的空组计数，用于提前结束循环
-      const mapGroupedPhotosById: { [key: number]: Photo[] } = {}; // groupId -> Photo 列表
-      const allPhotoExtends: PhotoExtend[] = []; // 收集所有的 PhotoExtend，用于计算眨眼统计
-
-      if (undefinedGroupPhotos.length > 0) {
-        mapGroupedPhotosById[numCurrentGroupId] = undefinedGroupPhotos.map((photo): Photo => ({
-          fileName: photo.fileName,
-          fileUrl: photo.fileUrl,
-          filePath: photo.filePath,
-          info: (photo.IQA ?? 0).toString(),
-          isEnabled: photo.isEnabled ?? true,
-        }));
-        allPhotoExtends.push(...undefinedGroupPhotos);
-        numCurrentGroupId++;
-      }
-
-      while (modeGalleryView === "group") {
-        const currentGroupPhotos: PhotoExtend[] = await getPhotosExtendByCriteria(
-          numCurrentGroupId + numSkippedGroupCount,
-          strSortedColumnKey,
-          !boolShowDisabledPhotos,
-        );
-
-        if (currentGroupPhotos.length === 0) {
-          if (numSkippedGroupCount < 20) {
-            numSkippedGroupCount++; // 允许最多跳过 20 个空组，避免稀疏 groupId 时循环过长
-            continue;
-          }
-          break; // 超过阈值后认为没有更多分组，终止
-        }
-
-        mapGroupedPhotosById[numCurrentGroupId] = currentGroupPhotos.map((photo): Photo => ({
-          fileName: photo.fileName,
-          fileUrl: photo.fileUrl,
-          filePath: photo.filePath,
-          info: (photo.IQA ?? 0).toString(),
-          isEnabled: photo.isEnabled ?? true,
-        }));
-        allPhotoExtends.push(...currentGroupPhotos);
-        numCurrentGroupId++;
-      }
-
-      set({ lstGalleryGroupedPhotos: Object.values(mapGroupedPhotosById) }); // 最终转换为二维数组供画廊消费
-
-      // 计算眨眼统计
-      get().fnCalculateEyeStats(allPhotoExtends);
-    } catch (error) {
-      console.error("获取启用照片失败:", error);
-    }
-  },
-
-  fnFetchServerStatus: async (formatStatus) => {
-    const { boolServerPollingNeeded } = get();
-    console.log("更新状态标志 boolServerPollingNeeded =", boolServerPollingNeeded);
-    try {
-  const response = await fetch("http://localhost:8000/status"); // 后端 FastAPI 服务的状态接口
-      if (response.ok) {
-        const data: ServerData = await response.json();
-        set({ strServerStatusText: formatStatus(data), objServerStatusData: data });
-
-  const submitTime = sessionStorage.getItem("submitTime"); // 上次提交任务的时间戳
-        if (submitTime) {
-          const currentTime = Date.now();
-          const timeDifference = (currentTime - parseInt(submitTime)) / 1000; // 秒
-
-          if (timeDifference > 2 && data.status === "空闲中") {
-            setTimeout(async () => {
-              if (data.status === "空闲中") {
-                set({ boolServerPollingNeeded: false });
-                await get().fnFetchEnabledPhotos(); // 检测结束后拉取最新相册
-                console.log("[STATUS] Server idle, stopping updates.");
-              } else {
-                set({ boolServerPollingNeeded: true });
-              }
-            }, 600);
-          } else {
-            set({ boolServerPollingNeeded: true });
-          }
-        }
-      } else {
-        set({ strServerStatusText: formatStatus(null) });
-      }
-    } catch {
-      set({ strServerStatusText: formatStatus(null) });
-    }
-  },
-
   fnSelectPreviewPhotos: async (clickPhotos: Photo[]) => {
     if (!clickPhotos.length) return;
-  const extended = await getPhotosExtendByPhotos(clickPhotos); // 从基础 Photo 拉取扩展信息（IQA 等）
-  set({ lstPreviewPhotoDetails: extended, tabRightPanel: "preview", boolCurrentPreviewEnabled: extended[0]?.isEnabled ?? false }); // 自动切到预览 Tab
+    const extended = await getPhotosExtendByPhotos(clickPhotos);
+    set({
+      lstPreviewPhotoDetails: extended,
+      tabRightPanel: "preview",
+      boolCurrentPreviewEnabled: extended[0]?.isEnabled ?? false,
+    });
   },
 
   fnTogglePhotoEnabledFromGrid: async (target: Photo) => {
@@ -554,7 +439,6 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
         p.filePath === filePath ? { ...p, isEnabled: enabled } : p,
       ),
       boolCurrentPreviewEnabled: enabled,
-      boolReloadAlbumRequested: true,
     }));
   },
 

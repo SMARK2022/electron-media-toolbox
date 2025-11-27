@@ -502,7 +502,7 @@ export function PhotoGridEnhance({
 
           return (
             <div
-              key={photo.fileName}
+              key={photo.filePath || `${photo.fileName}-${index}`}
               ref={(el) => {
                 itemRefs.current[index] = el;
               }}
@@ -685,7 +685,7 @@ interface EyeStateBadgeProps {
   } | null;
 }
 
-const EyeStateBadge: React.FC<EyeStateBadgeProps> = ({ eyeStats }) => {
+const EyeStateBadge: React.FC<EyeStateBadgeProps> = React.memo(({ eyeStats }) => {
   if (!eyeStats) return null;
 
   const { closedEyesCount, suspiciousCount, openEyesCount } = eyeStats;
@@ -739,9 +739,13 @@ const EyeStateBadge: React.FC<EyeStateBadgeProps> = ({ eyeStats }) => {
       )}
     </div>
   );
-};
+});
 
-function LazyImageContainer({
+/**
+ * 懒加载图片容器组件
+ * 使用 React.memo 和精细化的 store selector 优化渲染性能
+ */
+const LazyImageContainer = React.memo(function LazyImageContainer({
   photo,
   page = "filter",
 }: LazyImageContainerProps) {
@@ -750,9 +754,13 @@ function LazyImageContainer({
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [hasError, setHasError] = useState(false);
 
-  // 从 store 中读取眨眼统计数据
-  const lstPhotosEyeStats = usePhotoFilterStore((s) => s.lstPhotosEyeStats);
-  const eyeStats = lstPhotosEyeStats.get(photo.filePath) ?? null;
+  // 使用精细化 selector，只订阅当前照片的眨眼统计数据
+  const eyeStats = usePhotoFilterStore(
+    useCallback(
+      (s) => s.lstPhotosEyeStats.get(photo.filePath) ?? null,
+      [photo.filePath]
+    )
+  );
 
   // 进入视口后再加载
   useEffect(() => {
@@ -787,26 +795,33 @@ function LazyImageContainer({
     }
   }, [isVisible, photo.fileUrl]);
 
-  // 评分颜色逻辑
-  const infoStr = photo.info ?? "";
-  const numericInfo = /^[0-9]+(\.[0-9]+)?$/.test(infoStr)
-    ? parseFloat(infoStr)
-    : NaN;
+  // 评分颜色逻辑（使用 useMemo 避免重复计算）
+  const { colorStyle, formattedInfo, showInfo } = useMemo(() => {
+    const infoStr = photo.info ?? "";
+    const numericInfo = /^[0-9]+(\.[0-9]+)?$/.test(infoStr)
+      ? parseFloat(infoStr)
+      : NaN;
 
-  const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
+    const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
 
-  const colorStyle = !Number.isNaN(numericInfo)
-    ? numericInfo <= 50
-      ? `rgb(${clamp(255 - numericInfo * 5)}, ${clamp(numericInfo * 5)}, 0)`
-      : `rgb(0, ${clamp(255 - (numericInfo - 50) * 5)}, ${clamp((numericInfo - 50) * 5)})`
-    : undefined;
+    const colorStyle = !Number.isNaN(numericInfo)
+      ? numericInfo <= 50
+        ? `rgb(${clamp(255 - numericInfo * 5)}, ${clamp(numericInfo * 5)}, 0)`
+        : `rgb(0, ${clamp(255 - (numericInfo - 50) * 5)}, ${clamp((numericInfo - 50) * 5)})`
+      : undefined;
 
-  const formattedInfo = !Number.isNaN(numericInfo)
-    ? numericInfo.toFixed(6)
-    : infoStr;
+    const formattedInfo = !Number.isNaN(numericInfo)
+      ? numericInfo.toFixed(6)
+      : infoStr;
 
-  const showInfo = formattedInfo !== "";
-  const displayName = ellipsizeMiddle(photo.fileName);
+    return {
+      colorStyle,
+      formattedInfo,
+      showInfo: formattedInfo !== "",
+    };
+  }, [photo.info]);
+
+  const displayName = useMemo(() => ellipsizeMiddle(photo.fileName), [photo.fileName]);
 
   // 只在筛选页面显示眨眼统计指示器
   const showEyeStats =
@@ -856,4 +871,4 @@ function LazyImageContainer({
       </div>
     </div>
   );
-}
+});

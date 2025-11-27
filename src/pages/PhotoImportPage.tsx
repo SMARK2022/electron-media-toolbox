@@ -15,11 +15,9 @@ import {
 } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import {
   addPhotosExtend,
   clearPhotos,
-  getPhotos,
   initializeDatabase,
   PhotoExtend,
   Photo,
@@ -27,8 +25,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { usePhotoFilterStore } from "@/helpers/store/usePhotoFilterStore";
-
-// lucide icons for better visual feedback in drop zone & buttons
+import { PhotoService } from "@/helpers/services/PhotoService";
 import { Upload, FileWarning, Image as ImageIcon } from "lucide-react";
 
 // ----------------- 类型与小工具函数 -----------------
@@ -235,28 +232,8 @@ function FileImportDrawer({ onImported }: FileImportDrawerProps) {
         a.localeCompare(b, undefined, { numeric: true }),
       );
 
-      // 获取缩略图缓存目录
-      let thumbsPath = "../.cache/.thumbs";
-      try {
-        const electronAPI = (window as any)?.ElectronAPI;
-        if (electronAPI?.getThumbsCacheDir) {
-          thumbsPath = await electronAPI.getThumbsCacheDir();
-        }
-      } catch (error) {
-        console.warn("getThumbsCacheDir failed, using default path:", error);
-      }
-
-      // fire-and-forget：不等待后端返回
-      void fetch("http://localhost:8000/generate_thumbnails", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          file_paths: sortedPaths,
-          thumbs_path: thumbsPath,
-          width: 128,
-          height: 128,
-        }),
-      }).catch((error) => console.error("Error generating thumbnails:", error));
+      // 使用 PhotoService 提交缩略图生成任务
+      await PhotoService.submitThumbnailTask({ filePaths: sortedPaths });
 
       // 构造前端 PhotoExtend
       const photoObjects: PhotoExtend[] = await Promise.all(
@@ -291,10 +268,9 @@ function FileImportDrawer({ onImported }: FileImportDrawerProps) {
         }),
       );
 
-      // 更新数据库 + UI
-  // 清空旧数据并重新初始化相册表结构
-  clearPhotos();
-  initializeDatabase();
+      // 清空旧数据并重新初始化相册表结构
+      clearPhotos();
+      initializeDatabase();
       addPhotosExtend(photoObjects);
 
       const photoObjectsForState: Photo[] = photoObjects.map((p) => ({
@@ -305,23 +281,8 @@ function FileImportDrawer({ onImported }: FileImportDrawerProps) {
         isEnabled: p.isEnabled ?? true,
       }));
 
-  // 通过回调写入全局 store（由外层页面负责调用 fnSetAllPhotos）
-  onImported(photoObjectsForState);
-
-      // 一些持久化记录（当前页面不读取，但保留）
-      sessionStorage.setItem(
-        "savedFileNames",
-        JSON.stringify(droppedFiles.map((f) => f.name)),
-      );
-      sessionStorage.setItem(
-        "savedFolderName",
-        allHaveFullPaths ? "" : normalizedFolder,
-      );
-      sessionStorage.setItem(
-        "savedPhotoObjectsForState",
-        JSON.stringify(photoObjectsForState),
-      );
-
+      // 通过回调写入全局 store
+      onImported(photoObjectsForState);
     } finally {
       setIsProcessing(false);
     }
@@ -513,77 +474,20 @@ function FileImportDrawer({ onImported }: FileImportDrawerProps) {
 
 export default function PhotoImportSubpage() {
   const { t } = useTranslation();
-  const photos = usePhotoFilterStore((s) => s.lstAllPhotos); // 相册中的所有照片
+  const photos = usePhotoFilterStore((s) => s.lstAllPhotos);
   const fnSetAllPhotos = usePhotoFilterStore((s) => s.fnSetAllPhotos);
   const fnSetCurrentPage = usePhotoFilterStore((s) => s.fnSetCurrentPage);
 
-  // 初始化数据库并加载数据（带兜底）
+  // 进入页面时设置当前页面类型
   React.useEffect(() => {
-    const init = async () => {
-      try {
-        initializeDatabase();
-        const savedPhotos = await getPhotos();
-
-        if (Array.isArray(savedPhotos)) {
-          // 将数据库中的照片同步到全局 store，供三个页面共用
-          fnSetAllPhotos(savedPhotos);
-        } else if (savedPhotos == null) {
-          console.warn(
-            "[PhotoImportSubpage] getPhotos() returned null/undefined, fallback to []",
-          );
-          fnSetAllPhotos([]);
-        } else {
-          console.warn(
-            "[PhotoImportSubpage] getPhotos() returned non-array:",
-            savedPhotos,
-          );
-          fnSetAllPhotos([]);
-        }
-      } catch (error) {
-        console.error(
-          "[PhotoImportSubpage] failed to init / load photos:",
-          error,
-        );
-        fnSetAllPhotos([]);
-      }
-    };
-    void init();
-  }, []);
-
-  // 从 sessionStorage 恢复 UI 状态（带解析与类型保护）
-  React.useEffect(() => {
-    // 进入导入页面时，记录当前页面类型，便于右键菜单区分来源
     fnSetCurrentPage("import");
-
-    try {
-      const saved = sessionStorage.getItem("savedPhotoObjectsForState");
-      if (!saved) return;
-
-      const parsed = JSON.parse(saved);
-      if (!Array.isArray(parsed)) {
-        console.warn(
-          "[PhotoImportSubpage] sessionStorage savedPhotoObjectsForState is not array:",
-          parsed,
-        );
-        return;
-      }
-
-      // 如 sessionStorage 中有缓存，则优先恢复到全局 store
-      fnSetAllPhotos(parsed as Photo[]);
-    } catch (error) {
-      console.error(
-        "[PhotoImportSubpage] failed to restore photos from sessionStorage:",
-        error,
-      );
-    }
-  }, []);
+  }, [fnSetCurrentPage]);
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50/60 p-4 px-4 py-2 dark:bg-gray-900">
       <div className="mb-2 flex justify-between">
         <FileImportDrawer
           onImported={(newPhotos) => {
-            // 导入完成时，统一更新全局照片列表
             fnSetAllPhotos(newPhotos);
           }}
         />
