@@ -103,8 +103,8 @@ function ServerStatusMonitorDrawer({
           <span className="max-w-[19vw] truncate">{serverStatus}</span>
         </Button>
       </DrawerTrigger>
-      <DrawerContent className="bg-background flex max-h-[80vh] max-w-xl translate-y-0 flex-col border-t sm:rounded-t-xl sm:border">
-        <DrawerHeader className="flex-none border-b pb-4">
+      <DrawerContent className="bg-background max-h-[80vh] max-w-xl translate-y-0 border-t sm:rounded-t-xl sm:border grid grid-rows-[auto_1fr_auto] overflow-hidden">
+        <DrawerHeader className="border-b pb-4">
           <div className="flex items-center justify-between">
             <div>
               <DrawerTitle className="text-base font-semibold">
@@ -129,60 +129,62 @@ function ServerStatusMonitorDrawer({
           </div>
         </DrawerHeader>
 
-        <ScrollArea className="flex-1">
-          <div className="space-y-4 p-4">
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="bg-muted rounded-lg p-3">
-                <p className="text-muted-foreground mb-1 text-[11px] font-medium">
-                  {t("filterPage.serverQueueTitle")}
-                </p>
-                <p className="font-mono text-2xl font-bold text-blue-600">
-                  {serverData?.task_queue_length ?? 0}
-                </p>
-              </div>
-              <div className="bg-muted rounded-lg p-3">
-                <p className="text-muted-foreground mb-1 text-[11px] font-medium">
-                  {t("filterPage.serverWorkerCount") || "Workers"}
-                </p>
-                <p className="text-foreground font-mono text-2xl font-bold">
-                  {serverData?.workers.length ?? 0}
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-                {t("filterPage.workerLabelPlural") || "Workers Progress"}
-              </p>
-              <div className="space-y-2">
-                {serverData?.workers?.map(
-                  (workerStatus: string, index: number) => (
-                    <div key={index} className="space-y-1">
-                      <div className="text-muted-foreground flex items-center justify-between text-[11px]">
-                        <span>
-                          {t("filterPage.workerLabel")} {index + 1}
-                        </span>
-                        <span className="text-foreground font-mono text-xs">
-                          {workerStatus}
-                        </span>
-                      </div>
-                      <Progress value={parseFloat(workerStatus)} />
-                    </div>
-                  ),
-                )}
-                {!serverData?.workers?.length && (
-                  <p className="text-muted-foreground text-center text-xs">
-                    {t("filterPage.noWorkerInfo") ||
-                      "No worker info available."}
+        <div className="min-h-0 overflow-hidden">
+          <ScrollArea className="h-full w-full">
+            <div className="space-y-4 p-4 pr-3">
+              <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+                <div className="bg-muted rounded-lg p-3">
+                  <p className="text-muted-foreground mb-1 text-[11px] font-medium">
+                    {t("filterPage.serverQueueTitle")}
                   </p>
-                )}
+                  <p className="font-mono text-2xl font-bold text-blue-600">
+                    {serverData?.task_queue_length ?? 0}
+                  </p>
+                </div>
+                <div className="bg-muted rounded-lg p-3">
+                  <p className="text-muted-foreground mb-1 text-[11px] font-medium">
+                    {t("filterPage.serverWorkerCount") || "Workers"}
+                  </p>
+                  <p className="text-foreground font-mono text-2xl font-bold">
+                    {serverData?.workers.length ?? 0}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                  {t("filterPage.workerLabelPlural") || "Workers Progress"}
+                </p>
+                <div className="space-y-2">
+                  {serverData?.workers?.map(
+                    (workerStatus: string, index: number) => (
+                      <div key={index} className="space-y-1">
+                        <div className="text-muted-foreground flex items-center justify-between text-[11px]">
+                          <span className="truncate">
+                            {t("filterPage.workerLabel")} {index + 1}
+                          </span>
+                          <span className="text-foreground font-mono text-xs ml-2 flex-shrink-0">
+                            {workerStatus}
+                          </span>
+                        </div>
+                        <Progress value={parseFloat(workerStatus)} className="w-full" />
+                      </div>
+                    ),
+                  )}
+                  {!serverData?.workers?.length && (
+                    <p className="text-muted-foreground text-center text-xs py-4">
+                      {t("filterPage.noWorkerInfo") ||
+                        "No worker info available."}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-          <ScrollBar />
-        </ScrollArea>
+            <ScrollBar />
+          </ScrollArea>
+        </div>
 
-        <DrawerFooter className="bg-muted/40 flex-none border-t px-4 py-3">
+        <DrawerFooter className="bg-muted/40 border-t px-4 py-3">
           <DrawerClose asChild>
             <Button variant="outline" size="sm" className="ml-auto">
               {t("buttons.close")}
