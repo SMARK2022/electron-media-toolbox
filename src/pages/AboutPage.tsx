@@ -63,7 +63,7 @@ export default function AboutPage() {
   return (
     <div
       className="flex min-h-screen w-full items-center justify-center bg-slate-50/50 p-4 text-slate-900 dark:bg-slate-950 dark:text-slate-50"
-      style={{ marginTop: "-5vh" }}
+      style={{ marginTop: "-7.5vh" }}
     >
       <Card className="w-full max-w-4xl overflow-hidden shadow-xl">
         <div className="grid grid-cols-1 md:grid-cols-[280px_1fr]">

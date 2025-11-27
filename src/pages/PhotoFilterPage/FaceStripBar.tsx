@@ -230,8 +230,10 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
   helperLabel,
   isTrackingMode,
 }) => {
-  const { t } = useTranslation();
+  // 条件返回必须在所有 hooks 之前
   if (!faces.length || !imageSrc) return null;
+
+  const { t } = useTranslation();
 
   const { closed: closedCount, suspicious: suspCount, open: openCount } = countEyeStates(faces);
 

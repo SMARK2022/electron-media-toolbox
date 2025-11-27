@@ -256,7 +256,7 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
         imageSize,
       );
 
-      console.log("[FaceTracker] Match result:", matchResult);
+      // console.log("[FaceTracker] Match result:", matchResult);
 
       if (matchResult.matchedIndex !== null) {
         // 找到匹配的人脸，自动聚焦（置信度判断已在 faceTracker 内部完成）

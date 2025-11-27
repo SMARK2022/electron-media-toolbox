@@ -32,10 +32,11 @@ function WindowButtons() {
         type="button"
         className="p-2 hover:bg-slate-300"
         onClick={minimizeWindow}
+        aria-label="Minimize window"
       >
         <svg
           aria-hidden="true"
-          role="img"
+          role="presentation"
           width="12"
           height="12"
           viewBox="0 0 12 12"
@@ -48,10 +49,11 @@ function WindowButtons() {
         type="button"
         className="p-2 hover:bg-slate-300"
         onClick={maximizeWindow}
+        aria-label="Maximize window"
       >
         <svg
           aria-hidden="true"
-          role="img"
+          role="presentation"
           width="12"
           height="12"
           viewBox="0 0 12 12"
@@ -71,10 +73,11 @@ function WindowButtons() {
         title="Close"
         className="p-2 hover:bg-red-300"
         onClick={closeWindow}
+        aria-label="Close window"
       >
         <svg
           aria-hidden="true"
-          role="img"
+          role="presentation"
           width="12"
           height="12"
           viewBox="0 0 12 12"
