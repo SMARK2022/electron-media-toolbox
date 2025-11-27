@@ -70,7 +70,10 @@ export const SidePanel: React.FC<SidePanelProps> = ({
         </TabsList>
       </div>
 
-      <TabsContent value="filter" className="mt-0 border-0 bg透明 bg-transparent p-0">
+      <TabsContent
+        value="filter"
+        className="bg透明 mt-0 border-0 bg-transparent p-0"
+      >
         <div className="space-y-4">
           <CustomSlider
             label={t("filterPage.similarityThresholdLabel")}
@@ -126,7 +129,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
           setIsPreviewEnabled={() => {}}
           updatePhotoEnabledStatus={fnUpdateFromDetailsPanel}
           setPhotos={() => {}}
-          onPhotoStatusChanged={() => PhotoService.requestRefresh()}
+          onPhotoStatusChanged={() => PhotoService.refreshPhotos()}
           previewHeightPercent={previewHeightPercent}
           onStartPreviewMouseDrag={onStartPreviewMouseDrag}
           onStartPreviewTouchDrag={onStartPreviewTouchDrag}

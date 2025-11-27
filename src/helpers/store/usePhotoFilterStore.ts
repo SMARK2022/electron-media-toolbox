@@ -305,7 +305,7 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
       boolCurrentPreviewEnabled: extended[0]?.isEnabled ?? false,
     });
   },
-
+//TODO
   fnTogglePhotoEnabledFromGrid: async (target: Photo) => {
     const { boolShowDisabledPhotos, lstGalleryGroupedPhotos } = get();
   const newEnabled = !(target.isEnabled ?? true); // 反转启用状态
@@ -426,7 +426,7 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
       console.error("启用所有照片失败:", error);
     }
   },
-
+//TODO
   fnUpdateFromDetailsPanel: async (filePath: string, enabled: boolean) => {
     await updatePhotoEnabledStatus(filePath, enabled); // 详情面板开关直接写 DB
     set((state) => ({

@@ -239,7 +239,7 @@ export function clearPhotos() {
 // 根据条件获取照片记录（不拉取 simRefPath / 直方图）
 export function getPhotosExtendByCriteria(
   groupId: number,
-  sortColumn: string = "IQA",
+  sortColumn?: string,
   considerEnabled: boolean = true,
 ): Promise<PhotoExtend[]> {
   let sql = `
@@ -271,7 +271,9 @@ export function getPhotosExtendByCriteria(
     sql += ` AND isEnabled = 1`;
   }
 
-  sql += ` ORDER BY ${sortColumn} DESC`;
+  if (sortColumn) {
+    sql += ` ORDER BY ${sortColumn} DESC`;
+  }
 
   return window.ElectronDB.all(sql, []);
 }

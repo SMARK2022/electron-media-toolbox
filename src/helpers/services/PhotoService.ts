@@ -19,7 +19,7 @@ import { usePhotoFilterStore, type ServerData } from "@/helpers/store/usePhotoFi
 const SERVER_BASE_URL = "http://localhost:8000";
 const SERVER_STATUS_INTERVAL = 500; // 服务端状态轮询间隔（ms）
 const PHOTOS_REFRESH_INTERVAL = 4000; // 照片刷新间隔（ms）
-const IDLE_DETECT_DELAY = 600; // 空闲检测延迟（ms）
+const IDLE_DETECT_THRESHOLD = 2000; // 空闲检测阈值（ms）- 距离上次检测空闲满2秒后暂停
 
 // ============================================================================
 // 服务状态类型
@@ -29,6 +29,7 @@ interface ServiceState {
   isPolling: boolean;
   lastStatusTime: number;
   lastPhotosTime: number;
+  lastIdleDetectTime: number | null; // 上次检测到空闲的时间
 }
 
 // ============================================================================
@@ -40,6 +41,7 @@ class PhotoServiceImpl {
     isPolling: false,
     lastStatusTime: 0,
     lastPhotosTime: 0,
+    lastIdleDetectTime: null,
   };
 
   private statusTimer: ReturnType<typeof setInterval> | null = null;
@@ -189,16 +191,14 @@ class PhotoServiceImpl {
 
     // 服务状态轮询
     this.statusTimer = setInterval(() => {
-      const store = usePhotoFilterStore.getState();
-      if (store.boolServerPollingNeeded) {
+      if (usePhotoFilterStore.getState().boolServerPollingNeeded) {
         this.pollServerStatus();
       }
     }, SERVER_STATUS_INTERVAL);
 
     // 照片刷新轮询
     this.photosTimer = setInterval(() => {
-      const store = usePhotoFilterStore.getState();
-      if (store.boolServerPollingNeeded) {
+      if (usePhotoFilterStore.getState().boolServerPollingNeeded) {
         this.refreshPhotos();
       }
     }, PHOTOS_REFRESH_INTERVAL);
@@ -209,25 +209,11 @@ class PhotoServiceImpl {
     console.log("[PhotoService] Stopping polling...");
     this.state.isPolling = false;
 
-    if (this.statusTimer) {
-      clearInterval(this.statusTimer);
-      this.statusTimer = null;
-    }
-    if (this.photosTimer) {
-      clearInterval(this.photosTimer);
-      this.photosTimer = null;
-    }
-  }
+    if (this.statusTimer) clearInterval(this.statusTimer);
+    if (this.photosTimer) clearInterval(this.photosTimer);
 
-  /** 请求立即刷新照片数据 */
-  requestRefresh(): void {
-    // 直接异步刷新，不通过轮询循环
-    this.refreshPhotos();
-  }
-
-  /** 启用/禁用服务端轮询 */
-  setPollingEnabled(enabled: boolean): void {
-    usePhotoFilterStore.getState().fnSetServerPollingNeeded(enabled);
+    this.statusTimer = null;
+    this.photosTimer = null;
   }
 
   // ========== 服务端通信 ==========
@@ -256,25 +242,31 @@ class PhotoServiceImpl {
     }
   }
 
-  /** 检测服务端空闲状态 */
+  /** 检测并处理服务端空闲状态 */
   private async checkIdleState(data: ServerData): Promise<void> {
-    const submitTime = sessionStorage.getItem("submitTime");
-    if (!submitTime) return;
+    const store = usePhotoFilterStore.getState();
 
-    const elapsed = (Date.now() - parseInt(submitTime)) / 1000;
+    if (data.status !== "空闲中") {
+      // 服务非空闲，启用轮询并重置空闲检测时间
+      store.fnSetServerPollingNeeded(true);
+      this.state.lastIdleDetectTime = null;
+      return;
+    }
 
-    if (elapsed > 2 && data.status === "空闲中") {
-      // 延迟确认空闲状态
-      await new Promise(resolve => setTimeout(resolve, IDLE_DETECT_DELAY));
+    // 首次检测到空闲
+    if (this.state.lastIdleDetectTime === null) {
+      this.state.lastIdleDetectTime = Date.now();
+      store.fnSetServerPollingNeeded(true);
+      return;
+    }
 
-      const currentData = usePhotoFilterStore.getState().objServerStatusData;
-      if (currentData?.status === "空闲中") {
-        console.log("[PhotoService] Server idle, stopping auto-polling");
-        usePhotoFilterStore.getState().fnSetServerPollingNeeded(false);
-        await this.refreshPhotos();
-      }
-    } else {
-      usePhotoFilterStore.getState().fnSetServerPollingNeeded(true);
+    // 检查距离上次空闲检测是否超过阈值
+    const timeSinceLastIdle = Date.now() - this.state.lastIdleDetectTime;
+    if (timeSinceLastIdle >= IDLE_DETECT_THRESHOLD) {
+      console.log("[PhotoService] Server idle detected, stopping auto-polling");
+      store.fnSetServerPollingNeeded(false);
+      this.state.lastIdleDetectTime = null; // 重置以便下次任务重新计时
+      await this.refreshPhotos();
     }
   }
 
@@ -294,8 +286,6 @@ class PhotoServiceImpl {
     showDisabledPhotos: boolean;
   }): Promise<boolean> {
     try {
-      sessionStorage.setItem("submitTime", Date.now().toString());
-
       const dbPath = await (window as any).ElectronDB?.getDbPath?.();
       if (!dbPath) {
         console.error("[PhotoService] Failed to get DB path");
@@ -314,7 +304,7 @@ class PhotoServiceImpl {
 
       if (response.ok) {
         console.log("[PhotoService] Detection task submitted");
-        this.setPollingEnabled(true);
+        usePhotoFilterStore.getState().fnSetServerPollingNeeded(true);
         return true;
       }
 
@@ -334,9 +324,6 @@ class PhotoServiceImpl {
     height?: number;
   }): Promise<boolean> {
     try {
-      sessionStorage.setItem("submitTime", Date.now().toString());
-
-      // 获取缩略图缓存目录
       let thumbsPath = options.thumbsPath || "../.cache/.thumbs";
       try {
         const electronAPI = (window as any)?.ElectronAPI;
@@ -347,7 +334,6 @@ class PhotoServiceImpl {
         console.warn("[PhotoService] getThumbsCacheDir failed:", error);
       }
 
-      // Fire-and-forget
       fetch(`${SERVER_BASE_URL}/generate_thumbnails`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -359,7 +345,7 @@ class PhotoServiceImpl {
         }),
       }).catch(error => console.error("[PhotoService] Thumbnail task error:", error));
 
-      this.setPollingEnabled(true);
+      usePhotoFilterStore.getState().fnSetServerPollingNeeded(true);
       return true;
     } catch (error) {
       console.error("[PhotoService] Submit thumbnail task error:", error);

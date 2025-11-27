@@ -185,7 +185,7 @@ export default function PhotoFilterSubpage() {
       isFirstMountRef.current = false;
       return;
     }
-    PhotoService.requestRefresh();
+    PhotoService.refreshPhotos();
   }, [boolShowDisabledPhotos, modeGalleryView]);
 
   // ========== 左右分栏拖动逻辑 ==========
