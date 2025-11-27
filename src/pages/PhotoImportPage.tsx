@@ -580,7 +580,7 @@ export default function PhotoImportSubpage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50/60 p-4 px-4 py-2 dark:bg-gray-900">
-      <div className="mb-4 flex justify-between">
+      <div className="mb-2 flex justify-between">
         <FileImportDrawer
           onImported={(newPhotos) => {
             // 导入完成时，统一更新全局照片列表
