@@ -126,11 +126,20 @@ const formatFileSize = (bytes: number) => {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 };
 
-// 工具：日期格式化
+// 工具：日期格式化（支持时间戳、日期字符串）
 const formatDate = (val: string | number | Date | undefined | null) => {
   if (!val) return "";
   try {
-    const date = val instanceof Date ? val : new Date(val);
+    let date: Date;
+    if (val instanceof Date) {
+      date = val;
+    } else if (typeof val === "number") {
+      // 区分秒级时间戳（10位）和毫秒级（13位）
+      const timestamp = val > 9999999999 ? val : val * 1000;
+      date = new Date(timestamp);
+    } else {
+      date = new Date(val);
+    }
     if (isNaN(date.getTime())) return String(val);
     return new Intl.DateTimeFormat("zh-CN", {
       year: "numeric",
@@ -299,6 +308,9 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
     [],
   );
 
+  // 时间相关字段名匹配
+  const timeFieldKeywords = /time|date|Time|Date/i;
+
   const otherEntries = useMemo(
     () =>
       Object.entries(flatData)
@@ -308,6 +320,11 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
           if (typeof v === "object") return false;
           return true;
         })
+        .map(([k, v]) => [
+          k,
+          // 对时间字段进行格式化
+          typeof v === "number" && timeFieldKeywords.test(k) ? formatDate(v) : v,
+        ])
         .sort((a, b) => a[0].localeCompare(b[0])),
     [flatData, prominentKeys],
   );
@@ -512,11 +529,11 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
                     key={key}
                     className="rounded border px-2 py-1.5 transition-colors hover:bg-muted/50"
                   >
-                    <dt className="mb-0.5 truncate text-[10px] text-muted-foreground">
+                    <dt className="mb-0.5 truncate text-[11px] text-muted-foreground">
                       {getFieldLabel(key, isChinese)}
                     </dt>
                     <dd
-                      className="truncate text-[11px] font-medium"
+                      className="truncate text-[13px] font-medium"
                       title={String(value)}
                     >
                       {String(value)}

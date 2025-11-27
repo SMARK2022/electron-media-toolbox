@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { ScanFace, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { ScanFace, Eye, EyeOff, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getEyeState, countEyeStates, type EyeState } from "@/helpers/store/usePhotoFilterStore";
 
@@ -11,10 +11,25 @@ export type FaceInfo = {
 };
 
 // 眼睛状态样式映射（仅样式相关，阈值逻辑由 store 统一管理）
-const EYE_STATE_CONFIG: Record<EyeState, { icon: typeof Eye; color: string; text: string }> = {
-  open: { icon: Eye, color: "text-emerald-600 bg-emerald-50 border-emerald-200", text: "正常" },
-  suspicious: { icon: AlertCircle, color: "text-amber-600 bg-amber-50 border-amber-200", text: "疑似闭眼" },
-  closed: { icon: EyeOff, color: "text-red-600 bg-red-50 border-red-200", text: "闭眼" },
+const EYE_STATE_CONFIG: Record<
+  EyeState,
+  { icon: typeof Eye; color: string; text: string }
+> = {
+  open: {
+    icon: Eye,
+    color: "text-emerald-600 bg-emerald-50 border-emerald-200",
+    text: "正常",
+  },
+  suspicious: {
+    icon: AlertTriangle,
+    color: "text-amber-600 bg-amber-50 border-amber-200",
+    text: "疑似闭眼",
+  },
+  closed: {
+    icon: EyeOff,
+    color: "text-red-600 bg-red-50 border-red-200",
+    text: "闭眼",
+  },
 };
 
 interface FaceThumbnailProps {
@@ -239,7 +254,7 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
               )}
               {suspiciousCount > 0 && (
                 <span className="flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
-                  <AlertCircle className="h-2.5 w-2.5" /> {suspiciousCount}
+                  <AlertTriangle className="h-2.5 w-2.5" /> {suspiciousCount}
                 </span>
               )}
               {openEyesCount > 0 && (

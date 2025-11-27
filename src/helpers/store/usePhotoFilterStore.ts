@@ -23,9 +23,9 @@ export interface ServerData {
 // 眨眼状态阈值常量 & 工具函数（统一管理，避免多处硬编码）
 // ============================================================================
 /** 闭眼阈值：eye_open < 此值 判定为闭眼 */
-export const EYE_THRESHOLD_CLOSED = 0.3;
+export const EYE_THRESHOLD_CLOSED = 0.35;
 /** 疑似闭眼阈值：eye_open <= 此值 且 >= CLOSED 判定为疑似 */
-export const EYE_THRESHOLD_SUSPICIOUS = 0.5;
+export const EYE_THRESHOLD_SUSPICIOUS = 0.6;
 
 /** 眼睛状态枚举 */
 export type EyeState = "open" | "suspicious" | "closed";

@@ -1,4 +1,23 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+/**
+ * PhotoGrid 组件
+ * ============
+ * 照片网格展示组件，支持以下功能：
+ * - 懒加载图片，进入视口后才加载
+ * - 眨眼状态指示条（磨砂玻璃风格），显示闭眼/疑似/正常人脸数量
+ * - 右键菜单：打开文件、打开文件夹、启用/禁用、删除等操作
+ * - 删除确认对话框（Portal 挂载，避免界面阻塞）
+ * - 照片详情弹窗（元数据展示）
+ * - 键盘导航（方向键 + Enter）
+ */
+
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
+import ReactDOM from "react-dom";
 import missing_icon from "@/assets/images/cat_missing.svg";
 import { Photo } from "@/helpers/ipc/database/db";
 import { cn } from "@/lib/utils";
@@ -11,7 +30,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
-  AlertCircle,
+  AlertTriangle,
 } from "lucide-react";
 import {
   usePhotoFilterStore,
@@ -110,10 +129,10 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     <div
       ref={menuRef}
       style={adjustedStyle}
-      className="animate-in fade-in zoom-in-95 fixed z-50 w-56 overflow-hidden rounded-lg border border-gray-200 bg-white/95 text-sm shadow-xl backdrop-blur-sm duration-100"
+      className="animate-in fade-in zoom-in-95 fixed z-50 w-56 overflow-hidden rounded-lg border border-gray-200 bg-white/95 text-sm shadow-xl backdrop-blur-sm duration-100 dark:border-slate-700 dark:bg-slate-800/95"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="truncate border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500">
+      <div className="truncate border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
         {ellipsizeMiddle(targetName, 32)}
       </div>
       <div className="p-1">
@@ -129,7 +148,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
           return (
             <div key={group.id} className="mb-1 last:mb-0">
               {/* 分组标题行 */}
-              <div className="px-2 pt-1 text-[11px] font-semibold tracking-wide text-gray-400 uppercase">
+              <div className="px-2 pt-1 text-[11px] font-semibold tracking-wide text-gray-400 uppercase dark:text-slate-500">
                 {group.label}
               </div>
               {itemsToShow.map((item) => {
@@ -166,27 +185,15 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
 
                 const dynamicLabel = isToggleItem
                   ? isEnabled
-                    ? t(
-                        "photoContext.menu.toggleEnabled.disable",
-                        "标记为禁用",
-                      )
-                    : t(
-                        "photoContext.menu.toggleEnabled.enable",
-                        "标记为启用",
-                      )
+                    ? t("photoContext.menu.toggleEnabled.disable", "标记为禁用")
+                    : t("photoContext.menu.toggleEnabled.enable", "标记为启用")
                   : baseLabel;
 
-                const dynamicClassName = isToggleItem
-                  ? canToggleEnabled
-                    ? isEnabled
-                      ? "text-orange-600 hover:bg-orange-50 hover:text-orange-700"
-                      : "text-green-600 hover:bg-green-50 hover:text-green-700"
-                    : "text-gray-300 cursor-not-allowed"
-                  : item.id === "delete-db"
-                    ? "text-orange-500 hover:bg-orange-50 hover:text-orange-600"
+                const dynamicClassName = item.id === "delete-db"
+                    ? "text-orange-500 hover:bg-orange-50 hover:text-orange-600 dark:text-orange-400 dark:hover:bg-orange-950/30"
                     : item.id === "delete-file"
-                      ? "text-red-600 hover:bg-red-50 hover:text-red-700"
-                      : undefined;
+                      ? "text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/30"
+                      : "dark:text-slate-200";
 
                 const isDisabled = isToggleItem && !canToggleEnabled;
 
@@ -203,7 +210,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
                   />
                 );
               })}
-              <div className="my-1 h-px bg-gray-100" />
+              <div className="my-1 h-px bg-gray-100 dark:bg-slate-700" />
             </div>
           );
         })}
@@ -221,7 +228,7 @@ const ContextMenuItem: React.FC<{
   <button
     onClick={onClick}
     className={cn(
-      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-gray-100",
+      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-gray-100 dark:hover:bg-slate-700",
       className,
     )}
   >
@@ -505,8 +512,8 @@ export function PhotoGridEnhance({
                 "group relative flex-none overflow-hidden rounded-lg border transition-all duration-200",
                 "cursor-pointer hover:-translate-y-1 hover:shadow-lg focus-visible:outline-none",
                 highlighted
-                  ? "border-blue-500 shadow-md ring-2 ring-blue-200"
-                  : "border-gray-200 shadow-sm hover:border-gray-300",
+                  ? "border-blue-500 shadow-md ring-2 ring-blue-200 dark:ring-blue-900"
+                  : "border-gray-200 shadow-sm hover:border-gray-300 dark:border-slate-700 dark:hover:border-slate-600",
                 !photo.isEnabled && "opacity-40 grayscale",
               )}
               onClick={() => selectPhotoByIndex(index, "Select")}
@@ -537,11 +544,9 @@ export function PhotoGridEnhance({
           onClose={() => setContextMenu({ ...contextMenu, visible: false })}
           onAction={(action) => {
             if (contextMenu.photo) {
-              // 如果外层组件提供了自定义处理函数，则优先使用，方便某些页面覆写默认行为
               if (onContextMenuAction) {
                 onContextMenuAction(action, contextMenu.photo);
               } else {
-                // 默认情况下走全局 store 的统一入口，action 即为 store 中注册的 item.id
                 void fnHandleContextMenuAction(action, contextMenu.photo, page);
               }
             }
@@ -550,72 +555,21 @@ export function PhotoGridEnhance({
         />
       )}
 
-      {/* 删除文件确认对话框：仅在需要确认时展示 */}
-      <AlertDialog
+      {/* 删除确认对话框 & 信息弹窗：通过 Portal 挂载到 body，避免界面阻塞重绘 */}
+      <DeleteConfirmPortal
         open={boolShowDeleteConfirm && !!objPendingDeletePhoto}
-        onOpenChange={(open) => {
-          if (!open) {
-            fnCloseDeleteConfirm();
-          }
+        photo={objPendingDeletePhoto}
+        skipConfirm={boolSkipDeleteConfirm}
+        onClose={fnCloseDeleteConfirm}
+        onSetSkipConfirm={fnSetSkipDeleteConfirm}
+        onConfirm={async () => {
+          const target = objPendingDeletePhoto;
+          fnCloseDeleteConfirm();
+          if (!target) return;
+          await fnHandleContextMenuAction("delete-file", target, page);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t("photoContext.confirmDeleteTitle", "Delete photo file")}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(
-                "photoContext.confirmDeleteDesc",
-                "This will permanently delete the file from disk. This action cannot be undone.",
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="bg-muted my-2 rounded-md px-3 py-2 text-xs">
-            <div className="font-mono break-all">
-              {objPendingDeletePhoto?.filePath}
-            </div>
-          </div>
-          <div className="mt-2 flex items-center space-x-2">
-            <Checkbox
-              id="skip-delete-confirm"
-              checked={boolSkipDeleteConfirm}
-              onCheckedChange={(checked: boolean) =>
-                fnSetSkipDeleteConfirm(checked === true)
-              }
-            />
-            <label
-              htmlFor="skip-delete-confirm"
-              className="text-muted-foreground text-xs select-none"
-            >
-              {t(
-                "photoContext.skipConfirmLabel",
-                "Do not ask again (use with caution)",
-              )}
-            </label>
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
-              {t("common.cancel", "Cancel")}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                const target = objPendingDeletePhoto;
-                fnCloseDeleteConfirm();
-                if (!target) return;
+      />
 
-                // 调用 store 中的 delete-file 行为：通过统一入口再次分发
-                await fnHandleContextMenuAction("delete-file", target, page);
-              }}
-              className="bg-red-600 text-white hover:bg-red-700"
-            >
-              {t("photoContext.confirmDeleteButton", "Delete")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* 照片详情元数据弹窗 */}
       <PhotoInfoDialog
         open={boolShowInfoDialog}
         onOpenChange={(open) => {
@@ -628,13 +582,169 @@ export function PhotoGridEnhance({
   );
 }
 
-// ========== 懒加载图片组件（保持原有显示逻辑）==========
-interface LazyImageContainerProps {
-  photo: Photo;
-  page?: PhotoPage; // 当前所在业务页面，用于决定是否显示眨眼指示器
+// ========== 删除确认对话框（Portal 版本）==========
+interface DeleteConfirmPortalProps {
+  open: boolean;
+  photo: Photo | null;
+  skipConfirm: boolean;
+  onClose: () => void;
+  onSetSkipConfirm: (skip: boolean) => void;
+  onConfirm: () => Promise<void>;
 }
 
-function LazyImageContainer({ photo, page = "filter" }: LazyImageContainerProps) {
+/**
+ * 删除确认对话框：使用 Portal 挂载到 body，
+ * 避免父组件状态变化导致的界面闪烁和阻塞重绘问题。
+ */
+const DeleteConfirmPortal: React.FC<DeleteConfirmPortalProps> = ({
+  open,
+  photo,
+  skipConfirm,
+  onClose,
+  onSetSkipConfirm,
+  onConfirm,
+}) => {
+  const { t } = useTranslation();
+
+  const dialogContent = (
+    <AlertDialog
+      open={open}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) onClose();
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {t("photoContext.confirmDeleteTitle", "Delete photo file")}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {t(
+              "photoContext.confirmDeleteDesc",
+              "This will permanently delete the file from disk. This action cannot be undone.",
+            )}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="bg-muted my-2 rounded-md px-3 py-2 text-xs">
+          <div className="font-mono break-all">{photo?.filePath}</div>
+        </div>
+        <div className="mt-2 flex items-center space-x-2">
+          <Checkbox
+            id="skip-delete-confirm"
+            checked={skipConfirm}
+            onCheckedChange={(checked: boolean) =>
+              onSetSkipConfirm(checked === true)
+            }
+          />
+          <label
+            htmlFor="skip-delete-confirm"
+            className="text-muted-foreground text-xs select-none"
+          >
+            {t(
+              "photoContext.skipConfirmLabel",
+              "Do not ask again (use with caution)",
+            )}
+          </label>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={onConfirm}
+            className="bg-red-600 text-white hover:bg-red-700"
+          >
+            {t("photoContext.confirmDeleteButton", "Delete")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
+  // SSR 环境下直接返回内容
+  if (typeof document === "undefined") {
+    return dialogContent;
+  }
+
+  return ReactDOM.createPortal(dialogContent, document.body);
+};
+
+// ========== 懒加载图片组件 ==========
+interface LazyImageContainerProps {
+  photo: Photo;
+  page?: PhotoPage;
+}
+
+/**
+ * 眨眼状态指示条（磨砂玻璃风格）
+ * 根据 store 中的眨眼统计数据渲染三种状态：闭眼/疑似/正常
+ */
+interface EyeStateBadgeProps {
+  eyeStats?: {
+    closedEyesCount: number;
+    suspiciousCount: number;
+    openEyesCount: number;
+  } | null;
+}
+
+const EyeStateBadge: React.FC<EyeStateBadgeProps> = ({ eyeStats }) => {
+  if (!eyeStats) return null;
+
+  const { closedEyesCount, suspiciousCount, openEyesCount } = eyeStats;
+  // 若三种状态都为0，不显示指示条
+  if (closedEyesCount === 0 && suspiciousCount === 0 && openEyesCount === 0)
+    return null;
+
+  const hasIssues = closedEyesCount > 0 || suspiciousCount > 0;
+
+  return (
+    <div
+      className={cn(
+        "absolute top-2 right-2 z-10 flex items-center gap-0 overflow-hidden rounded-md border shadow-sm backdrop-blur-md transition-all duration-300 select-none",
+        "border-white/10 bg-zinc-950/85 shadow-black/20",
+      )}
+    >
+      {/* 闭眼（最严重警告） */}
+      {closedEyesCount > 0 && (
+        <div className="flex items-center gap-1 border-r border-white/10 px-1 py-1 text-rose-400 last:border-0">
+          <EyeOff size={12} strokeWidth={2.5} />
+          <span className="font-mono text-[10px] leading-none font-bold text-white/90">
+            {closedEyesCount}
+          </span>
+        </div>
+      )}
+      {/* 疑似闭眼（次级警告） */}
+      {suspiciousCount > 0 && (
+        <div className="flex items-center gap-1 border-r border-white/10 px-1 py-1 text-amber-400 last:border-0">
+          <AlertTriangle size={12} strokeWidth={2.5} />
+          <span className="font-mono text-[10px] leading-none font-bold text-white/90">
+            {suspiciousCount}
+          </span>
+        </div>
+      )}
+      {/* 正常睁眼 */}
+      {openEyesCount > 0 && (
+        <div
+          className={cn(
+            "flex items-center gap-1 px-1 py-1 last:border-0 text-emerald-400",
+          )}
+        >
+          <Eye size={12} strokeWidth={hasIssues ? 2 : 2.5} />
+          <span
+            className={cn(
+              "font-mono text-[10px] leading-none font-bold text-white/90",
+            )}
+          >
+            {openEyesCount}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+function LazyImageContainer({
+  photo,
+  page = "filter",
+}: LazyImageContainerProps) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
@@ -642,7 +752,7 @@ function LazyImageContainer({ photo, page = "filter" }: LazyImageContainerProps)
 
   // 从 store 中读取眨眼统计数据
   const lstPhotosEyeStats = usePhotoFilterStore((s) => s.lstPhotosEyeStats);
-  const eyeStats = lstPhotosEyeStats.get(photo.filePath);
+  const eyeStats = lstPhotosEyeStats.get(photo.filePath) ?? null;
 
   // 进入视口后再加载
   useEffect(() => {
@@ -655,10 +765,7 @@ function LazyImageContainer({ photo, page = "filter" }: LazyImageContainerProps)
           }
         });
       },
-      {
-        root: null,
-        threshold: 0.01,
-      },
+      { root: null, threshold: 0.01 },
     );
 
     if (imgRef.current) observer.observe(imgRef.current);
@@ -680,7 +787,7 @@ function LazyImageContainer({ photo, page = "filter" }: LazyImageContainerProps)
     }
   }, [isVisible, photo.fileUrl]);
 
-  // 保持原有的评分颜色逻辑
+  // 评分颜色逻辑
   const infoStr = photo.info ?? "";
   const numericInfo = /^[0-9]+(\.[0-9]+)?$/.test(infoStr)
     ? parseFloat(infoStr)
@@ -691,9 +798,7 @@ function LazyImageContainer({ photo, page = "filter" }: LazyImageContainerProps)
   const colorStyle = !Number.isNaN(numericInfo)
     ? numericInfo <= 50
       ? `rgb(${clamp(255 - numericInfo * 5)}, ${clamp(numericInfo * 5)}, 0)`
-      : `rgb(0, ${clamp(255 - (numericInfo - 50) * 5)}, ${clamp(
-          (numericInfo - 50) * 5,
-        )})`
+      : `rgb(0, ${clamp(255 - (numericInfo - 50) * 5)}, ${clamp((numericInfo - 50) * 5)})`
     : undefined;
 
   const formattedInfo = !Number.isNaN(numericInfo)
@@ -701,62 +806,40 @@ function LazyImageContainer({ photo, page = "filter" }: LazyImageContainerProps)
     : infoStr;
 
   const showInfo = formattedInfo !== "";
-
   const displayName = ellipsizeMiddle(photo.fileName);
 
   // 只在筛选页面显示眨眼统计指示器
-  const showEyeStats = page === "filter" && eyeStats && (eyeStats.closedEyesCount > 0 || eyeStats.suspiciousCount > 0 || eyeStats.openEyesCount > 0);
+  const showEyeStats =
+    page === "filter" &&
+    eyeStats &&
+    (eyeStats.closedEyesCount > 0 ||
+      eyeStats.suspiciousCount > 0 ||
+      eyeStats.openEyesCount > 0);
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-white">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-white dark:bg-slate-800">
       {/* 图片区域 */}
-      <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-gray-100">
+      <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-gray-100 dark:bg-slate-900">
         <img
           ref={imgRef}
           src={hasError ? missing_icon : thumbnailUrl || missing_icon}
           alt={photo.fileName}
           loading="lazy"
           className="h-[160px] max-w-full transform object-contain transition-transform duration-300 ease-in-out group-hover:scale-105"
-          onError={() => {
-            setHasError(true);
-          }}
+          onError={() => setHasError(true)}
         />
         {/* 悬浮遮罩 */}
         <div className="pointer-events-none absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/5" />
 
-        {/* 眨眼统计指示器：圆角矩形分为三个区域 */}
-        {showEyeStats && (
-          <div className="absolute top-2 right-2 flex items-center gap-0 rounded-full border border-white/20 bg-black/40 shadow-md backdrop-blur-sm overflow-hidden">
-            {/* 闭眼区域 */}
-            {eyeStats.closedEyesCount > 0 && (
-              <div className="flex items-center gap-0.5 bg-red-500/80 px-1.5 py-1 text-[8px] text-white font-semibold">
-                <EyeOff className="h-2.5 w-2.5" />
-                <span>{eyeStats.closedEyesCount}</span>
-              </div>
-            )}
-            {/* 疑似闭眼区域 */}
-            {eyeStats.suspiciousCount > 0 && (
-              <div className="flex items-center gap-0.5 bg-amber-500/80 px-1.5 py-1 text-[8px] text-white font-semibold">
-                <AlertCircle className="h-2.5 w-2.5" />
-                <span>{eyeStats.suspiciousCount}</span>
-              </div>
-            )}
-            {/* 正常睁眼区域 */}
-            {eyeStats.openEyesCount > 0 && (
-              <div className="flex items-center gap-0.5 bg-emerald-500/80 px-1.5 py-1 text-[8px] text-white font-semibold">
-                <Eye className="h-2.5 w-2.5" />
-                <span>{eyeStats.openEyesCount}</span>
-              </div>
-            )}
-          </div>
-        )}
+        {/* 眨眼统计指示器（磨砂玻璃风格） */}
+        {showEyeStats && <EyeStateBadge eyeStats={eyeStats} />}
       </div>
 
       {/* 信息区域 */}
-      <div className="flex w-full items-center justify-between border-t border-gray-100 bg-white px-3 py-2 text-xs">
+      <div className="flex w-full items-center justify-between border-t border-gray-100 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800">
         <div className="flex flex-1 flex-col overflow-hidden">
           <p
-            className="truncate leading-tight font-medium text-gray-700"
+            className="truncate leading-tight font-medium text-gray-700 dark:text-slate-200"
             title={photo.fileName}
           >
             {displayName}
@@ -764,9 +847,7 @@ function LazyImageContainer({ photo, page = "filter" }: LazyImageContainerProps)
           {showInfo && (
             <p
               className="mt-0.5 font-mono text-[11px]"
-              style={{
-                color: colorStyle,
-              }}
+              style={{ color: colorStyle }}
             >
               {formattedInfo}
             </p>

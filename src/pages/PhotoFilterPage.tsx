@@ -5,19 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Layers,
-  Grid,
-  Play,
-  RotateCcw,
-  Trash2,
-  Eye,
-  EyeOff,
-  Server,
-  Loader2,
-  AlertCircle,
-  Image as ImageIcon,
-} from "lucide-react";
+import { Play, Eye, EyeOff, Server, Loader2 } from "lucide-react";
 
 import {
   Drawer,
@@ -40,6 +28,7 @@ import { GalleryPanel } from "./PhotoFilterPage/GalleryPanel"; // 左侧画廊 U
 import { SidePanel } from "./PhotoFilterPage/SidePanel"; // 右侧筛选 & 预览 UI，只关心 panel 相关的 slice
 import { usePhotoFilterEffects } from "./PhotoFilterPage/PhotoFilterEffects"; // 副作用 hook：初始化 / 轮询都集中到这里
 import { PhotoGridEnhance } from "@/components/PhotoGrid"; // 旧版 GalleryGroup 仍然引用的增强网格组件
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
 /**
  * 单个分组组件，使用 React.memo 避免无关重渲染
@@ -114,8 +103,8 @@ function ServerStatusMonitorDrawer({
           <span className="max-w-[19vw] truncate">{serverStatus}</span>
         </Button>
       </DrawerTrigger>
-      <DrawerContent className="bg-background max-h-[80vh] max-w-xl translate-y-0 border-t sm:rounded-t-xl sm:border">
-        <DrawerHeader className="border-b pb-4">
+      <DrawerContent className="bg-background flex max-h-[80vh] max-w-xl translate-y-0 flex-col border-t sm:rounded-t-xl sm:border">
+        <DrawerHeader className="flex-none border-b pb-4">
           <div className="flex items-center justify-between">
             <div>
               <DrawerTitle className="text-base font-semibold">
@@ -140,56 +129,60 @@ function ServerStatusMonitorDrawer({
           </div>
         </DrawerHeader>
 
-        <div className="space-y-4 p-4">
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div className="bg-muted rounded-lg p-3">
-              <p className="text-muted-foreground mb-1 text-[11px] font-medium">
-                {t("filterPage.serverQueueTitle")}
-              </p>
-              <p className="font-mono text-2xl font-bold text-blue-600">
-                {serverData?.task_queue_length ?? 0}
-              </p>
-            </div>
-            <div className="bg-muted rounded-lg p-3">
-              <p className="text-muted-foreground mb-1 text-[11px] font-medium">
-                {t("filterPage.serverWorkerCount") || "Workers"}
-              </p>
-              <p className="text-foreground font-mono text-2xl font-bold">
-                {serverData?.workers.length ?? 0}
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-              {t("filterPage.workerLabelPlural") || "Workers Progress"}
-            </p>
-            <div className="space-y-2">
-              {serverData?.workers?.map(
-                (workerStatus: string, index: number) => (
-                  <div key={index} className="space-y-1">
-                    <div className="text-muted-foreground flex items-center justify-between text-[11px]">
-                      <span>
-                        {t("filterPage.workerLabel")} {index + 1}
-                      </span>
-                      <span className="text-foreground font-mono text-xs">
-                        {workerStatus}
-                      </span>
-                    </div>
-                    <Progress value={parseFloat(workerStatus)} />
-                  </div>
-                ),
-              )}
-              {!serverData?.workers?.length && (
-                <p className="text-muted-foreground text-center text-xs">
-                  {t("filterPage.noWorkerInfo") || "No worker info available."}
+        <ScrollArea className="flex-1">
+          <div className="space-y-4 p-4">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="bg-muted rounded-lg p-3">
+                <p className="text-muted-foreground mb-1 text-[11px] font-medium">
+                  {t("filterPage.serverQueueTitle")}
                 </p>
-              )}
+                <p className="font-mono text-2xl font-bold text-blue-600">
+                  {serverData?.task_queue_length ?? 0}
+                </p>
+              </div>
+              <div className="bg-muted rounded-lg p-3">
+                <p className="text-muted-foreground mb-1 text-[11px] font-medium">
+                  {t("filterPage.serverWorkerCount") || "Workers"}
+                </p>
+                <p className="text-foreground font-mono text-2xl font-bold">
+                  {serverData?.workers.length ?? 0}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                {t("filterPage.workerLabelPlural") || "Workers Progress"}
+              </p>
+              <div className="space-y-2">
+                {serverData?.workers?.map(
+                  (workerStatus: string, index: number) => (
+                    <div key={index} className="space-y-1">
+                      <div className="text-muted-foreground flex items-center justify-between text-[11px]">
+                        <span>
+                          {t("filterPage.workerLabel")} {index + 1}
+                        </span>
+                        <span className="text-foreground font-mono text-xs">
+                          {workerStatus}
+                        </span>
+                      </div>
+                      <Progress value={parseFloat(workerStatus)} />
+                    </div>
+                  ),
+                )}
+                {!serverData?.workers?.length && (
+                  <p className="text-muted-foreground text-center text-xs">
+                    {t("filterPage.noWorkerInfo") ||
+                      "No worker info available."}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+          <ScrollBar />
+        </ScrollArea>
 
-        <DrawerFooter className="bg-muted/40 border-t px-4 py-3">
+        <DrawerFooter className="bg-muted/40 flex-none border-t px-4 py-3">
           <DrawerClose asChild>
             <Button variant="outline" size="sm" className="ml-auto">
               {t("buttons.close")}
@@ -254,7 +247,7 @@ export default function PhotoFilterSubpage() {
       let newLeft = startLeftRef.current + deltaVw;
       if (newLeft < minLeftVw) newLeft = minLeftVw;
       if (newLeft > maxLeftVw) newLeft = maxLeftVw;
-    fnSetLeftPaneWidthVw(Number(newLeft.toFixed(2)));
+      fnSetLeftPaneWidthVw(Number(newLeft.toFixed(2)));
     };
 
     const onMouseUp = () => {
@@ -289,7 +282,7 @@ export default function PhotoFilterSubpage() {
       let newLeft = startLeftRef.current + deltaVw;
       if (newLeft < minLeftVw) newLeft = minLeftVw;
       if (newLeft > maxLeftVw) newLeft = maxLeftVw;
-    fnSetLeftPaneWidthVw(Number(newLeft.toFixed(2)));
+      fnSetLeftPaneWidthVw(Number(newLeft.toFixed(2)));
     };
 
     const onTouchEnd = () => {
@@ -355,7 +348,7 @@ export default function PhotoFilterSubpage() {
       let newHeight = previewStartHeightRef.current + deltaPercent;
       if (newHeight < 20) newHeight = 20;
       if (newHeight > 70) newHeight = 70;
-    fnSetPreviewHeightPercent(Number(newHeight.toFixed(1)));
+      fnSetPreviewHeightPercent(Number(newHeight.toFixed(1)));
     };
 
     const onMouseUp = () => {
@@ -392,7 +385,7 @@ export default function PhotoFilterSubpage() {
       let newHeight = previewStartHeightRef.current + deltaPercent;
       if (newHeight < 20) newHeight = 20;
       if (newHeight > 70) newHeight = 70;
-    fnSetPreviewHeightPercent(Number(newHeight.toFixed(1)));
+      fnSetPreviewHeightPercent(Number(newHeight.toFixed(1)));
     };
 
     const onTouchEnd = () => {
@@ -486,12 +479,11 @@ export default function PhotoFilterSubpage() {
     if (response.ok) {
       const data = await response.json();
       console.log("检测任务已添加到队列:", data);
-  fnSetServerPollingNeeded(true);
+      fnSetServerPollingNeeded(true);
     } else {
       console.error("提交检测任务失败");
     }
   };
-
 
   // 当前高亮照片列表（只在 previewPhotos 变化时重建）
   const highlightPhotos = React.useMemo<Photo[]>(() => {
