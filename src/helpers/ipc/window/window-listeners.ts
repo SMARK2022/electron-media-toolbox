@@ -10,6 +10,9 @@ import {
   WIN_MINIMIZE_CHANNEL,
 } from "./window-channels";
 
+// 引入 protocol 模块,用于注册 schemes
+const exifParser = require("exif-parser");
+
 // 注册自定义协议的 scheme，使其具备安全特性并支持 fetch 等
 protocol.registerSchemesAsPrivileged([
   {
@@ -236,9 +239,7 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
 
       try {
         const buffer = fs.readFileSync(filePath);
-        const parser = (require("exif-parser") as typeof import("exif-parser")).create(
-          buffer,
-        );
+        const parser = exifParser.create(buffer);
         const result = parser.parse();
 
         const tags = result.tags || {};
