@@ -28,6 +28,9 @@ import { usePhotoFilterStore } from "@/helpers/store/usePhotoFilterStore";
 import { PhotoService } from "@/helpers/services/PhotoService";
 import { Upload, FileWarning, Image as ImageIcon } from "lucide-react";
 
+// 规范化路径为正斜杠
+const normalizePath = (p: string) => p.replace(/\\/g, "/");
+
 // ----------------- 类型与小工具函数 -----------------
 
 interface DroppedFile {
@@ -70,13 +73,11 @@ function tryGetFullPath(file: File): string {
   return "";
 }
 
-/** 规范化为正斜杠路径 */
-const normalizePath = (p: string) => p.replace(/\\/g, "/");
-
 // ----------------- 主导入 Drawer -----------------
 
 function FileImportDrawer({ onImported }: FileImportDrawerProps) {
   const { t } = useTranslation();
+  const fnGetPhotoMetadata = usePhotoFilterStore((s) => s.fnGetPhotoMetadata); // 获取 store 中的缓存元数据函数
 
   const [droppedFiles, setDroppedFiles] = React.useState<DroppedFile[]>([]);
   const [folderName, setFolderName] = React.useState("");
@@ -241,16 +242,12 @@ function FileImportDrawer({ onImported }: FileImportDrawerProps) {
           const normalized = normalizePath(absPath);
           const fileName = normalized.split("/").pop() || "";
 
-          let photoInfo: any = null;
-          try {
-            const res = await fetch(`photo-info://${normalized}`);
-            if (res.ok) photoInfo = await res.json();
-          } catch (error) {
-            console.error(`Failed to get photo info for ${normalized}`, error);
-          }
+          // 通过 store 缓存函数获取 EXIF 元数据（自动缓存，避免重复读取）
+          const metadata = await fnGetPhotoMetadata(normalized);
+          const exifData = metadata?.exif ?? null;
 
-          const captureTime = photoInfo
-            ? new Date(photoInfo.tags.captureTime * 1000).toLocaleString()
+          const captureTime = exifData?.captureTime // EXIF 中的 captureTime 为 Unix 时间戳
+            ? new Date(exifData.captureTime * 1000).toLocaleString()
             : undefined;
 
           return {
@@ -258,11 +255,10 @@ function FileImportDrawer({ onImported }: FileImportDrawerProps) {
             fileUrl: `thumbnail-resource://${normalized}`,
             filePath: normalized,
             date: captureTime,
-            fileSize: photoInfo?.tags?.fileSize,
-            info:
-              photoInfo?.tags?.ExposureTime && photoInfo?.tags?.LensModel
-                ? `1/${1 / photoInfo.tags.ExposureTime} ${photoInfo.tags.LensModel}`
-                : undefined,
+            fileSize: exifData?.fileSize,
+            info: exifData?.ExposureTime && exifData?.LensModel
+              ? `1/${1 / exifData.ExposureTime} ${exifData.LensModel}`
+              : undefined,
             isEnabled: true,
           };
         }),

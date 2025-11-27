@@ -13,9 +13,6 @@ import { spawn, type ChildProcess } from "child_process";
 import * as http from "http"; // 新增：用于调用后端 /shutdown
 import { LruBufferCache } from "./helpers/cache/lru-buffer-cache";
 
-// 引入 protocol 模块,用于注册 schemes
-const exifParser = require("exif-parser");
-
 /* -------------------------------------------------------------------------- */
 /*                               初始化与常量                                   */
 /* -------------------------------------------------------------------------- */
@@ -392,71 +389,7 @@ function createWindow() {
       return new Response(null, { status: 500 });
     }
   });
-
-  /* ------------------------------ 协议处理: 照片信息 ------------------------------ */
-
-  function getPhotoInfo(imagePath: string): Promise<any> {
-    return new Promise((resolve, reject) => {
-      console.log(`Getting photo info for: ${imagePath}`);
-
-      fs.stat(imagePath, (statErr, stats) => {
-        if (statErr) {
-          reject(`Error reading file stats: ${statErr.message}`);
-          return;
-        }
-
-        const fileSize = stats.size; // 文件大小（字节）
-
-        fs.readFile(imagePath, (readErr, data) => {
-          if (readErr) {
-            reject(`Error reading file: ${readErr.message}`);
-            return;
-          }
-
-          try {
-            const parser = exifParser.create(data);
-            const result = parser.parse();
-
-            console.log(`✓ Successfully parsed EXIF data for: ${imagePath}`);
-
-            result.tags["captureTime"] =
-              result.tags["DateTimeOriginal"] || result.tags["CreateDate"];
-            result.tags["cameraModel"] =
-              result.tags["Model"] || "Unknown Camera";
-            result.tags["fileSize"] = fileSize;
-
-            resolve(result);
-          } catch (exifError: any) {
-            const errorMsg = `Error parsing EXIF data: ${exifError.message}`;
-            console.log(`✗ ${errorMsg}`);
-            reject(errorMsg);
-          }
-        });
-      });
-    });
-  }
-
-  // photo-info:// 返回照片 EXIF 与文件信息
-  protocol.handle("photo-info", async (request: Request) => {
-    const decodedUrl = decodeURIComponent(
-      request.url.replace(new RegExp(`^photo-info:/`, "i"), ""),
-    );
-
-    const fullPath =
-      process.platform === "win32" ? convertPath(decodedUrl) : decodedUrl;
-
-    try {
-      const photoInfo = await getPhotoInfo(fullPath);
-      return new Response(JSON.stringify(photoInfo), {
-        headers: { "Content-Type": "application/json" },
-      });
-    } catch (error: any) {
-      console.error(
-        `Failed to read photo info or thumbnail: ${error.message as string}`,
-      );
-      return new Response(null, { status: 500 });
-    }
-  });
+  // 注意：photo-info:// 协议已移除，EXIF 元数据通过 IPC (get-photo-metadata) 获取
 }
 
 /* -------------------------------------------------------------------------- */

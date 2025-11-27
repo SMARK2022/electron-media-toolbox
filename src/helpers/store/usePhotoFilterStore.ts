@@ -39,8 +39,14 @@ export function getEyeState(eyeOpen: number | undefined): EyeState {
 }
 
 /** 根据 faces 数组统计各状态数量 */
-export function countEyeStates(faces: { eye_open?: number }[]): { closed: number; suspicious: number; open: number } {
-  let closed = 0, suspicious = 0, open = 0;
+export function countEyeStates(faces: { eye_open?: number }[]): {
+  closed: number;
+  suspicious: number;
+  open: number;
+} {
+  let closed = 0,
+    suspicious = 0,
+    open = 0;
   for (const f of faces) {
     const state = getEyeState(f.eye_open);
     if (state === "closed") closed++;
@@ -92,6 +98,9 @@ interface PhotoFilterState {
   objInfoPhoto: Photo | null;
   objInfoMetadata: Record<string, any> | null;
 
+  // EXIF 元数据缓存（filePath -> metadata）
+  mapExifMetadataCache: Map<string, Record<string, any>>;
+
   // 右键菜单配置与行为
   contextMenuGroups: {
     id: string;
@@ -133,13 +142,24 @@ interface PhotoFilterState {
   fnOpenInfoDialog: (photo: Photo, metadata: Record<string, any>) => void;
   fnCloseInfoDialog: () => void;
 
+  // EXIF 元数据获取（带缓存）
+  fnGetPhotoMetadata: (filePath: string) => Promise<Record<string, any> | null>;
+  fnClearMetadataCache: () => void;
+
   // 业务操作
   fnSelectPreviewPhotos: (photos: Photo[]) => Promise<void>;
   fnTogglePhotoEnabledFromGrid: (photo: Photo) => Promise<void>;
   fnDisableRedundantInGroups: () => Promise<void>;
   fnEnableAllPhotos: () => Promise<void>;
-  fnUpdateFromDetailsPanel: (filePath: string, enabled: boolean) => Promise<void>;
-  fnHandleContextMenuAction: (actionId: string, photo: Photo, page: PhotoPage) => Promise<void>;
+  fnUpdateFromDetailsPanel: (
+    filePath: string,
+    enabled: boolean,
+  ) => Promise<void>;
+  fnHandleContextMenuAction: (
+    actionId: string,
+    photo: Photo,
+    page: PhotoPage,
+  ) => Promise<void>;
 }
 
 export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
@@ -151,7 +171,9 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   lstPreviewPhotoDetails: [], // 右侧预览面板当前展示的照片（支持多选扩展）
   modeGalleryView: "group", // 画廊模式：按组显示还是全部平铺
   tabRightPanel: "filter", // 右侧面板当前 Tab：过滤 / 预览
-  numSimilarityThreshold: parseFloat(sessionStorage.getItem("similarityThreshold") || "0.8"), // 相似度阈值，持久化在 sessionStorage
+  numSimilarityThreshold: parseFloat(
+    sessionStorage.getItem("similarityThreshold") || "0.8",
+  ), // 相似度阈值，持久化在 sessionStorage
   boolShowDisabledPhotos: false, // 是否在相册中显示已禁用的图片
   strSortedColumnKey: "IQA", // 排序列：默认按 IQA
   boolCurrentPreviewEnabled: false, // 当前预览图片是否启用（同步 switch 状态）
@@ -174,6 +196,9 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   boolShowInfoDialog: false,
   objInfoPhoto: null,
   objInfoMetadata: null,
+
+  // EXIF 元数据缓存初始化
+  mapExifMetadataCache: new Map(),
 
   // 默认右键菜单配置（3 个页面共用，必要时可根据 currentPage 差异化渲染）
   contextMenuGroups: [
@@ -237,7 +262,8 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   fnSetAllPhotos: (photos) => set({ lstAllPhotos: photos }),
   fnSetCurrentPage: (page) => set({ currentPage: page }),
   fnSetCurrentSelectedPhoto: (photo) => set({ currentSelectedPhoto: photo }),
-  fnSetGalleryGroupedPhotos: (groups) => set({ lstGalleryGroupedPhotos: groups }),
+  fnSetGalleryGroupedPhotos: (groups) =>
+    set({ lstGalleryGroupedPhotos: groups }),
 
   fnSetGalleryMode: (mode) => set({ modeGalleryView: mode }), // 切换画廊展示模式
   fnSetRightPanelTab: (tab) => set({ tabRightPanel: tab }), // 切换右侧 Tab
@@ -249,11 +275,13 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   fnSetSortedColumnKey: (value) => set({ strSortedColumnKey: value }), // 调整排序列（如按 IQA / 相似度）
   fnSetPreviewHeightPercent: (value) => set({ numPreviewHeightPercent: value }), // 更新右侧预览高度百分比
   fnSetLeftPaneWidthVw: (value) => set({ numLeftPaneWidthVw: value }), // 更新左侧分栏宽度
-  fnSetReloadAlbumRequested: (value) => set({ boolReloadAlbumRequested: value }), // 标记需要强制刷新相册
+  fnSetReloadAlbumRequested: (value) =>
+    set({ boolReloadAlbumRequested: value }), // 标记需要强制刷新相册
   fnSetServerPollingNeeded: (value) => set({ boolServerPollingNeeded: value }), // 控制是否继续轮询服务状态
   fnSetServerStatusText: (value) => set({ strServerStatusText: value }), // 直接设置服务端状态文案
   fnSetServerStatusData: (value) => set({ objServerStatusData: value }), // 直接设置服务端原始数据
-  fnSetCurrentPreviewEnabled: (value) => set({ boolCurrentPreviewEnabled: value }), // 仅更新预览开关，不写 DB
+  fnSetCurrentPreviewEnabled: (value) =>
+    set({ boolCurrentPreviewEnabled: value }), // 仅更新预览开关，不写 DB
 
   // 计算眨眼统计：根据 photos 的 faceData 字段计算每张图片的眨眼统计
   fnCalculateEyeStats: (photos: PhotoExtend[]) => {
@@ -261,7 +289,9 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
 
     photos.forEach((photo) => {
       try {
-        const faceData = photo.faceData ? JSON.parse(photo.faceData) : { faces: [] };
+        const faceData = photo.faceData
+          ? JSON.parse(photo.faceData)
+          : { faces: [] };
         const faces = faceData.faces || [];
         const { closed, suspicious, open } = countEyeStates(faces);
 
@@ -273,7 +303,12 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
         });
       } catch (error) {
         console.error(`计算 ${photo.filePath} 的眨眼统计失败:`, error);
-        newStatsMap.set(photo.filePath, { filePath: photo.filePath, closedEyesCount: 0, suspiciousCount: 0, openEyesCount: 0 });
+        newStatsMap.set(photo.filePath, {
+          filePath: photo.filePath,
+          closedEyesCount: 0,
+          suspiciousCount: 0,
+          openEyesCount: 0,
+        });
       }
     });
 
@@ -291,10 +326,50 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   fnSetSkipDeleteConfirm: (skip) => set({ boolSkipDeleteConfirm: skip }),
 
   fnOpenInfoDialog: (photo, metadata) =>
-    set({ boolShowInfoDialog: true, objInfoPhoto: photo, objInfoMetadata: metadata }),
+    set({
+      boolShowInfoDialog: true,
+      objInfoPhoto: photo,
+      objInfoMetadata: metadata,
+    }),
 
   fnCloseInfoDialog: () =>
-    set({ boolShowInfoDialog: false, objInfoPhoto: null, objInfoMetadata: null }),
+    set({
+      boolShowInfoDialog: false,
+      objInfoPhoto: null,
+      objInfoMetadata: null,
+    }),
+
+  // 获取照片 EXIF 元数据（优先从缓存读取，未命中则调用 IPC 并缓存结果，解决并发竞态问题）
+  fnGetPhotoMetadata: async (filePath: string) => {
+    filePath = filePath.replace(/\\/g, "/");
+
+    const { mapExifMetadataCache } = get();
+    const cached = mapExifMetadataCache.get(filePath); // 缓存命中直接返回
+    if (cached) return cached;
+
+    try {
+      const api = (window as any)?.ElectronAPI;
+      if (!api?.getPhotoMetadata) return null; // API 不可用
+
+      const res = await api.getPhotoMetadata(filePath);
+      if (res?.success && res.data) {
+        // 使用 set 的状态更新函数确保原子化操作，避免并发竞态条件
+        set((state) => {
+          const newCache = new Map(state.mapExifMetadataCache);
+          newCache.set(filePath, res.data);
+          return { mapExifMetadataCache: newCache };
+        });
+        return res.data;
+      }
+      return null;
+    } catch (err) {
+      console.error("[fnGetPhotoMetadata] error:", err);
+      return null;
+    }
+  },
+
+  // 清空元数据缓存（如相册重载时调用）
+  fnClearMetadataCache: () => set({ mapExifMetadataCache: new Map() }),
 
   fnSelectPreviewPhotos: async (clickPhotos: Photo[]) => {
     if (!clickPhotos.length) return;
@@ -305,11 +380,11 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
       boolCurrentPreviewEnabled: extended[0]?.isEnabled ?? false,
     });
   },
-//TODO
+  //TODO
   fnTogglePhotoEnabledFromGrid: async (target: Photo) => {
     const { boolShowDisabledPhotos, lstGalleryGroupedPhotos } = get();
-  const newEnabled = !(target.isEnabled ?? true); // 反转启用状态
-  await updatePhotoEnabledStatus(target.filePath, newEnabled); // 写入数据库
+    const newEnabled = !(target.isEnabled ?? true); // 反转启用状态
+    await updatePhotoEnabledStatus(target.filePath, newEnabled); // 写入数据库
 
     // 禁用图片时，需要找到下一张（或上一张）图片作为新的预览焦点
     let nextPreviewPhoto: Photo | null = null;
@@ -318,7 +393,9 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     if (!newEnabled && !boolShowDisabledPhotos) {
       // 在所有分组中找到当前图片的位置，并选择相邻的图片
       const flatPhotos = lstGalleryGroupedPhotos.flat();
-      const currentIndex = flatPhotos.findIndex((p) => p.filePath === target.filePath);
+      const currentIndex = flatPhotos.findIndex(
+        (p) => p.filePath === target.filePath,
+      );
 
       if (currentIndex !== -1) {
         // 优先选择下一张，如果没有则选择上一张
@@ -332,7 +409,9 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
       // 预先获取下一张图片的扩展信息，避免中间状态
       if (nextPreviewPhoto) {
         try {
-          nextPreviewExtended = await getPhotosExtendByPhotos([nextPreviewPhoto]);
+          nextPreviewExtended = await getPhotosExtendByPhotos([
+            nextPreviewPhoto,
+          ]);
         } catch (error) {
           console.error("获取下一张预览图片失败:", error);
         }
@@ -341,24 +420,30 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
 
     set((state) => {
       let nextPhotos: Photo[][];
-  if (!newEnabled && !boolShowDisabledPhotos) {
+      if (!newEnabled && !boolShowDisabledPhotos) {
         nextPhotos = state.lstGalleryGroupedPhotos
           .map((group) => group.filter((p) => p.filePath !== target.filePath))
           .filter((group) => group.length > 0);
       } else {
         nextPhotos = state.lstGalleryGroupedPhotos.map((group) =>
           group.map((p) =>
-            p.filePath === target.filePath ? { ...p, isEnabled: newEnabled } : p,
+            p.filePath === target.filePath
+              ? { ...p, isEnabled: newEnabled }
+              : p,
           ),
         );
       }
 
-  const nextPreview = state.lstPreviewPhotoDetails.map((p) =>
+      const nextPreview = state.lstPreviewPhotoDetails.map((p) =>
         p.filePath === target.filePath ? { ...p, isEnabled: newEnabled } : p,
       );
 
       // 如果禁用图片且有下一张预览图，直接切换（避免中间空状态）
-      if (!newEnabled && !boolShowDisabledPhotos && nextPreviewExtended.length > 0) {
+      if (
+        !newEnabled &&
+        !boolShowDisabledPhotos &&
+        nextPreviewExtended.length > 0
+      ) {
         return {
           lstGalleryGroupedPhotos: nextPhotos,
           lstPreviewPhotoDetails: nextPreviewExtended,
@@ -369,8 +454,10 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
 
       return {
         lstGalleryGroupedPhotos: nextPhotos,
-        lstPreviewPhotoDetails: newEnabled || boolShowDisabledPhotos ? nextPreview : [],
-        tabRightPanel: newEnabled || boolShowDisabledPhotos ? "preview" : "filter",
+        lstPreviewPhotoDetails:
+          newEnabled || boolShowDisabledPhotos ? nextPreview : [],
+        tabRightPanel:
+          newEnabled || boolShowDisabledPhotos ? "preview" : "filter",
         boolCurrentPreviewEnabled: newEnabled,
       };
     });
@@ -380,7 +467,7 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     const { lstGalleryGroupedPhotos, boolShowDisabledPhotos } = get();
     try {
       await Promise.all(
-  lstGalleryGroupedPhotos.map(async (group) => {
+        lstGalleryGroupedPhotos.map(async (group) => {
           const updates = group
             .slice(1)
             .map((photo) => updatePhotoEnabledStatus(photo.filePath, false));
@@ -388,7 +475,7 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
         }),
       );
 
-  set((state) => {
+      set((state) => {
         if (!boolShowDisabledPhotos) {
           return {
             lstGalleryGroupedPhotos: state.lstGalleryGroupedPhotos
@@ -414,7 +501,9 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     const { lstGalleryGroupedPhotos } = get();
     try {
       await Promise.all(
-        lstGalleryGroupedPhotos.flat().map((photo) => updatePhotoEnabledStatus(photo.filePath, true)), // 批量启用所有图片
+        lstGalleryGroupedPhotos
+          .flat()
+          .map((photo) => updatePhotoEnabledStatus(photo.filePath, true)), // 批量启用所有图片
       );
 
       set((state) => ({
@@ -426,7 +515,7 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
       console.error("启用所有照片失败:", error);
     }
   },
-//TODO
+  //TODO
   fnUpdateFromDetailsPanel: async (filePath: string, enabled: boolean) => {
     await updatePhotoEnabledStatus(filePath, enabled); // 详情面板开关直接写 DB
     set((state) => ({
@@ -549,38 +638,16 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
         break;
       }
       case "show-info": {
-        // 为避免阻塞渲染进程，这里不直接 await 元数据加载，而是
-        // 让元数据加载逻辑在一个微任务/下一个事件循环中异步执行，
-        // 并在数据返回后再通过 store 打开详情弹窗。
-        // 这样右键菜单点击后会立刻返回，不会拖慢 Grid 的交互。
-
-        // 1. 先关闭右键菜单（由调用方完成），这里只负责异步拉取数据
-        // 2. 使用 Promise.resolve().then(...) 将耗时操作放到后续调度
+        // 异步获取元数据（带缓存），避免阻塞 UI
         void Promise.resolve().then(async () => {
-          try {
-            const api = (window as any)?.ElectronAPI;
-            if (!api?.getPhotoMetadata) {
-              console.error(
-                "[contextMenu] show-info failed: ElectronAPI.getPhotoMetadata is not available",
-              );
-              return;
-            }
-
-            const res = await api.getPhotoMetadata(photo.filePath);
-            if (res && res.success) {
-              // 再次从 store 里拿最新的 photo 引用，避免潜在的引用过期
-              const latestState = get();
-              const latestPhoto =
-                latestState.lstAllPhotos.find(
-                  (p) => p.filePath === photo.filePath,
-                ) || photo;
-
-              latestState.fnOpenInfoDialog(latestPhoto, res.data ?? {});
-            } else {
-              console.error("[contextMenu] show-info failed:", res);
-            }
-          } catch (error) {
-            console.error("[contextMenu] show-info failed:", error);
+          const metadata = await get().fnGetPhotoMetadata(photo.filePath);
+          if (metadata) {
+            const latestPhoto =
+              get().lstAllPhotos.find((p) => p.filePath === photo.filePath) ||
+              photo;
+            get().fnOpenInfoDialog(latestPhoto, metadata);
+          } else {
+            console.error("[contextMenu] show-info: failed to get metadata");
           }
         });
         break;

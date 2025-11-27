@@ -10,48 +10,24 @@ import {
   WIN_MINIMIZE_CHANNEL,
 } from "./window-channels";
 
-// 引入 protocol 模块,用于注册 schemes
+// 引入 exif-parser 用于解析 EXIF 元数据
 const exifParser = require("exif-parser");
 
 // 注册自定义协议的 scheme，使其具备安全特性并支持 fetch 等
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "local-resource",
-    privileges: {
-      secure: true,
-      supportFetchAPI: true,
-      standard: true,
-      bypassCSP: true,
-      stream: true,
-    },
+    privileges: { secure: true, supportFetchAPI: true, standard: true, bypassCSP: true, stream: true },
   },
 ]);
 
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "thumbnail-resource",
-    privileges: {
-      secure: true,
-      supportFetchAPI: true,
-      standard: true,
-      bypassCSP: true,
-      stream: true,
-    },
+    privileges: { secure: true, supportFetchAPI: true, standard: true, bypassCSP: true, stream: true },
   },
 ]);
-
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: "photo-info",
-    privileges: {
-      secure: true,
-      supportFetchAPI: true,
-      standard: true,
-      bypassCSP: true,
-      stream: true,
-    },
-  },
-]);
+// 注意：photo-info:// 协议已移除，EXIF 元数据通过 IPC (get-photo-metadata) 获取
 
 /**
  * 为主窗口添加各种 IPC 事件监听。
@@ -214,6 +190,17 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
    */
   ipcMain.handle("get-photo-metadata", async (_event, filePath: string) => {
     try {
+      filePath = filePath.replace(/\\/g, "/");
+
+      // 验证文件路径是否有效且文件存在
+      if (!filePath || typeof filePath !== "string") {
+        throw new Error("Invalid file path");
+      }
+
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`File not found: ${filePath}`);
+      }
+
       const dir = path.dirname(filePath);
       const base = path.basename(filePath, path.extname(filePath));
       const jsonPath = path.join(dir, `${base}.json`);
@@ -229,7 +216,7 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
 
       const fileSize = stat.size;
       const basic = {
-        filePath,
+        filePath: filePath,
         size: fileSize,
         mtimeMs: stat.mtimeMs,
         ctimeMs: stat.ctimeMs,
