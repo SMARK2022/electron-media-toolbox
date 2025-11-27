@@ -181,6 +181,12 @@ const resources = {
           "Try adjusting filters, importing more photos, or running a new detection task.",
         filterHint:
           "Adjust the similarity threshold before running detection. Use bulk actions to quickly organize your photo groups.\n\nDouble-click or press Enter on an image in the preview pane to quickly toggle its enabled status;\nclick to preview, use keyboard ↑↓←→ to select photos within the same group.",
+        trackingMode: "Face Tracking", // 人像追踪模式
+        eyeState: {
+          open: "Normal", // 睁眼
+          suspicious: "Suspected Closed", // 疑似闭眼
+          closed: "Closed Eyes", // 闭眼
+        },
       },
       photoDetailsTable: {
         currentPreviewPhoto: "Current preview photo",
@@ -202,6 +208,10 @@ const resources = {
         statusEnabledDesc: "This photo will be included in the final export.",
         statusDisabledDesc:
           "This photo will be treated as redundant and skipped during export.",
+
+        faceDetected: "Detected {{count}} faces",
+        faceTrackingMode: "Tracking face, drag to cancel",
+        faceTapToFocus: "Click face to focus",
 
         updatingStatus: "Updating status…",
       },
@@ -391,6 +401,12 @@ const resources = {
         noPhotosFoundDesc: "尝试调整筛选条件、导入更多照片或运行新的检测任务。",
         filterHint:
           "在运行检测之前调整相似度阈值。使用批量操作可快速整理照片分组。\n\n在预览窗格中对图片左键双击或Enter键可快速切换启用状态；\n单击以预览，使用键盘↑↓←→选择同组内照片。",
+        trackingMode: "人像追踪", // 人像追踪模式
+        eyeState: {
+          open: "正常", // 睁眼
+          suspicious: "疑似闭眼", // 疑似闭眼
+          closed: "闭眼", // 闭眼
+        },
       },
       photoDetailsTable: {
         currentPreviewPhoto: "当前预览照片",
@@ -411,6 +427,10 @@ const resources = {
         statusDisabled: "当前状态：已弃用",
         statusEnabledDesc: "此照片将包含在最终导出结果中。",
         statusDisabledDesc: "此照片将被视为冗余并在导出时跳过。",
+
+        faceDetected: "检测到 {{count}} 个人脸",
+        faceTrackingMode: "正在追踪人物，任意拖动以取消",
+        faceTapToFocus: "点击头像以聚焦对应区域",
 
         updatingStatus: "正在更新状态…",
       },
