@@ -10,8 +10,8 @@ import { PhotoService } from "@/helpers/services/PhotoService";
 
 interface SidePanelProps {
   previewHeightPercent: number;
-  onStartPreviewMouseDrag: (clientY: number) => void;
-  onStartPreviewTouchDrag: (clientY: number) => void;
+  onStartPreviewMouseDrag: (clientY: number, containerRect: DOMRect) => void;
+  onStartPreviewTouchDrag: (clientY: number, containerRect: DOMRect) => void;
 }
 
 export const SidePanel: React.FC<SidePanelProps> = ({
@@ -32,9 +32,27 @@ export const SidePanel: React.FC<SidePanelProps> = ({
     fnUpdateFromDetailsPanel,
   } = usePhotoFilterSelectors(); // 只关心 panelTab / slider / 预览 / 批量操作等
 
+  // 预览容器 ref，用于获取实际高度
+  const previewContainerRef = React.useRef<HTMLDivElement>(null);
+
   const handleSliderChange = (value: number) => {
     fnSetSimilarityThreshold(value); // 修改阈值时直接写入 store（内部已负责持久化）
   };
+
+  // 包装拖动事件处理，传递容器的 DOMRect
+  const handleStartPreviewMouseDrag = React.useCallback((clientY: number) => {
+    if (previewContainerRef.current) {
+      const rect = previewContainerRef.current.getBoundingClientRect();
+      onStartPreviewMouseDrag(clientY, rect);
+    }
+  }, [onStartPreviewMouseDrag]);
+
+  const handleStartPreviewTouchDrag = React.useCallback((clientY: number) => {
+    if (previewContainerRef.current) {
+      const rect = previewContainerRef.current.getBoundingClientRect();
+      onStartPreviewTouchDrag(clientY, rect);
+    }
+  }, [onStartPreviewTouchDrag]);
 
   const handleDisableRedundant = React.useCallback(async () => {
     await fnDisableRedundantInGroups(); // 调用 store 中的批量禁用逻辑
@@ -123,17 +141,19 @@ export const SidePanel: React.FC<SidePanelProps> = ({
         value="preview"
         className="mt-0 flex h-[calc(100vh-160px)] flex-col overflow-hidden border-0 bg-transparent p-0"
       >
-        <PhotoDetailsTable
-          photo={lstPreviewPhotoDetails[0]}
-          isPreviewEnabled={boolCurrentPreviewEnabled}
-          setIsPreviewEnabled={() => {}}
-          updatePhotoEnabledStatus={fnUpdateFromDetailsPanel}
-          setPhotos={() => {}}
-          onPhotoStatusChanged={() => PhotoService.refreshPhotos()}
-          previewHeightPercent={previewHeightPercent}
-          onStartPreviewMouseDrag={onStartPreviewMouseDrag}
-          onStartPreviewTouchDrag={onStartPreviewTouchDrag}
-        />
+        <div ref={previewContainerRef} className="flex h-full flex-col overflow-hidden">
+          <PhotoDetailsTable
+            photo={lstPreviewPhotoDetails[0]}
+            isPreviewEnabled={boolCurrentPreviewEnabled}
+            setIsPreviewEnabled={() => {}}
+            updatePhotoEnabledStatus={fnUpdateFromDetailsPanel}
+            setPhotos={() => {}}
+            onPhotoStatusChanged={() => PhotoService.refreshPhotos()}
+            previewHeightPercent={previewHeightPercent}
+            onStartPreviewMouseDrag={handleStartPreviewMouseDrag}
+            onStartPreviewTouchDrag={handleStartPreviewTouchDrag}
+          />
+        </div>
       </TabsContent>
     </Tabs>
   );

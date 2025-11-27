@@ -298,6 +298,7 @@ export default function PhotoFilterSubpage() {
   const previewDraggingRef = React.useRef(false);
   const previewStartYRef = React.useRef(0);
   const previewStartHeightRef = React.useRef(numPreviewHeightPercent);
+  const previewContainerRectRef = React.useRef<DOMRect | null>(null);
 
   const previewMouseMoveHandlerRef = React.useRef<
     ((e: MouseEvent) => void) | null
@@ -308,17 +309,22 @@ export default function PhotoFilterSubpage() {
   >(null);
   const previewTouchEndHandlerRef = React.useRef<(() => void) | null>(null);
 
-  const startPreviewMouseDrag = (clientY: number) => {
+  const startPreviewMouseDrag = (clientY: number, containerRect: DOMRect) => {
     previewDraggingRef.current = true;
     previewStartYRef.current = clientY;
     previewStartHeightRef.current = numPreviewHeightPercent;
+    previewContainerRectRef.current = containerRect;
 
     const onMouseMove = (ev: MouseEvent) => {
+      if (!previewContainerRectRef.current) return;
+      const containerHeight = previewContainerRectRef.current.height;
+      // 计算鼠标移动的增量（相对于拖动开始位置）
       const deltaY = ev.clientY - previewStartYRef.current;
-      // 假设 preview 容器高度约为 calc(100vh - 85px) = 约 915px（取整）
-      // 但实际计算：deltaY / 视口高度 * 100 -> %
-      const deltaPercent = (deltaY / (window.innerHeight - 85)) * 100;
+      // 将增量转换为百分比
+      const deltaPercent = (deltaY / containerHeight) * 100;
+      // 基于初始高度加上增量
       let newHeight = previewStartHeightRef.current + deltaPercent;
+      // 限制范围
       if (newHeight < 20) newHeight = 20;
       if (newHeight > 70) newHeight = 70;
       fnSetPreviewHeightPercent(Number(newHeight.toFixed(1)));
@@ -326,6 +332,7 @@ export default function PhotoFilterSubpage() {
 
     const onMouseUp = () => {
       previewDraggingRef.current = false;
+      previewContainerRectRef.current = null;
       if (previewMouseMoveHandlerRef.current) {
         window.removeEventListener(
           "mousemove",
@@ -345,17 +352,23 @@ export default function PhotoFilterSubpage() {
     window.addEventListener("mouseup", onMouseUp);
   };
 
-  const startPreviewTouchDrag = (clientY: number) => {
+  const startPreviewTouchDrag = (clientY: number, containerRect: DOMRect) => {
     previewDraggingRef.current = true;
     previewStartYRef.current = clientY;
     previewStartHeightRef.current = numPreviewHeightPercent;
+    previewContainerRectRef.current = containerRect;
 
     const onTouchMove = (ev: TouchEvent) => {
       const touch = ev.touches[0];
-      if (!touch) return;
+      if (!touch || !previewContainerRectRef.current) return;
+      const containerHeight = previewContainerRectRef.current.height;
+      // 计算触摸点移动的增量（相对于拖动开始位置）
       const deltaY = touch.clientY - previewStartYRef.current;
-      const deltaPercent = (deltaY / (window.innerHeight - 85)) * 100;
+      // 将增量转换为百分比
+      const deltaPercent = (deltaY / containerHeight) * 100;
+      // 基于初始高度加上增量
       let newHeight = previewStartHeightRef.current + deltaPercent;
+      // 限制范围
       if (newHeight < 20) newHeight = 20;
       if (newHeight > 70) newHeight = 70;
       fnSetPreviewHeightPercent(Number(newHeight.toFixed(1)));
@@ -363,6 +376,7 @@ export default function PhotoFilterSubpage() {
 
     const onTouchEnd = () => {
       previewDraggingRef.current = false;
+      previewContainerRectRef.current = null;
       if (previewTouchMoveHandlerRef.current) {
         window.removeEventListener(
           "touchmove",

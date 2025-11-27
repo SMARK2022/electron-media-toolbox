@@ -414,16 +414,21 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
       </div>
 
       <div
-        className="bg-muted/20 hover:bg-muted/40 flex flex-shrink-0 cursor-ns-resize items-center justify-center transition-colors select-none"
-        style={{ height: 8, touchAction: "none" }}
-        onMouseDown={(e) => onStartPreviewMouseDrag(e.clientY)}
+        className="bg-muted/20 hover:bg-muted/40 relative z-10 flex flex-shrink-0 cursor-ns-resize items-center justify-center transition-colors select-none"
+        style={{ height: 12, touchAction: "none" }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onStartPreviewMouseDrag(e.clientY);
+        }}
         onTouchStart={(e) => {
           if (e.touches && e.touches[0]) {
+            e.stopPropagation();
             onStartPreviewTouchDrag(e.touches[0].clientY);
           }
         }}
       >
-        <div className="bg-muted/60 h-1.5 w-10 rounded-full" />
+        <div className="bg-muted-foreground/30 hover:bg-muted-foreground/50 h-1.5 w-12 rounded-full transition-colors" />
       </div>
 
       <div
