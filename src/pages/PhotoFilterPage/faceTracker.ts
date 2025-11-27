@@ -72,27 +72,27 @@ const softmax = (logits: number[]): number[] => {
 };
 
 export interface FaceTrackerConfig {
-  // 位置相似度的 sigma（相对于图像对角线的比例）
-  positionSigma: number;
-  // 尺度相似度的 sigma（log-ratio）
-  scaleSigma: number;
-  // IoU 权重
-  iouWeight: number;
-  // Score 连续性权重
-  scoreWeight: number;
-  // 排序先验权重（很弱）
-  rankWeight: number;
-  // 最小置信度阈值，低于此值不匹配
-  minConfidence: number;
+  positionSigma: number;   // 位置相似度 sigma（相对归一化坐标）
+  scaleSigma: number;      // 尺度相似度 sigma（log-ratio）
+  positionWeight: number;  // 位置权重
+  scaleWeight: number;     // 尺度权重
+  aspectWeight: number;    // 宽高比权重
+  iouWeight: number;       // IoU 权重
+  scoreWeight: number;     // score 连续性权重
+  rankWeight: number;      // 排序先验权重
+  minConfidence: number;   // 最小置信度阈值
 }
 
 const DEFAULT_CONFIG: FaceTrackerConfig = {
-  positionSigma: 0.15, // 相对于图像对角线 15%
-  scaleSigma: 0.4, // log-ratio sigma
-  iouWeight: 2.0, // IoU 权重较高
-  scoreWeight: 0.5, // score 连续性权重较低
-  rankWeight: 0.2, // 排序先验很弱
-  minConfidence: 0.2, // 最小置信度 30%
+  positionSigma: 0.15,   // 归一化坐标 15%
+  scaleSigma: 0.4,       // log-ratio sigma
+  positionWeight: 1.5,   // 位置权重最高
+  scaleWeight: 1.0,      // 尺度权重
+  aspectWeight: 0.5,     // 宽高比权重较低
+  iouWeight: 1.5,        // IoU 权重较高
+  scoreWeight: 0.6,      // score 连续性权重
+  rankWeight: 0.8,       // 排序先验很弱
+  minConfidence: 0.2,    // softmax 最小置信度阈值
 };
 
 export class FaceTracker {
@@ -167,11 +167,6 @@ export class FaceTracker {
     const prevScore = prevFace.score ?? 0.9;
     const prevRankRatio = prevFacesCount > 1 ? prevIndex / (prevFacesCount - 1) : 0;
 
-    // 计算图像对角线（用于归一化距离）
-    const diagonal = Math.sqrt(
-      newImageSize.width ** 2 + newImageSize.height ** 2
-    );
-
     // 为每个候选人脸计算匹配分数（log 空间）
     const logScores: number[] = newFaces.map((candidateFace, candidateIndex) => {
       const candFeatures = extractFeatures(candidateFace.bbox);
@@ -179,34 +174,28 @@ export class FaceTracker {
         x: candFeatures.centerX / newImageSize.width,
         y: candFeatures.centerY / newImageSize.height,
       };
-      const candNormArea =
-        candFeatures.area / (newImageSize.width * newImageSize.height);
+      const candNormArea = candFeatures.area / (newImageSize.width * newImageSize.height);
       const candScore = candidateFace.score ?? 0.9;
-      const candRankRatio =
-        newFaces.length > 1 ? candidateIndex / (newFaces.length - 1) : 0;
+      const candRankRatio = newFaces.length > 1 ? candidateIndex / (newFaces.length - 1) : 0;
 
       // 1. 位置相似度（归一化坐标的欧氏距离）
       const posDist = Math.sqrt(
         (candNormCenter.x - prevNormCenter.x) ** 2 +
-          (candNormCenter.y - prevNormCenter.y) ** 2
+        (candNormCenter.y - prevNormCenter.y) ** 2
       );
       const posSim = gaussian(posDist, this.config.positionSigma);
 
       // 2. 尺度相似度（面积的 log-ratio）
-      const areaRatio = Math.log(
-        Math.max(candNormArea, 1e-6) / Math.max(prevNormArea, 1e-6)
-      );
+      const areaRatio = Math.log(Math.max(candNormArea, 1e-6) / Math.max(prevNormArea, 1e-6));
       const scaleSim = gaussian(areaRatio, this.config.scaleSigma);
 
       // 3. 宽高比相似度
       const aspectRatio = Math.log(
-        Math.max(candFeatures.aspectRatio, 0.1) /
-          Math.max(prevFeatures.aspectRatio, 0.1)
+        Math.max(candFeatures.aspectRatio, 0.1) / Math.max(prevFeatures.aspectRatio, 0.1)
       );
       const aspectSim = gaussian(aspectRatio, this.config.scaleSigma);
 
-      // 4. IoU 相似度（需要将 bbox 归一化到相同尺度）
-      // 将前一帧的 bbox 按比例缩放到新图像尺寸
+      // 4. IoU 相似度（将 prev bbox 按比例缩放到新图像尺寸）
       const scaledPrevBbox: [number, number, number, number] = [
         (prevFace.bbox[0] / prevImageSize.width) * newImageSize.width,
         (prevFace.bbox[1] / prevImageSize.height) * newImageSize.height,
@@ -215,32 +204,28 @@ export class FaceTracker {
       ];
       const iou = computeIoU(scaledPrevBbox, candidateFace.bbox);
 
-      // 5. Score 连续性（允许一定范围的变化）
-      const scoreDiff = Math.abs(candScore - prevScore);
-      const scoreSim = gaussian(scoreDiff, 0.1); // sigma = 10%
+      // 5. Score 连续性（sigma = 10%）
+      const scoreSim = gaussian(Math.abs(candScore - prevScore), 0.1);
 
-      // 6. 排序先验（很弱，允许较大变化）
-      const rankDiff = Math.abs(candRankRatio - prevRankRatio);
-      const rankSim = gaussian(rankDiff, 0.5); // sigma = 50%
+      // 6. 排序先验（sigma = 50%，很弱）
+      const rankSim = gaussian(Math.abs(candRankRatio - prevRankRatio), 0.5);
 
-      // 加权组合（log 空间）
-      const logScore =
-        Math.log(Math.max(posSim, 1e-10)) * 1.5 + // 位置权重最高
-        Math.log(Math.max(scaleSim, 1e-10)) * 1.0 +
-        Math.log(Math.max(aspectSim, 1e-10)) * 0.5 +
+      // 加权组合（log 空间，使用配置权重）
+      return (
+        Math.log(Math.max(posSim, 1e-10)) * this.config.positionWeight +
+        Math.log(Math.max(scaleSim, 1e-10)) * this.config.scaleWeight +
+        Math.log(Math.max(aspectSim, 1e-10)) * this.config.aspectWeight +
         Math.log(Math.max(iou + 0.01, 1e-10)) * this.config.iouWeight +
         Math.log(Math.max(scoreSim, 1e-10)) * this.config.scoreWeight +
-        Math.log(Math.max(rankSim, 1e-10)) * this.config.rankWeight;
-
-      return logScore;
+        Math.log(Math.max(rankSim, 1e-10)) * this.config.rankWeight
+      );
     });
 
     // Softmax 得到概率分布
     const probabilities = softmax(logScores);
 
     // 找到最大概率的索引
-    let maxProb = 0;
-    let maxIndex = -1;
+    let maxProb = 0, maxIndex = -1;
     for (let i = 0; i < probabilities.length; i++) {
       if (probabilities[i] > maxProb) {
         maxProb = probabilities[i];
@@ -248,33 +233,29 @@ export class FaceTracker {
       }
     }
 
-    // 如果最大概率低于阈值，尝试选取 softmax 前 30% 中最高置信度的
-    if (maxProb < this.config.minConfidence) {
-      const topCount = Math.max(1, Math.ceil(probabilities.length * 0.3));
-      const topIndices = probabilities
-      .map((prob, idx) => ({ prob, idx }))
-      .sort((a, b) => b.prob - a.prob)
-      .slice(0, topCount)
-      .sort((a, b) => b.prob - a.prob);
-
-      if (topIndices.length > 0) {
-      const topMatch = topIndices[0];
-      return {
-        matchedIndex: topMatch.idx,
-        confidence: topMatch.prob,
-        probabilities,
-      };
-      }
-
-      return { matchedIndex: null, confidence: maxProb, probabilities };
+    // 置信度达标，直接返回
+    if (maxProb >= this.config.minConfidence) {
+      return { matchedIndex: maxIndex, confidence: maxProb, probabilities };
     }
+
+    // 保底策略：从 softmax 前 50% 候选中选原始检测 score 最高的
+    const topCount = Math.max(1, Math.ceil(probabilities.length * 0.5));
+    const topCandidates = probabilities
+      .map((prob, idx) => ({ prob, idx, score: newFaces[idx].score ?? 0 }))
+      .sort((a, b) => b.prob - a.prob)  // 按 softmax 概率排序
+      .slice(0, topCount);
+
+    // 从前 50% 中选原始 score 最高的作为保底
+    const fallback = topCandidates.reduce((best, cur) =>
+      cur.score > best.score ? cur : best
+    );
 
     return {
-      matchedIndex: maxIndex,
-      confidence: maxProb,
+      matchedIndex: fallback.idx,
+      confidence: fallback.prob,
       probabilities,
     };
-    }
+  }
 
   /**
    * 获取当前追踪状态（用于调试）

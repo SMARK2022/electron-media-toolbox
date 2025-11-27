@@ -236,11 +236,6 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
             )}
           />
           <span>{label}</span>
-          {isTrackingMode && (
-            <span className="rounded-full bg-emerald-100/80 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">
-              人像追踪模式
-            </span>
-          )}
 
           {/* 睁眼/闭眼/疑似闭眼统计 Badge */}
           {(openEyesCount > 0 ||
@@ -263,6 +258,11 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
                 </span>
               )}
             </div>
+          )}
+          {isTrackingMode && (
+            <span className="rounded-full bg-emerald-100/80 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">
+              人像追踪模式
+            </span>
           )}
         </div>
         <span

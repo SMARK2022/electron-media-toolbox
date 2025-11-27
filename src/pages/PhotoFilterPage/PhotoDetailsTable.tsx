@@ -258,8 +258,8 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
 
       console.log("[FaceTracker] Match result:", matchResult);
 
-      if (matchResult.matchedIndex !== null && matchResult.confidence > 0.3) {
-        // 找到匹配的人脸，自动聚焦
+      if (matchResult.matchedIndex !== null) {
+        // 找到匹配的人脸，自动聚焦（置信度判断已在 faceTracker 内部完成）
         const matchedFace = faces[matchResult.matchedIndex];
         setActiveFaceIndex(matchResult.matchedIndex);
         setFocusRegion({
@@ -378,7 +378,7 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
   });
   const faceHelper = isTrackingActive
     ? t("photoDetailsTable.faceTrackingMode", {
-        defaultValue: "人像追踪模式已开启，自动跟随同一人物",
+        defaultValue: "正在追踪人物，任意拖动以取消",
       })
     : t("photoDetailsTable.faceTapToFocus", {
         defaultValue: "点击头像以聚焦对应区域",

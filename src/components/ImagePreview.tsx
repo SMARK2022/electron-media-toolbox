@@ -61,7 +61,7 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
 
   // 缩放限制（相对于自适应尺寸）
   const MIN_SCALE = 1; // 最小就是自适应大小
-  const MAX_SCALE = 20; // 最大 20 倍
+  const MAX_SCALE = 50; // 最大 20 倍
   const ZOOM_SPEED = 0.1;
 
   // --- 优化功能：显示并自动隐藏缩放提示 ---
