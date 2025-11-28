@@ -284,36 +284,49 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   fnSetCurrentPreviewEnabled: (value) =>
     set({ boolCurrentPreviewEnabled: value }), // 弹窗仅更新预览开关，不写 DB
 
-  // 弹窗计算眨眼统计：根据 photos 中 faceData 字段计算每张图片的眨眼统计
+  // 增量更新眨眼统计：只更新变化的条目，保持未变化条目的引用不变，避免全 Grid 重渲染
   fnCalculateEyeStats: (photos: PhotoExtend[]) => {
-    const newStatsMap = new Map<string, EyeStatistics>();
+    set((state) => {
+      const map = state.lstPhotosEyeStats;
+      let hasAnyChange = false;
 
-    photos.forEach((photo) => {
-      try {
-        const faceData = photo.faceData
-          ? JSON.parse(photo.faceData)
-          : { faces: [] };
-        const faces = faceData.faces || [];
-        const { closed, suspicious, open } = countEyeStates(faces);
+      for (const photo of photos) {
+        try {
+          const faceData = photo.faceData ? JSON.parse(photo.faceData) : { faces: [] };
+          const faces = faceData.faces || [];
+          const { closed, suspicious, open } = countEyeStates(faces);
+          const prev = map.get(photo.filePath);
 
-        newStatsMap.set(photo.filePath, {
-          filePath: photo.filePath,
-          closedEyesCount: closed,
-          suspiciousCount: suspicious,
-          openEyesCount: open,
-        });
-      } catch (error) {
-        console.error(`计算 ${photo.filePath} 的眨眼统计失败`, error);
-        newStatsMap.set(photo.filePath, {
-          filePath: photo.filePath,
-          closedEyesCount: 0,
-          suspiciousCount: 0,
-          openEyesCount: 0,
-        });
+          // 比较前后值，只有真正变化才更新（保持引用稳定）
+          if (
+            prev &&
+            prev.closedEyesCount === closed &&
+            prev.suspiciousCount === suspicious &&
+            prev.openEyesCount === open
+          ) {
+            continue;
+          }
+
+          map.set(photo.filePath, {
+            filePath: photo.filePath,
+            closedEyesCount: closed,
+            suspiciousCount: suspicious,
+            openEyesCount: open,
+          });
+          hasAnyChange = true;
+        } catch (error) {
+          console.error(`计算 ${photo.filePath} 的眨眼统计失败`, error);
+          const prev = map.get(photo.filePath);
+          if (!prev || prev.closedEyesCount !== 0 || prev.suspiciousCount !== 0 || prev.openEyesCount !== 0) {
+            map.set(photo.filePath, { filePath: photo.filePath, closedEyesCount: 0, suspiciousCount: 0, openEyesCount: 0 });
+            hasAnyChange = true;
+          }
+        }
       }
-    });
 
-    set({ lstPhotosEyeStats: newStatsMap });
+      // 没有变化则返回空对象，不触发订阅更新
+      return hasAnyChange ? { lstPhotosEyeStats: map } : {};
+    });
   },
 
   // 弹窗打开"删除文件"确认弹窗，并记录待删除的照片

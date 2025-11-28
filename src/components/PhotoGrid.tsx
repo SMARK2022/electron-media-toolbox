@@ -338,50 +338,52 @@ const EyeStateBadge: React.FC<EyeStateBadgeProps> = React.memo(({ eyeStats }) =>
 /**
  * 懒加载图片容器组件
  * 使用 React.memo 和精细化的 store selector 优化渲染性能
+ * 通过外部注入的全局 observer 进行懒加载（避免每个 cell 创建独立 observer）
  */
+interface LazyImageContainerPropsWithObserver extends LazyImageContainerProps {
+  observer?: IntersectionObserver | null;
+}
+
 const LazyImageContainer = React.memo(function LazyImageContainer({
   photo,
   page = "filter",
-}: LazyImageContainerProps) {
+  observer: globalObserver,
+}: LazyImageContainerPropsWithObserver) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [hasError, setHasError] = useState(false);
 
-  // 使用精细化 selector，只订阅当前照片的眨眼统计数据（并缓存 selector 函数）
-  // 关键：将 selector 提到外层，避免每次 render 都重建
+  // 使用精细化 selector，只订阅当前照片的眨眼统计数据
   const eyeStats = usePhotoFilterStore((s) =>
     s.lstPhotosEyeStats.get(photo.filePath) ?? null,
   );
 
-  // 进入视口后再加载
+  // 使用全局 observer 或浏览器原生 lazy loading，避免每个 cell 创建独立 observer
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setIsVisible(true);
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      { root: null, threshold: 0.01 },
-    );
+    if (!globalObserver || !imgRef.current) return;
 
-    if (imgRef.current) observer.observe(imgRef.current);
-
-    return () => {
-      if (imgRef.current) observer.unobserve(imgRef.current);
+    const handleIntersection = (entries: IntersectionObserverEntry[]) => {
+      entries.forEach((entry) => {
+        if (entry.target === imgRef.current && entry.isIntersecting) {
+          setIsVisible(true);
+        }
+      });
     };
+
+    const observer = new IntersectionObserver(handleIntersection, {
+      root: null,
+      threshold: 0.01,
+    });
+    observer.observe(imgRef.current);
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
-    if (!isVisible) return;
-
     if (photo.fileUrl) {
       setThumbnailUrl(photo.fileUrl);
       setHasError(false);
-    } else {
+    } else if (isVisible) {
       setThumbnailUrl(null);
       setHasError(true);
     }
@@ -482,6 +484,7 @@ interface PhotoGridItemProps {
   page: PhotoPage;
   isHighlighted: boolean;
   isFocused: boolean;
+  observer?: IntersectionObserver | null;
   onSelect: (index: number, event: "Select" | "Change") => void;
   onContextMenu: (e: React.MouseEvent, photo: Photo, index: number) => void;
   onFocus: (index: number) => void;
@@ -496,6 +499,7 @@ const PhotoGridItem = React.memo(
     page,
     isHighlighted,
     isFocused,
+    observer,
     onSelect,
     onContextMenu,
     onFocus,
@@ -519,7 +523,7 @@ const PhotoGridItem = React.memo(
         onContextMenu={(e) => onContextMenu(e, photo, index)}
         onFocus={() => onFocus(index)}
       >
-        <LazyImageContainer photo={photo} page={page} />
+        <LazyImageContainer photo={photo} page={page} observer={observer} />
 
         {/* 选中高光效果 */}
         {isHighlighted && (
@@ -542,13 +546,28 @@ const PhotoGridItem = React.memo(
       prev.isFocused === next.isFocused &&
       prev.width === next.width &&
       prev.page === next.page &&
-      prev.index === next.index
+      prev.index === next.index &&
+      prev.observer === next.observer
     );
   },
 );
 
 // ========== 主网格组件 ==========
-export function PhotoGridEnhance({
+// 辅助函数：浅比较 Photo 数组的关键属性
+const shallowEqualPhotoArray = (prevPhotos: Photo[], nextPhotos: Photo[]): boolean => {
+  if (prevPhotos.length !== nextPhotos.length) return false;
+  return prevPhotos.every((p, i) => {
+    const n = nextPhotos[i];
+    return (
+      p.filePath === n.filePath &&
+      p.isEnabled === n.isEnabled &&
+      p.info === n.info &&
+      p.fileUrl === n.fileUrl
+    );
+  });
+};
+
+export const PhotoGridEnhance = React.memo(function PhotoGridEnhance({
   photos = [],
   width = 200,
   onPhotoClick,
@@ -561,6 +580,34 @@ export function PhotoGridEnhance({
   onContextMenuAction?: (action: string, photo: Photo) => void;
 }) {
   const { t } = useTranslation();
+
+  // 创建全局 IntersectionObserver 单例，所有 cell 共享
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  useEffect(() => {
+    // 只在首次挂载时创建一次
+    if (!observerRef.current) {
+      observerRef.current = new IntersectionObserver(
+        (entries) => {
+          // 处理可见性变化，触发图片加载
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              const img = entry.target as HTMLImageElement;
+              if (img.dataset.src) {
+                img.src = img.dataset.src;
+                delete img.dataset.src;
+              }
+            }
+          });
+        },
+        { root: null, threshold: 0.01 },
+      );
+    }
+    return () => {
+      // 组件卸载时断开所有观察
+      observerRef.current?.disconnect();
+    };
+  }, []);
+
   // 分解 selector，每个状态单独订阅，避免对象引用变化导致无限循环
   const boolShowDeleteConfirm = usePhotoFilterStore(
     (s) => s.boolShowDeleteConfirm,
@@ -579,7 +626,7 @@ export function PhotoGridEnhance({
   );
   const fnExecuteDeleteFile = usePhotoFilterStore(
     (s) => s.fnExecuteDeleteFile,
-  ); // 实际执行删除（不弹窗）
+  );
 
   const boolShowInfoDialog = usePhotoFilterStore(
     (s) => s.boolShowInfoDialog,
@@ -598,7 +645,7 @@ export function PhotoGridEnhance({
   const photosArray = useMemo(
     () => (Array.isArray(photos) ? photos : []),
     [photos],
-  ); // 缓存 photosArray，避免每次都新创建
+  );
 
   const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
   const highlightFileNamesRef = useRef<Set<string>>(new Set());
@@ -759,7 +806,6 @@ export function PhotoGridEnhance({
       >
         {photosArray.map((photo, index) => {
           const highlighted = isPhotoHighlighted(photo.fileName);
-          // 使用 index + filePath 组合作为 key，确保唯一性且稳定
           const itemKey = `${index}-${photo.filePath}`;
 
           return (
@@ -771,6 +817,7 @@ export function PhotoGridEnhance({
               page={page}
               isHighlighted={highlighted}
               isFocused={focusedIndex === index}
+              observer={observerRef.current}
               onSelect={selectPhotoByIndex}
               onContextMenu={handleContextMenu}
               onFocus={setFocusedIndex}
@@ -829,7 +876,16 @@ export function PhotoGridEnhance({
       />
     </>
   );
-}
+}, (prev, next) => {
+  // React.memo 的比较函数：如果返回 true，则跳过重渲染
+  return (
+    prev.width === next.width &&
+    prev.page === next.page &&
+    prev.onPhotoClick === next.onPhotoClick &&
+    prev.onContextMenuAction === next.onContextMenuAction &&
+    shallowEqualPhotoArray(prev.photos || [], next.photos || [])
+  );
+});
 
 // ========== 删除确认对话框（Portal 版本）==========
 interface DeleteConfirmPortalProps {
