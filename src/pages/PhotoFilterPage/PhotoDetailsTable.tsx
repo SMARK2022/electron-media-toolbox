@@ -245,7 +245,8 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
     dateDisplay: date ?? "-",
   }), [fileSize, similarity, IQA, date]);
 
-  const previewSrc = filePath ? `local-resource://${filePath}` : "";
+  // 稳定的预览源（避免字符串拼接导致引用变化）
+  const previewSrc = useMemo(() => filePath ? `local-resource://${filePath}` : "", [filePath]);
 
   // 切换启用状态（简化：直接调用 store action，由 store 统一处理状态同步）
   const handleToggle = useCallback(async (checked: boolean) => {
@@ -265,33 +266,40 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
   const handleFaceSelect = useCallback((face: FaceInfo, index: number) => {
     setActiveFaceIndex(index);
     setFocusRegion({ bbox: face.bbox, zoomFactor: 1.25, requestId: Date.now() });
+    // 仅在有效图片尺寸时才激活追踪
     if (imageSize.width > 0) {
       faceTrackerRef.current.setTrackedFace(face as TrackerFaceInfo, index, imageSize, faces.length);
       setIsTrackingActive(true);
     }
   }, [imageSize, faces.length]);
 
-  // 用户交互取消追踪
+  // 用户交互取消追踪（防抖 300ms，避免频繁重渲染）
+  const userInteractionTimer = useRef<NodeJS.Timeout | null>(null);
   const handleUserInteraction = useCallback(() => {
-    faceTrackerRef.current.clearTracking();
-    setIsTrackingActive(false);
-    setActiveFaceIndex(null);
-    setFocusRegion(null);
-  }, []);
+    if (userInteractionTimer.current) clearTimeout(userInteractionTimer.current);
+    userInteractionTimer.current = setTimeout(() => {
+      // 只在追踪模式下处理，避免不必要的状态更新
+      if (isTrackingActive) {
+        faceTrackerRef.current.clearTracking();
+        setIsTrackingActive(false);
+        setActiveFaceIndex(null);
+        setFocusRegion(null);
+      }
+      userInteractionTimer.current = null;
+    }, 250); // 防抖延迟 300ms，合并频繁交互
+  }, [isTrackingActive]);
 
   const faceLabel = t("photoDetailsTable.faceDetected", { count: faces.length, defaultValue: `检测到 ${faces.length} 个人脸` });
   const faceHelper = isTrackingActive
     ? t("photoDetailsTable.faceTrackingMode", { defaultValue: "正在追踪人物，任意拖动以取消" })
     : t("photoDetailsTable.faceTapToFocus", { defaultValue: "点击头像以聚焦对应区域" });
 
-  // 无照片时显示占位符
-  if (!photo) {
-    return (
-      <div className="flex h-full flex-col">
-        <PreviewPlaceholder height="calc((100vh - 180px))" />
-      </div>
-    );
-  }
+  // 清理防抖定时器
+  useEffect(() => {
+    return () => {
+      if (userInteractionTimer.current) clearTimeout(userInteractionTimer.current);
+    };
+  }, []);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">

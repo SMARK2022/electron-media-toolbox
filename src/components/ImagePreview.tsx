@@ -51,28 +51,32 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   const [lastMousePosition, setLastMousePosition] = useState({ x: 0, y: 0 });
   const [isAnimating, setIsAnimating] = useState(false);
 
-  // --- 新增：控制缩放提示的显示状态 ---
+  // 控制缩放提示的显示状态
   const [showZoomBadge, setShowZoomBadge] = useState(false);
   const zoomBadgeTimer = useRef<NodeJS.Timeout | null>(null);
   const focusRegionRef = useRef<PreviewFocusRegion | null>(null);
-
-  // 防抖 resize 定时器
-  const resizeDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  // 防抖 onUserInteraction 回调（300ms 内只触发一次，避免频繁重渲染父组件）
+  const userInteractionTimer = useRef<NodeJS.Timeout | null>(null);
 
   // 缩放限制（相对于自适应尺寸）
   const MIN_SCALE = 1; // 最小就是自适应大小
   const MAX_SCALE = 50; // 最大 20 倍
   const ZOOM_SPEED = 0.1;
 
-  // --- 优化功能：显示并自动隐藏缩放提示 ---
+  // 防抖触发 onUserInteraction 回调（300ms 内只触发一次）
+  const debouncedUserInteraction = useCallback(() => {
+    if (userInteractionTimer.current) clearTimeout(userInteractionTimer.current);
+    userInteractionTimer.current = setTimeout(() => {
+      onUserInteraction?.();
+      userInteractionTimer.current = null;
+    }, 300); // 防抖延迟 300ms
+  }, [onUserInteraction]);
+
+  // 显示并自动隐藏缩放提示
   const triggerZoomBadge = useCallback(() => {
     setShowZoomBadge(true);
-    if (zoomBadgeTimer.current) {
-      clearTimeout(zoomBadgeTimer.current);
-    }
-    zoomBadgeTimer.current = setTimeout(() => {
-      setShowZoomBadge(false);
-    }, 1500); // 1.5秒后自动消失
+    if (zoomBadgeTimer.current) clearTimeout(zoomBadgeTimer.current);
+    zoomBadgeTimer.current = setTimeout(() => setShowZoomBadge(false), 1500); // 1.5s 后自动消失
   }, []);
 
   // 核心函数：计算边界限制后的位置
@@ -291,13 +295,18 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
     focusOnRegion(focusRegionRef.current, disableFocusAnimation);
   }, [focusOnRegion, imageSize, containerSize, baseScale, disableFocusAnimation]);
 
+  // 清理定时器
+  useEffect(() => {
+    return () => {
+      if (userInteractionTimer.current) clearTimeout(userInteractionTimer.current);
+      if (zoomBadgeTimer.current) clearTimeout(zoomBadgeTimer.current);
+    };
+  }, []);
+
   // 滚轮缩放（以鼠标为中心）
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     if (isDragging) return;
-
-    // 通知父组件用户进行了手动交互
-    onUserInteraction?.();
 
     // 计算新缩放比例（相对于自适应尺寸）
     const delta = -Math.sign(e.deltaY) * ZOOM_SPEED;
@@ -322,8 +331,9 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
     setScale(newScale);
     setPosition(clampedPos);
 
-    // 触发缩放提示显示
+    // 触发缩放提示显示 & 防抖通知父组件
     triggerZoomBadge();
+    debouncedUserInteraction();
   };
 
   // 鼠标拖拽
@@ -332,8 +342,8 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
     setIsDragging(true);
     setIsAnimating(false);
     setLastMousePosition({ x: e.clientX, y: e.clientY });
-    // 通知父组件用户进行了手动交互
-    onUserInteraction?.();
+    // 防抖通知父组件用户进行了手动交互
+    debouncedUserInteraction();
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -362,8 +372,8 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     triggerZoomBadge(); // 双击也显示提示
-    // 通知父组件用户进行了手动交互
-    onUserInteraction?.();
+    // 防抖通知父组件用户进行了手动交互
+    debouncedUserInteraction();
 
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;

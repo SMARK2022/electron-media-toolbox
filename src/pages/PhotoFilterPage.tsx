@@ -156,9 +156,9 @@ export default function PhotoFilterSubpage() {
   const lstGalleryGroupedPhotos = usePhotoFilterStore(
     (s) => s.lstGalleryGroupedPhotos,
   );
-  const lstPreviewPhotoDetails = usePhotoFilterStore(
-    (s) => s.lstPreviewPhotoDetails,
-  );
+  // const lstPreviewPhotoDetails = usePhotoFilterStore(
+  //   (s) => s.lstPreviewPhotoDetails,
+  // );
   const numSimilarityThreshold = usePhotoFilterStore(
     (s) => s.numSimilarityThreshold,
   );
