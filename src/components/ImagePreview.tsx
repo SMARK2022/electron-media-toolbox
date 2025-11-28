@@ -137,6 +137,9 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
       const prevBaseScale = baseScale;
       setBaseScale(fitScale);
 
+      // 关键优化：在布局调整（Resize）期间强制禁用动画，确保图片位置即时跟随容器变化，消除“抽搐”或滞后感
+      setIsAnimating(false);
+
       if (isInitialLoad) {
         // 初始加载：重置为 1 倍并居中
         setScale(1);
@@ -145,6 +148,7 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
           y: (cHeight - imageSize.height * fitScale) / 2,
         };
         setPosition(initialPos);
+        // 初始加载可以启用动画（如果需要平滑出现），或者保持 false
         setIsAnimating(true);
       } else {
         // 切换图片或容器变化：保持当前 scale，调整位置以适应新的 baseScale
@@ -244,28 +248,24 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
     setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
   };
 
-  // 监听容器尺寸变化（添加防抖以避免拖拽时高频计算）
+  // 监听容器尺寸变化（使用 requestAnimationFrame 优化流畅度，替代防抖）
   useEffect(() => {
     if (!containerRef.current) return;
 
+    let rafId: number;
     const resizeObserver = new ResizeObserver(() => {
-      // 清除之前的防抖定时器
-      if (resizeDebounceRef.current) {
-        clearTimeout(resizeDebounceRef.current);
-      }
-      // 使用 100ms 防抖延迟
-      resizeDebounceRef.current = setTimeout(() => {
+      // 使用 RAF 确保在每一帧渲染前只执行一次计算，避免高频触发导致的卡顿
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
         // 容器变化时保持当前缩放，只调整位置
         fitToContainer(false);
-      }, 100);
+      });
     });
 
     resizeObserver.observe(containerRef.current);
     return () => {
       resizeObserver.disconnect();
-      if (resizeDebounceRef.current) {
-        clearTimeout(resizeDebounceRef.current);
-      }
+      cancelAnimationFrame(rafId);
     };
   }, [fitToContainer]);
 
@@ -435,7 +435,7 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
             transform: `translate3d(${position.x}px, ${position.y}px, 0) scale(${baseScale * scale})`,
             transformOrigin: "0 0",
             transition: isAnimating ? "transform 0.15s ease-out" : "none",
-            willChange: "transform",
+            willChange: "transform", // 提示浏览器优化合成层
             pointerEvents: "none",
           }}
         >

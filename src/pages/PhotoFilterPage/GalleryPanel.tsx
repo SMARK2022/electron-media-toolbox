@@ -18,22 +18,17 @@ interface GalleryGroupProps {
 
 const GalleryGroup: React.FC<GalleryGroupProps> = React.memo(
   ({ group, index, isGroupMode, groupLabel, highlightPhotos, onPhotoClick }) => {
-  const header =
-      isGroupMode && group.length > 0 ? (
-        <div className="mb-1 flex items-center gap-2 px-1 pt-1 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
-          <span>
-            {groupLabel} {index + 1}
-          </span>
-          <div className="h-px flex-1 bg-slate-200 dark:bg-slate-400" />
-        </div>
-      ) : null;
+    // 分组模式且有数据时显示分组标题
+    const header = isGroupMode && group.length > 0 && (
+      <div className="mb-1 flex items-center gap-2 px-1 pt-1 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+        <span>{groupLabel} {index + 1}</span>
+        <div className="h-px flex-1 bg-slate-200 dark:bg-slate-400" />
+      </div>
+    );
 
     return (
-      <div
-        key={group[0]?.filePath ?? `group-${index}`}
-        className="mb-2 last:mb-0"
-      >
-  {header}
+      <div className="mb-2 last:mb-0">
+        {header}
         <PhotoGridEnhance
           photos={group}
           onPhotoClick={onPhotoClick}
@@ -104,13 +99,12 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = ({
       <ScrollArea className="mx-auto h-[calc(100vh-220px)] w-full rounded-xl border p-3 dark:bg-slate-900">
         {lstGalleryGroupedPhotos.map((group, index) => (
           <GalleryGroup
-            key={group[0]?.filePath ?? `group-${index}`}
+            key={`${modeGalleryView}-group-${index}`}
             group={group}
             index={index}
             isGroupMode={modeGalleryView === "group"}
             groupLabel={t("filterPage.groupLabel") || "Group"}
             highlightPhotos={highlightPhotos}
-            // 将选择事件透传给上层（如右侧详情面板），右键菜单行为由 PhotoGridEnhance + 全局 store 统一处理
             onPhotoClick={onPhotoClick}
           />
         ))}

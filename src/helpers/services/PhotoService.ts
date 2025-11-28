@@ -115,59 +115,66 @@ class PhotoServiceImpl {
     const { modeGalleryView, strSortedColumnKey, boolShowDisabledPhotos } = store;
 
     try {
+      // 总览模式：使用 -2 获取所有照片；分组模式：使用 -1 获取未分组照片
       const photos: PhotoExtend[] = await getPhotosExtendByCriteria(
         modeGalleryView === "group" ? -1 : -2,
         strSortedColumnKey,
         !boolShowDisabledPhotos,
       );
 
-      let currentGroupId = 0;
-      let skippedCount = 0;
-      const groupedMap: { [key: number]: Photo[] } = {};
+      const groupedPhotos: Photo[][] = []; // 使用数组而非 Map，保证顺序稳定
       const allExtends: PhotoExtend[] = [];
 
-      // 处理未分组照片
-      if (photos.length > 0) {
-        groupedMap[currentGroupId] = photos.map((p): Photo => ({
-          fileName: p.fileName,
-          fileUrl: p.fileUrl,
-          filePath: p.filePath,
-          info: (p.IQA ?? 0).toString(),
-          isEnabled: p.isEnabled ?? true,
-        }));
-        allExtends.push(...photos);
-        currentGroupId++;
-      }
+      // 将照片转换为 Photo 格式的辅助函数
+      const toPhoto = (p: PhotoExtend): Photo => ({
+        fileName: p.fileName,
+        fileUrl: p.fileUrl,
+        filePath: p.filePath,
+        info: (p.IQA ?? 0).toString(),
+        isEnabled: p.isEnabled ?? true,
+      });
 
-      // 分组模式下继续加载各分组
-      while (modeGalleryView === "group") {
-        const groupPhotos: PhotoExtend[] = await getPhotosExtendByCriteria(
-          currentGroupId + skippedCount,
-          strSortedColumnKey,
-          !boolShowDisabledPhotos,
-        );
-
-        if (groupPhotos.length === 0) {
-          if (skippedCount < 20) {
-            skippedCount++;
-            continue;
-          }
-          break;
+      // 总览模式：直接将所有照片放入一个分组
+      if (modeGalleryView === "total") {
+        if (photos.length > 0) {
+          groupedPhotos.push(photos.map(toPhoto));
+          allExtends.push(...photos);
+        }
+      } else {
+        // 分组模式：先处理未分组照片（groupId = -1），再加载各分组
+        if (photos.length > 0) {
+          groupedPhotos.push(photos.map(toPhoto));
+          allExtends.push(...photos);
         }
 
-        groupedMap[currentGroupId] = groupPhotos.map((p): Photo => ({
-          fileName: p.fileName,
-          fileUrl: p.fileUrl,
-          filePath: p.filePath,
-          info: (p.IQA ?? 0).toString(),
-          isEnabled: p.isEnabled ?? true,
-        }));
-        allExtends.push(...groupPhotos);
-        currentGroupId++;
+        // 继续加载各分组（groupId = 0, 1, 2, ...）
+        let currentGroupId = 0;
+        let consecutiveEmpty = 0; // 连续空分组计数，用于提前终止
+        const MAX_EMPTY_GROUPS = 20; // 最大连续空分组数
+
+        while (consecutiveEmpty < MAX_EMPTY_GROUPS) {
+          const groupPhotos: PhotoExtend[] = await getPhotosExtendByCriteria(
+            currentGroupId,
+            strSortedColumnKey,
+            !boolShowDisabledPhotos,
+          );
+
+          if (groupPhotos.length === 0) {
+            consecutiveEmpty++;
+            currentGroupId++;
+            continue;
+          }
+
+          // 找到有效分组，重置空计数
+          consecutiveEmpty = 0;
+          groupedPhotos.push(groupPhotos.map(toPhoto));
+          allExtends.push(...groupPhotos);
+          currentGroupId++;
+        }
       }
 
-      // 更新 Store
-      store.fnSetGalleryGroupedPhotos(Object.values(groupedMap));
+      // 更新 Store（即使 groupedPhotos 为空也要更新，确保清空旧数据）
+      store.fnSetGalleryGroupedPhotos(groupedPhotos);
       store.fnCalculateEyeStats(allExtends);
 
       this.state.lastPhotosTime = Date.now();

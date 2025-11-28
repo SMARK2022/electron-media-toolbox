@@ -319,6 +319,12 @@ export function PhotoGridEnhance({
 
   const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
 
+  // 关键修复：photos 变化时重置 refs 数组和焦点索引，避免过时引用导致的布局错乱
+  useEffect(() => {
+    itemRefs.current = new Array(photosArray.length).fill(null);
+    setFocusedIndex(null); // 重置焦点避免索引越界
+  }, [photosArray.length]);
+
   // 保持原有的高光判定逻辑
   const isPhotoHighlighted = (fileName: string): boolean =>
     !!(
@@ -499,10 +505,12 @@ export function PhotoGridEnhance({
       >
         {photosArray.map((photo, index) => {
           const highlighted = isPhotoHighlighted(photo.fileName);
+          // 使用 index + filePath 组合作为 key，确保唯一性且稳定
+          const itemKey = `${index}-${photo.filePath}`;
 
           return (
             <div
-              key={photo.filePath || `${photo.fileName}-${index}`}
+              key={itemKey}
               ref={(el) => {
                 itemRefs.current[index] = el;
               }}
