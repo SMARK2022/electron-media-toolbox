@@ -313,10 +313,10 @@ function FileImportDrawer({ onImported }: FileImportDrawerProps) {
   return (
     <Drawer>
       <DrawerTrigger asChild>
-        <Button variant="outline" className="gap-2">
+        <div className="pl-3"><Button variant="outline" className="gap-2">
           <Upload className="h-4 w-4" />
           {t("buttons.importPhotos")}
-        </Button>
+        </Button></div>
       </DrawerTrigger>
 
       <DrawerContent>

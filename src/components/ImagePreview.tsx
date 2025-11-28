@@ -414,13 +414,13 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   return (
     <div
       ref={containerRef}
+      className="bg-white dark:bg-slate-900"
       style={{
         position: "relative",
         ...(width != null ? { width } : {}),
         ...(height != null ? { height } : {}),
         overflow: "hidden",
         cursor: isDragging ? "grabbing" : "grab",
-        background: "#efefef",
         userSelect: "none",
         minWidth: 0,
         minHeight: 0,

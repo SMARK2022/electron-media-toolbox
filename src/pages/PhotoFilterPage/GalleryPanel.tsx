@@ -7,16 +7,20 @@
  */
 
 import * as React from "react";
+import ReactDOM from "react-dom";
 import { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { Layers, Grid, Image as ImageIcon, Eye, EyeOff, AlertTriangle } from "lucide-react";
+import { Layers, Grid, Image as ImageIcon, Eye, EyeOff, AlertTriangle, FolderOpen, Trash2, Info, ExternalLink, CheckCircle2, XCircle } from "lucide-react";
 import { Photo } from "@/helpers/ipc/database/db";
 import { useGallerySelectors, usePhotoFilterStore } from "../../helpers/store/usePhotoFilterStore";
 import { cn } from "@/lib/utils";
 import missing_icon from "@/assets/images/cat_missing.svg";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { PhotoInfoDialog } from "@/components/PhotoInfoDialog";
 
 // ========== 虚拟化常量 ==========
 const ITEM_WIDTH = 200;                           // 每个格子宽度 (px)
@@ -24,6 +28,103 @@ const ITEM_HEIGHT = 220;                          // 每个格子高度（含标
 const GAP = 12;                                   // 格子间距 (px)
 const GROUP_HEADER_HEIGHT = 28;                   // 分组标题行高度 (px)
 const OVERSCAN = 2;                               // 上下额外渲染行数
+
+// ========== 工具函数 ==========
+function ellipsizeMiddle(name: string, maxLength = 36): string {
+  if (!name || name.length <= maxLength) return name;
+  const dotIndex = name.lastIndexOf(".");
+  let base = name, ext = "";
+  if (dotIndex > 0 && dotIndex < name.length - 1) { base = name.slice(0, dotIndex); ext = name.slice(dotIndex); }
+  const remain = maxLength - 3 - ext.length;
+  if (remain <= 0) return name.slice(0, maxLength - 3) + "...";
+  const front = Math.ceil(remain / 2), back = Math.floor(remain / 2);
+  return `${base.slice(0, front)}...${base.slice(Math.max(base.length - back, front))}${ext}`;
+}
+
+// ========== 右键菜单组件 ==========
+interface ContextMenuProps {
+  x: number; y: number; onClose: () => void; onAction: (actionId: string) => void;
+  targetName: string; isEnabled: boolean;
+  groups: { id: string; label: string; items: { id: string; label: string; i18nKey?: string; icon?: string }[] }[];
+}
+
+const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onAction, targetName, isEnabled, groups }) => {
+  const { t } = useTranslation();
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose(); };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("scroll", onClose, true);
+    return () => { document.removeEventListener("mousedown", handleClickOutside); document.removeEventListener("scroll", onClose, true); };
+  }, [onClose]);
+
+  const adjustedStyle: React.CSSProperties = { top: y, left: x };
+  if (typeof window !== "undefined") { if (x + 220 > window.innerWidth) adjustedStyle.left = x - 220; if (y + 280 > window.innerHeight) adjustedStyle.top = y - 280; }
+
+  return (
+    <div ref={menuRef} style={adjustedStyle} className="animate-in fade-in zoom-in-95 fixed z-50 w-56 overflow-hidden rounded-lg border border-gray-200 bg-white/95 text-sm shadow-xl backdrop-blur-sm duration-100 dark:border-slate-700 dark:bg-slate-800/95" onClick={(e) => e.stopPropagation()}>
+      <div className="truncate border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">{ellipsizeMiddle(targetName, 32)}</div>
+      <div className="p-1">
+        {groups.map((group) => {
+          const itemsToShow = group.items.filter((item) => item.id !== "toggle-enabled");  // Gallery 不支持启用/禁用
+          if (itemsToShow.length === 0) return null;
+          return (
+            <div key={group.id} className="mb-1 last:mb-0">
+              <div className="px-2 pt-1 text-[11px] font-semibold tracking-wide text-gray-400 uppercase dark:text-slate-500">{group.label}</div>
+              {itemsToShow.map((item) => {
+                let iconNode: React.ReactNode = null;
+                if (item.icon === "open") iconNode = <ExternalLink size={14} />;
+                else if (item.icon === "folder") iconNode = <FolderOpen size={14} />;
+                else if (item.icon === "delete-db" || item.icon === "delete-file") iconNode = <Trash2 size={14} />;
+                else if (item.icon === "info") iconNode = <Info size={14} />;
+                const dynamicClassName = item.id === "delete-db" ? "text-orange-500 hover:bg-orange-50 hover:text-orange-600 dark:text-orange-400 dark:hover:bg-orange-950/30" : item.id === "delete-file" ? "text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/30" : "dark:text-slate-200";
+                const baseLabel = item.i18nKey ? t(item.i18nKey, item.label) : item.label;
+                return (
+                  <button key={item.id} onClick={() => onAction(item.id)} className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-gray-100 dark:hover:bg-slate-700", dynamicClassName)}>
+                    {iconNode} <span>{baseLabel}</span>
+                  </button>
+                );
+              })}
+              <div className="my-1 h-px bg-gray-100 dark:bg-slate-700" />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ========== 删除确认对话框（Portal 版本）==========
+interface DeleteConfirmPortalProps {
+  open: boolean; photo: Photo | null; skipConfirm: boolean;
+  onClose: () => void; onSetSkipConfirm: (skip: boolean) => void; onConfirm: () => Promise<void>;
+}
+
+const DeleteConfirmPortal: React.FC<DeleteConfirmPortalProps> = ({ open, photo, skipConfirm, onClose, onSetSkipConfirm, onConfirm }) => {
+  const { t } = useTranslation();
+  const dialogContent = (
+    <AlertDialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t("photoContext.confirmDeleteTitle", "Delete photo file")}</AlertDialogTitle>
+          <AlertDialogDescription>{t("photoContext.confirmDeleteDesc", "This will permanently delete the file from disk. This action cannot be undone.")}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="bg-muted my-2 rounded-md px-3 py-2 text-xs"><div className="font-mono break-all">{photo?.filePath}</div></div>
+        <div className="mt-2 flex items-center space-x-2">
+          <Checkbox id="skip-delete-confirm" checked={skipConfirm} onCheckedChange={(checked: boolean) => onSetSkipConfirm(checked === true)} />
+          <label htmlFor="skip-delete-confirm" className="text-muted-foreground text-xs select-none">{t("photoContext.skipConfirmLabel", "Do not ask again (use with caution)")}</label>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm} className="bg-red-600 text-white hover:bg-red-700">{t("photoContext.confirmDeleteButton", "Delete")}</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+  if (typeof document === "undefined") return dialogContent;
+  return ReactDOM.createPortal(dialogContent, document.body);
+};
 
 // ========== 虚拟行类型定义 ==========
 type VirtualRowType = "header" | "photos";
@@ -52,17 +153,21 @@ const EyeStateBadgeGallery: React.FC<EyeStateBadgeGalleryProps> = React.memo(({ 
   );
 });
 
-// ========== 简化版照片卡片（Gallery 专用，含 info 和眨眼统计）==========
+// ========== 简化版照片卡片（Gallery 专用，含 info、眨眼统计、焦点等）==========
 interface GalleryPhotoCardProps {
   photo: Photo;
   width: number;
   isHighlighted: boolean;
+  isFocused: boolean;
   onClick: () => void;
   onDoubleClick: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  onFocus: () => void;
+  setRef: (el: HTMLDivElement | null) => void;
 }
 
 const GalleryPhotoCard: React.FC<GalleryPhotoCardProps> = React.memo(({
-  photo, width, isHighlighted, onClick, onDoubleClick,
+  photo, width, isHighlighted, isFocused, onClick, onDoubleClick, onContextMenu, onFocus, setRef,
 }) => {
   const [hasError, setHasError] = useState(false);
   const eyeStats = usePhotoFilterStore((s) => s.lstPhotosEyeStats.get(photo.filePath) ?? null);  // 获取眨眼统计
@@ -91,15 +196,20 @@ const GalleryPhotoCard: React.FC<GalleryPhotoCardProps> = React.memo(({
 
   return (
     <div
+      ref={setRef}
+      tabIndex={0}
       style={{ width, height: ITEM_HEIGHT - GAP }}
       className={cn(
-        "group relative flex flex-col overflow-hidden rounded-lg border bg-white transition-all dark:bg-slate-800",
-        "cursor-pointer hover:shadow-lg",
-        isHighlighted ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-900" : "border-gray-200 dark:border-slate-700",
+        "group relative flex flex-col overflow-hidden rounded-lg border transition-all dark:bg-slate-800",
+        "cursor-pointer hover:shadow-lg focus-visible:outline-none",
+        isFocused ? "border-blue-500 shadow-md ring-2 ring-blue-200 dark:ring-blue-900" : (isHighlighted ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-900" : "border-gray-200 shadow-sm hover:border-gray-300 dark:border-slate-700 dark:hover:border-slate-600"),
         !photo.isEnabled && "opacity-40 grayscale",
+        "bg-white",
       )}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
+      onFocus={onFocus}
     >
       {/* 图片区域 */}
       <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-gray-100 dark:bg-slate-900">
@@ -110,6 +220,7 @@ const GalleryPhotoCard: React.FC<GalleryPhotoCardProps> = React.memo(({
           className="h-[160px] max-w-full object-contain transition-transform group-hover:scale-105"
           onError={() => setHasError(true)}
         />
+        <div className="pointer-events-none absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/5" />
         {/* 眨眼统计指示器 */}
         {eyeStats && <EyeStateBadgeGallery eyeStats={eyeStats} />}
       </div>
@@ -118,7 +229,7 @@ const GalleryPhotoCard: React.FC<GalleryPhotoCardProps> = React.memo(({
         <p className="flex-1 truncate font-medium text-gray-700 dark:text-slate-200" title={photo.fileName}>{displayName}</p>
         {showInfo && <p className="font-mono text-[11px]" style={{ color: colorStyle }}>{formattedInfo}</p>}
       </div>
-      {isHighlighted && <div className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-blue-500 ring-inset" />}
+      {isFocused && <div className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-blue-500 ring-inset" />}
     </div>
   );
 }, (prev, next) => (
@@ -127,6 +238,7 @@ const GalleryPhotoCard: React.FC<GalleryPhotoCardProps> = React.memo(({
   prev.photo.fileUrl === next.photo.fileUrl &&
   prev.photo.info === next.photo.info &&
   prev.isHighlighted === next.isHighlighted &&
+  prev.isFocused === next.isFocused &&
   prev.width === next.width
 ));
 
@@ -139,9 +251,25 @@ interface GalleryPanelProps {
 export const GalleryPanel: React.FC<GalleryPanelProps> = React.memo(({ totalPhotoCount, onPhotoClick }) => {
   const { t } = useTranslation();
   const { lstGalleryGroupedPhotos, modeGalleryView, fnSetGalleryMode } = useGallerySelectors();
-  const highlightedPaths = usePhotoFilterStore((s) => s.highlightedPhotoFilePaths);
+  const storeFocusedPath = usePhotoFilterStore((s) => s.focusedPhotoFilePath);  // 从 store 获取焦点路径
+  const storeHighlightPaths = usePhotoFilterStore((s) => s.highlightedPhotoFilePaths);  // 从 store 获取高亮路径
+  const contextMenuGroups = usePhotoFilterStore((s) => s.contextMenuGroups);  // 右键菜单配置
+  const fnHandleContextMenuAction = usePhotoFilterStore((s) => s.fnHandleContextMenuAction);  // 右键菜单处理函数
+  const boolShowDeleteConfirm = usePhotoFilterStore((s) => s.boolShowDeleteConfirm);  // 删除确认对话框
+  const boolSkipDeleteConfirm = usePhotoFilterStore((s) => s.boolSkipDeleteConfirm);
+  const objPendingDeletePhoto = usePhotoFilterStore((s) => s.objPendingDeletePhoto);
+  const fnCloseDeleteConfirm = usePhotoFilterStore((s) => s.fnCloseDeleteConfirm);
+  const fnSetSkipDeleteConfirm = usePhotoFilterStore((s) => s.fnSetSkipDeleteConfirm);
+  const fnExecuteDeleteFile = usePhotoFilterStore((s) => s.fnExecuteDeleteFile);
+  const boolShowInfoDialog = usePhotoFilterStore((s) => s.boolShowInfoDialog);
+  const objInfoPhoto = usePhotoFilterStore((s) => s.objInfoPhoto);
+  const objInfoMetadata = usePhotoFilterStore((s) => s.objInfoMetadata);
+  const fnCloseInfoDialog = usePhotoFilterStore((s) => s.fnCloseInfoDialog);
+
   const scrollViewportRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());  // 图片引用映射
   const [containerWidth, setContainerWidth] = useState(800);
+  const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; photo: Photo | null }>({ visible: false, x: 0, y: 0, photo: null });  // 右键菜单状态
 
   // 动态计算列数
   const columns = useMemo(() => Math.max(1, Math.floor((containerWidth + GAP) / (ITEM_WIDTH + GAP))), [containerWidth]);
@@ -186,8 +314,117 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = React.memo(({ totalPhot
     measureElement: typeof window !== 'undefined' ? (element) => element?.getBoundingClientRect().height : undefined,
   });
 
-  // 点击处理
-  const handleClick = useCallback((photo: Photo, event: string) => { onPhotoClick([photo], event); }, [onPhotoClick]);
+  // 触发外部回调（异步避免阻塞）
+  const triggerClick = useCallback((photo: Photo, event: string) => {
+    if (onPhotoClick) setTimeout(() => void onPhotoClick([photo], event), 0);
+  }, [onPhotoClick]);
+
+  // 选择指定 filePath 的照片
+  const selectByPath = useCallback((filePath: string, event: "Select" | "Change") => {
+    const photo = lstGalleryGroupedPhotos.flat().find((p) => p.filePath === filePath);
+    if (!photo) return;
+    triggerClick(photo, event);
+  }, [lstGalleryGroupedPhotos, triggerClick]);
+
+  // 键盘导航：按分组计算行列位置，处理不完整行的情况
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter"].includes(e.key)) return;
+    if (!storeFocusedPath && e.key !== "Enter") {
+      const firstPhoto = lstGalleryGroupedPhotos[0]?.[0];
+      if (firstPhoto && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        selectByPath(firstPhoto.filePath, "Select");
+      }
+      return;
+    }
+
+    // 根据 focusedPath 查找所在分组及组内位置
+    let targetGroupIdx = -1, targetRowIdx = -1, targetColIdx = -1;
+    for (let gi = 0; gi < lstGalleryGroupedPhotos.length; gi++) {
+      const group = lstGalleryGroupedPhotos[gi];
+      for (let pi = 0; pi < group.length; pi++) {
+        if (group[pi].filePath === storeFocusedPath) {
+          targetGroupIdx = gi;
+          targetRowIdx = Math.floor(pi / columns);
+          targetColIdx = pi % columns;
+          break;
+        }
+      }
+      if (targetGroupIdx >= 0) break;
+    }
+
+    if (targetGroupIdx < 0) return; // 未找到焦点
+
+    let nextPhoto: Photo | null = null;
+    const currentGroup = lstGalleryGroupedPhotos[targetGroupIdx];
+    const currentRowStart = targetRowIdx * columns;
+    const currentRowEnd = Math.min(currentRowStart + columns, currentGroup.length);
+
+    switch (e.key) {
+      case "ArrowLeft": // 同行左移
+        if (targetColIdx > 0) nextPhoto = currentGroup[currentRowStart + targetColIdx - 1];
+        else if (targetGroupIdx > 0) { // 上一组最后一行最右
+          const prevGroup = lstGalleryGroupedPhotos[targetGroupIdx - 1];
+          const prevLastRowStart = Math.floor((prevGroup.length - 1) / columns) * columns;
+          nextPhoto = prevGroup[prevGroup.length - 1];
+        }
+        break;
+
+      case "ArrowRight": // 同行右移
+        if (targetColIdx < currentRowEnd - currentRowStart - 1) nextPhoto = currentGroup[currentRowStart + targetColIdx + 1];
+        else if (targetGroupIdx < lstGalleryGroupedPhotos.length - 1) nextPhoto = lstGalleryGroupedPhotos[targetGroupIdx + 1][0]; // 下一组首个
+        break;
+
+      case "ArrowUp": // 上移
+        if (targetRowIdx > 0) nextPhoto = currentGroup[currentRowStart - columns + targetColIdx];
+        else if (targetGroupIdx > 0) { // 上一组同列
+          const prevGroup = lstGalleryGroupedPhotos[targetGroupIdx - 1];
+          const prevLastRowStart = Math.floor((prevGroup.length - 1) / columns) * columns;
+          nextPhoto = prevGroup[Math.min(prevLastRowStart + targetColIdx, prevGroup.length - 1)];
+        }
+        break;
+
+      case "ArrowDown": // 下移
+        if (targetRowIdx < Math.floor((currentGroup.length - 1) / columns)) nextPhoto = currentGroup[currentRowStart + columns + targetColIdx];
+        else if (targetGroupIdx < lstGalleryGroupedPhotos.length - 1) { // 下一组同列
+          const nextGroup = lstGalleryGroupedPhotos[targetGroupIdx + 1];
+          nextPhoto = nextGroup[Math.min(targetColIdx, nextGroup.length - 1)];
+        }
+        break;
+
+      case "Enter": // 打开照片
+        e.preventDefault();
+        e.stopPropagation();
+        triggerClick(currentGroup[currentRowStart + targetColIdx], "Change");
+        return;
+    }
+
+    if (nextPhoto) {
+      e.preventDefault();
+      e.stopPropagation();
+      selectByPath(nextPhoto.filePath, "Select");
+    }
+  }, [lstGalleryGroupedPhotos, storeFocusedPath, columns, selectByPath, triggerClick]);
+
+  // 焦点滚动
+  useEffect(() => {
+    if (storeFocusedPath) {
+      const scrollElement = scrollViewportRef.current;
+      if (scrollElement) {
+        const itemEl = itemRefs.current.get(storeFocusedPath);
+        if (itemEl) itemEl.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+      }
+    }
+  }, [storeFocusedPath]);
+
+  // 右键菜单处理
+  const handleContextMenu = useCallback((e: React.MouseEvent, photo: Photo) => {
+    e.preventDefault();
+    e.stopPropagation();
+    selectByPath(photo.filePath, "Select");
+    setContextMenu({ visible: true, x: e.clientX, y: e.clientY, photo });
+  }, [selectByPath]);
 
   return (
     <Tabs id="gallery-pannel" value={modeGalleryView} onValueChange={(v) => fnSetGalleryMode(v as "group" | "total")} className="space-y-3">
@@ -208,7 +445,12 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = React.memo(({ totalPhot
 
       {/* 虚拟化滚动画廊 */}
       <ScrollArea className="h-[calc(100vh-220px)] w-full rounded-xl border p-3 dark:bg-slate-900">
-        <div ref={scrollViewportRef} className="h-full w-full outline-none">
+        <div
+          ref={scrollViewportRef}
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          className="h-full w-full outline-none"
+        >
           {virtualRows.length > 0 ? (
             <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
               {rowVirtualizer.getVirtualItems().map((virtualItem) => {
@@ -246,9 +488,13 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = React.memo(({ totalPhot
                         key={photo.filePath}
                         photo={photo}
                         width={ITEM_WIDTH}
-                        isHighlighted={highlightedPaths.has(photo.filePath)}
-                        onClick={() => handleClick(photo, "Select")}
-                        onDoubleClick={() => handleClick(photo, "Change")}
+                        isHighlighted={storeHighlightPaths.has(photo.filePath)}
+                        isFocused={storeFocusedPath === photo.filePath}
+                        onClick={() => triggerClick(photo, "Select")}
+                        onDoubleClick={() => triggerClick(photo, "Change")}
+                        onContextMenu={(e) => handleContextMenu(e, photo)}
+                        onFocus={() => selectByPath(photo.filePath, "Select")}
+                        setRef={(el) => { if (el) itemRefs.current.set(photo.filePath, el); else itemRefs.current.delete(photo.filePath); }}
                       />
                     ))}
                   </div>
@@ -265,6 +511,35 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = React.memo(({ totalPhot
         </div>
         <ScrollBar orientation="vertical" />
       </ScrollArea>
+
+      {/* 右键菜单 */}
+      {contextMenu.visible && contextMenu.photo && (
+        <ContextMenu
+          x={contextMenu.x} y={contextMenu.y}
+          targetName={contextMenu.photo.fileName}
+          isEnabled={contextMenu.photo.isEnabled ?? true}
+          groups={contextMenuGroups}
+          onClose={() => setContextMenu((c) => ({ ...c, visible: false }))}
+          onAction={(action) => {
+            if (contextMenu.photo) fnHandleContextMenuAction(action, contextMenu.photo, "filter");
+            setContextMenu((c) => ({ ...c, visible: false }));
+          }}
+        />
+      )}
+
+      {/* 删除确认对话框 */}
+      <DeleteConfirmPortal
+        open={boolShowDeleteConfirm && !!objPendingDeletePhoto}
+        photo={objPendingDeletePhoto} skipConfirm={boolSkipDeleteConfirm}
+        onClose={fnCloseDeleteConfirm} onSetSkipConfirm={fnSetSkipDeleteConfirm}
+        onConfirm={async () => { fnCloseDeleteConfirm(); if (objPendingDeletePhoto) await fnExecuteDeleteFile(objPendingDeletePhoto); }}
+      />
+
+      <PhotoInfoDialog
+        open={boolShowInfoDialog}
+        onOpenChange={(open) => { if (!open) fnCloseInfoDialog(); }}
+        photo={objInfoPhoto} metadata={objInfoMetadata as any}
+      />
     </Tabs>
   );
 });

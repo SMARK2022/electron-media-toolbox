@@ -123,7 +123,7 @@ export default function PhotoExportSubpage() {
           )}
         </AlertDialogContent>
 
-        <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="mb-2 flex items-center justify-between gap-4">
           <div className="bg-muted inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
             <span className="text-muted-foreground">
               {t("labels.totalPhotos")}
