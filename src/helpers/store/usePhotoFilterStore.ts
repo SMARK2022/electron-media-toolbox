@@ -1,4 +1,4 @@
-import { create } from "zustand";
+﻿import { create } from "zustand";
 import {
   Photo,
   PhotoExtend,
@@ -56,19 +56,19 @@ export function countEyeStates(faces: { eye_open?: number }[]): {
   return { closed, suspicious, open };
 }
 
-// 眨眼统计信息（每张图片的眼睛状态统计）
+// 弹窗眨眼统计信息（每张图片的眼睛状态统计）
 export interface EyeStatistics {
-  filePath: string; // 图片路径，作为唯一标识
-  closedEyesCount: number; // 闭眼人脸数
-  suspiciousCount: number; // 疑似闭眼
-  openEyesCount: number; // 正常睁眼
+  filePath: string; // 弹窗图片路径，作为唯一标识
+  closedEyesCount: number; // 弹窗闭眼人脸数
+  suspiciousCount: number; // 弹窗疑似闭眼
+  openEyesCount: number; // 弹窗正常睁眼
 }
 
 interface PhotoFilterState {
-  // 通用照片状态（3 个页面复用）
-  lstAllPhotos: Photo[]; // 当前相册中所有照片（扁平列表）
-  currentPage: PhotoPage; // 当前所在页面（可用于差异化行为）
-  currentSelectedPhoto: Photo | null; // 最近一次在任意页面选中的照片
+  // 弹窗通用照片状态（3 个页面复用）
+  lstAllPhotos: Photo[]; // 弹窗当前相册中所有照片（扁平列表）
+  currentPage: PhotoPage; // 弹窗当前所在页面（可用于差异化行为）
+  currentSelectedPhoto: Photo | null; // 弹窗最近一次在任意页面选中的照片
 
   lstGalleryGroupedPhotos: Photo[][];
   lstPreviewPhotoDetails: PhotoExtend[];
@@ -85,23 +85,23 @@ interface PhotoFilterState {
   numLeftPaneWidthVw: number;
   numPreviewHeightPercent: number;
 
-  // 眨眼统计数据（自动从 faceData 计算）
-  lstPhotosEyeStats: Map<string, EyeStatistics>; // filePath -> EyeStatistics，用于快速查询某张图片的眨眼统计
+  // 弹窗眨眼统计数据（自动从 faceData 计算）
+  lstPhotosEyeStats: Map<string, EyeStatistics>; // 弹窗filePath -> EyeStatistics，用于快速查询某张图片的眨眼统计
 
-  // 磁盘删除确认对话框状态
-  boolShowDeleteConfirm: boolean; // 是否展示“删除文件”确认弹窗
-  boolSkipDeleteConfirm: boolean; // 是否不再提醒（谨慎选择）
-  objPendingDeletePhoto: Photo | null; // 当前等待确认删除的照片
+  // 弹窗磁盘删除确认对话框状态
+  boolShowDeleteConfirm: boolean; // 弹窗是否展示“删除文件”确认弹窗
+  boolSkipDeleteConfirm: boolean; // 弹窗是否不再提醒（谨慎选择）
+  objPendingDeletePhoto: Photo | null; // 弹窗当前等待确认删除的照片
 
-  // 元数据详情弹窗状态
+  // 弹窗元数据详情弹窗状态
   boolShowInfoDialog: boolean;
   objInfoPhoto: Photo | null;
   objInfoMetadata: Record<string, any> | null;
 
-  // EXIF 元数据缓存（filePath -> metadata）
+  // 弹窗EXIF 元数据缓存（filePath -> metadata）
   mapExifMetadataCache: Map<string, Record<string, any>>;
 
-  // 右键菜单配置与行为
+  // 弹窗右键菜单配置与行为?
   contextMenuGroups: {
     id: string;
     label: string;
@@ -110,11 +110,11 @@ interface PhotoFilterState {
       label: string;
       /** i18n key，前端可用 t(key, label) 渲染，方便后续统一管理 */
       i18nKey?: string;
-      icon?: string; // 前端根据 id 自行渲染具体 icon
+      icon?: string; // 弹窗前端根据 id 自行渲染具体 icon
     }[];
   }[];
 
-  // actions - 通用
+  // 弹窗actions - 通用
   fnSetAllPhotos: (photos: Photo[]) => void;
   fnSetCurrentPage: (page: PhotoPage) => void;
   fnSetCurrentSelectedPhoto: (photo: Photo | null) => void;
@@ -132,21 +132,22 @@ interface PhotoFilterState {
   fnSetServerStatusData: (value: ServerData | null) => void;
   fnSetCurrentPreviewEnabled: (value: boolean) => void;
 
-  // 眨眼统计
+  // 弹窗眨眼统计
   fnCalculateEyeStats: (photos: PhotoExtend[]) => void;
 
-  // 对话框
+  // 弹窗对话框
   fnOpenDeleteConfirm: (photo: Photo) => void;
   fnCloseDeleteConfirm: () => void;
   fnSetSkipDeleteConfirm: (skip: boolean) => void;
+  fnExecuteDeleteFile: (photo: Photo) => Promise<boolean>; // 弹窗实际执行删除（不弹窗确认）
   fnOpenInfoDialog: (photo: Photo, metadata: Record<string, any>) => void;
   fnCloseInfoDialog: () => void;
 
-  // EXIF 元数据获取（带缓存）
+  // 弹窗EXIF 元数据获取（带缓存）
   fnGetPhotoMetadata: (filePath: string) => Promise<Record<string, any> | null>;
   fnClearMetadataCache: () => void;
 
-  // 业务操作
+  // 弹窗业务操作
   fnSelectPreviewPhotos: (photos: Photo[]) => Promise<void>;
   fnTogglePhotoEnabledFromGrid: (photo: Photo) => Promise<void>;
   fnDisableRedundantInGroups: () => Promise<void>;
@@ -163,44 +164,44 @@ interface PhotoFilterState {
 }
 
 export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
-  // ===== 通用照片状态 =====
+  // 弹窗===== 通用照片状态=====
   lstAllPhotos: [],
   currentPage: "filter",
   currentSelectedPhoto: null,
-  lstGalleryGroupedPhotos: [], // 左侧画廊展示用的照片分组（二维数组：group -> photos）
-  lstPreviewPhotoDetails: [], // 右侧预览面板当前展示的照片（支持多选扩展）
-  modeGalleryView: "group", // 画廊模式：按组显示还是全部平铺
-  tabRightPanel: "filter", // 右侧面板当前 Tab：过滤 / 预览
+  lstGalleryGroupedPhotos: [], // 弹窗左侧画廊展示用的照片分组（二维数组：group -> photos）
+  lstPreviewPhotoDetails: [], // 弹窗右侧预览面板当前展示的照片（支持多选扩展）
+  modeGalleryView: "group", // 弹窗画廊模式：按组显示还是全部平铺
+  tabRightPanel: "filter", // 弹窗右侧面板当前 Tab：过滤 / 预览
   numSimilarityThreshold: parseFloat(
     sessionStorage.getItem("similarityThreshold") || "0.8",
-  ), // 相似度阈值，持久化在 sessionStorage
-  boolShowDisabledPhotos: false, // 是否在相册中显示已禁用的图片
-  strSortedColumnKey: "IQA", // 排序列：默认按 IQA
-  boolCurrentPreviewEnabled: false, // 当前预览图片是否启用（同步 switch 状态）
-  boolReloadAlbumRequested: false, // 外部触发的刷新标记（如详情面板修改完状态后）
-  boolServerPollingNeeded: true, // 是否需要继续轮询服务器 & 相册
-  strServerStatusText: "", // 顶部 Drawer 按钮展示的服务端状态文案
-  objServerStatusData: null, // 原始服务端状态数据
-  numLeftPaneWidthVw: 65, // 左侧画廊分栏宽度（vw 单位），用于拖拽持久
-  numPreviewHeightPercent: 50, // 右侧预览区高度（相对 SidePanel 百分比）
+  ), // 弹窗相似度阈值，持久化在 sessionStorage
+  boolShowDisabledPhotos: false, // 弹窗是否在相册中显示已禁用的图片
+  strSortedColumnKey: "IQA", // 弹窗排序列：默认按 IQA
+  boolCurrentPreviewEnabled: false, // 弹窗当前预览图片是否启用（同步 switch 状态）
+  boolReloadAlbumRequested: false, // 弹窗外部触发的刷新标记（如详情面板修改完状态后）
+  boolServerPollingNeeded: true, // 弹窗是否需要继续轮询服务器 & 相册
+  strServerStatusText: "", // 弹窗顶部 Drawer 按钮展示的服务端状态文案
+  objServerStatusData: null, // 弹窗原始服务端状态数据
+  numLeftPaneWidthVw: 65, // 弹窗左侧画廊分栏宽度（vw 单位），用于拖拽持久
+  numPreviewHeightPercent: 50, // 弹窗右侧预览区高度（相对 SidePanel 百分比）
 
-  // 眨眼统计数据初始化
+  // 弹窗眨眼统计数据初始化
   lstPhotosEyeStats: new Map(),
 
-  // 删除文件确认弹窗初始状态
+  // 弹窗删除文件确认弹窗初始状态
   boolShowDeleteConfirm: false,
   boolSkipDeleteConfirm: false,
   objPendingDeletePhoto: null,
 
-  // 元数据详情弹窗初始状态
+  // 弹窗元数据详情弹窗初始状态
   boolShowInfoDialog: false,
   objInfoPhoto: null,
   objInfoMetadata: null,
 
-  // EXIF 元数据缓存初始化
+  // 弹窗EXIF 元数据缓存初始化
   mapExifMetadataCache: new Map(),
 
-  // 默认右键菜单配置（3 个页面共用，必要时可根据 currentPage 差异化渲染）
+  // 弹窗默认右键菜单配置（多个页面共用，必要时可根据 currentPage 差异化渲染）
   contextMenuGroups: [
     {
       id: "open",
@@ -258,32 +259,32 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     },
   ],
 
-  // ===== Actions 实现 =====
+  // 弹窗===== Actions 实现 =====
   fnSetAllPhotos: (photos) => set({ lstAllPhotos: photos }),
   fnSetCurrentPage: (page) => set({ currentPage: page }),
   fnSetCurrentSelectedPhoto: (photo) => set({ currentSelectedPhoto: photo }),
   fnSetGalleryGroupedPhotos: (groups) =>
     set({ lstGalleryGroupedPhotos: groups }),
 
-  fnSetGalleryMode: (mode) => set({ modeGalleryView: mode }), // 切换画廊展示模式
-  fnSetRightPanelTab: (tab) => set({ tabRightPanel: tab }), // 切换右侧 Tab
+  fnSetGalleryMode: (mode) => set({ modeGalleryView: mode }), // 弹窗切换画廊展示模式
+  fnSetRightPanelTab: (tab) => set({ tabRightPanel: tab }), // 弹窗切换右侧 Tab
   fnSetSimilarityThreshold: (value) => {
-    sessionStorage.setItem("similarityThreshold", value.toString()); // 把阈值写入 sessionStorage，刷新后仍然生效
+    sessionStorage.setItem("similarityThreshold", value.toString()); // 弹窗把阈值写入 sessionStorage，刷新后仍然生效
     set({ numSimilarityThreshold: value });
   },
-  fnSetShowDisabledPhotos: (value) => set({ boolShowDisabledPhotos: value }), // 总开关：是否在左侧展示禁用图片
-  fnSetSortedColumnKey: (value) => set({ strSortedColumnKey: value }), // 调整排序列（如按 IQA / 相似度）
-  fnSetPreviewHeightPercent: (value) => set({ numPreviewHeightPercent: value }), // 更新右侧预览高度百分比
-  fnSetLeftPaneWidthVw: (value) => set({ numLeftPaneWidthVw: value }), // 更新左侧分栏宽度
+  fnSetShowDisabledPhotos: (value) => set({ boolShowDisabledPhotos: value }), // 弹窗总开关：是否在左侧展示禁用图片
+  fnSetSortedColumnKey: (value) => set({ strSortedColumnKey: value }), // 弹窗调整排序列（如按 IQA / 相似度）
+  fnSetPreviewHeightPercent: (value) => set({ numPreviewHeightPercent: value }), // 弹窗更新右侧预览高度百分比
+  fnSetLeftPaneWidthVw: (value) => set({ numLeftPaneWidthVw: value }), // 弹窗更新左侧分栏宽度
   fnSetReloadAlbumRequested: (value) =>
-    set({ boolReloadAlbumRequested: value }), // 标记需要强制刷新相册
-  fnSetServerPollingNeeded: (value) => set({ boolServerPollingNeeded: value }), // 控制是否继续轮询服务状态
-  fnSetServerStatusText: (value) => set({ strServerStatusText: value }), // 直接设置服务端状态文案
-  fnSetServerStatusData: (value) => set({ objServerStatusData: value }), // 直接设置服务端原始数据
+    set({ boolReloadAlbumRequested: value }), // 弹窗标记需要强制刷新相册
+  fnSetServerPollingNeeded: (value) => set({ boolServerPollingNeeded: value }), // 弹窗控制是否继续轮询服务状态
+  fnSetServerStatusText: (value) => set({ strServerStatusText: value }), // 弹窗直接设置服务端状态文案
+  fnSetServerStatusData: (value) => set({ objServerStatusData: value }), // 弹窗直接设置服务端原始数据
   fnSetCurrentPreviewEnabled: (value) =>
-    set({ boolCurrentPreviewEnabled: value }), // 仅更新预览开关，不写 DB
+    set({ boolCurrentPreviewEnabled: value }), // 弹窗仅更新预览开关，不写 DB
 
-  // 计算眨眼统计：根据 photos 的 faceData 字段计算每张图片的眨眼统计
+  // 弹窗计算眨眼统计：根据 photos 中 faceData 字段计算每张图片的眨眼统计
   fnCalculateEyeStats: (photos: PhotoExtend[]) => {
     const newStatsMap = new Map<string, EyeStatistics>();
 
@@ -302,7 +303,7 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
           openEyesCount: open,
         });
       } catch (error) {
-        console.error(`计算 ${photo.filePath} 的眨眼统计失败:`, error);
+        console.error(`计算 ${photo.filePath} 的眨眼统计失败`, error);
         newStatsMap.set(photo.filePath, {
           filePath: photo.filePath,
           closedEyesCount: 0,
@@ -315,15 +316,41 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     set({ lstPhotosEyeStats: newStatsMap });
   },
 
-  // 打开"删除文件"确认弹窗，并记录待删除的照片
+  // 弹窗打开"删除文件"确认弹窗，并记录待删除的照片
   fnOpenDeleteConfirm: (photo) =>
     set({ boolShowDeleteConfirm: true, objPendingDeletePhoto: photo }),
 
-  // 关闭“删除文件”确认弹窗并清除待删除记录
-  fnCloseDeleteConfirm: () =>
-    set({ boolShowDeleteConfirm: false, objPendingDeletePhoto: null }),
+  // 弹窗关闭"删除文件"确认弹窗（仅关闭，不清除 photo，供确认后使用）
+  fnCloseDeleteConfirm: () => set({ boolShowDeleteConfirm: false }),
 
   fnSetSkipDeleteConfirm: (skip) => set({ boolSkipDeleteConfirm: skip }),
+
+  // 弹窗实际执行删除文件操作（不弹窗，供对话框确认后调用）
+  fnExecuteDeleteFile: async (photo) => {
+    const filePath = photo.filePath.replace(/\\/g, "/"); // 弹窗统一斜杠格式
+    try {
+      const res = await (window as any)?.ElectronAPI?.deleteFile?.(filePath);
+      if (res?.success) {
+        await deletePhotoByPath(filePath).catch(() => {}); // 弹窗静默删除数据库记录
+        set((s) => ({
+          lstAllPhotos: s.lstAllPhotos.filter((p) => p.filePath !== photo.filePath),
+          lstGalleryGroupedPhotos: s.lstGalleryGroupedPhotos
+            .map((g) => g.filter((p) => p.filePath !== photo.filePath))
+            .filter((g) => g.length > 0),
+          lstPreviewPhotoDetails: s.lstPreviewPhotoDetails.filter(
+            (p) => p.filePath !== photo.filePath,
+          ),
+          objPendingDeletePhoto: null, // 弹窗删除成功后清除待删除记录
+        }));
+        return true;
+      }
+      console.error("[deleteFile] failed:", res);
+      return false;
+    } catch (err) {
+      console.error("[deleteFile] error:", err);
+      return false;
+    }
+  },
 
   fnOpenInfoDialog: (photo, metadata) =>
     set({
@@ -339,21 +366,21 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
       objInfoMetadata: null,
     }),
 
-  // 获取照片 EXIF 元数据（优先从缓存读取，未命中则调用 IPC 并缓存结果，解决并发竞态问题）
+  // 弹窗获取照片 EXIF 元数据（优先从缓存读取，未命中则调用 IPC 并缓存结果，解决并发竞态问题）
   fnGetPhotoMetadata: async (filePath: string) => {
     filePath = filePath.replace(/\\/g, "/");
 
     const { mapExifMetadataCache } = get();
-    const cached = mapExifMetadataCache.get(filePath); // 缓存命中直接返回
+    const cached = mapExifMetadataCache.get(filePath); // 弹窗缓存命中直接返回
     if (cached) return cached;
 
     try {
       const api = (window as any)?.ElectronAPI;
-      if (!api?.getPhotoMetadata) return null; // API 不可用
+      if (!api?.getPhotoMetadata) return null; // 弹窗API 不可用
 
       const res = await api.getPhotoMetadata(filePath);
       if (res?.success && res.data) {
-        // 使用 set 的状态更新函数确保原子化操作，避免并发竞态条件
+        // 弹窗使用 set 的状态更新函数确保原子化操作，避免并发竞态条件
         set((state) => {
           const newCache = new Map(state.mapExifMetadataCache);
           newCache.set(filePath, res.data);
@@ -368,7 +395,7 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     }
   },
 
-  // 清空元数据缓存（如相册重载时调用）
+  // 弹窗清空元数据缓存（如相册重载时调用）
   fnClearMetadataCache: () => set({ mapExifMetadataCache: new Map() }),
 
   fnSelectPreviewPhotos: async (clickPhotos: Photo[]) => {
@@ -383,22 +410,22 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   //TODO
   fnTogglePhotoEnabledFromGrid: async (target: Photo) => {
     const { boolShowDisabledPhotos, lstGalleryGroupedPhotos } = get();
-    const newEnabled = !(target.isEnabled ?? true); // 反转启用状态
-    await updatePhotoEnabledStatus(target.filePath, newEnabled); // 写入数据库
+    const newEnabled = !(target.isEnabled ?? true); // 弹窗反转启用状态
+    await updatePhotoEnabledStatus(target.filePath, newEnabled); // 弹窗写入数据状态
 
-    // 禁用图片时，需要找到下一张（或上一张）图片作为新的预览焦点
+    // 弹窗禁用图片时，需要找到下一张（或上一张）图片作为新的预览焦点
     let nextPreviewPhoto: Photo | null = null;
     let nextPreviewExtended: PhotoExtend[] = [];
 
     if (!newEnabled && !boolShowDisabledPhotos) {
-      // 在所有分组中找到当前图片的位置，并选择相邻的图片
+      // 弹窗在所有分组中找到当前图片的位置，并选择相邻的图片
       const flatPhotos = lstGalleryGroupedPhotos.flat();
       const currentIndex = flatPhotos.findIndex(
         (p) => p.filePath === target.filePath,
       );
 
       if (currentIndex !== -1) {
-        // 优先选择下一张，如果没有则选择上一张
+        // 弹窗优先选择下一张，如果没有则选择上一张
         if (currentIndex < flatPhotos.length - 1) {
           nextPreviewPhoto = flatPhotos[currentIndex + 1];
         } else if (currentIndex > 0) {
@@ -406,7 +433,7 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
         }
       }
 
-      // 预先获取下一张图片的扩展信息，避免中间状态
+      // 弹窗预先获取下一张图片的扩展信息，避免中间状态闪烁
       if (nextPreviewPhoto) {
         try {
           nextPreviewExtended = await getPhotosExtendByPhotos([
@@ -438,7 +465,7 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
         p.filePath === target.filePath ? { ...p, isEnabled: newEnabled } : p,
       );
 
-      // 如果禁用图片且有下一张预览图，直接切换（避免中间空状态）
+      // 弹窗如果禁用图片且有下一张预览图，直接切换（避免中间空状态）
       if (
         !newEnabled &&
         !boolShowDisabledPhotos &&
@@ -480,7 +507,7 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
           return {
             lstGalleryGroupedPhotos: state.lstGalleryGroupedPhotos
               .map((group) => (group.length > 0 ? [group[0]] : []))
-              .filter((group) => group.length > 0), // 每组只保留第一张，其余已在上面统一禁用
+              .filter((group) => group.length > 0), // 弹窗每组只保留第一张，其余已在上面统一禁用
           } as Partial<PhotoFilterState>;
         }
 
@@ -503,7 +530,7 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
       await Promise.all(
         lstGalleryGroupedPhotos
           .flat()
-          .map((photo) => updatePhotoEnabledStatus(photo.filePath, true)), // 批量启用所有图片
+          .map((photo) => updatePhotoEnabledStatus(photo.filePath, true)), // 弹窗批量启用所有图片
       );
 
       set((state) => ({
@@ -517,7 +544,7 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   },
   //TODO
   fnUpdateFromDetailsPanel: async (filePath: string, enabled: boolean) => {
-    await updatePhotoEnabledStatus(filePath, enabled); // 详情面板开关直接写 DB
+    await updatePhotoEnabledStatus(filePath, enabled); // 弹窗详情面板开关直接写 DB
     set((state) => ({
       lstGalleryGroupedPhotos: state.lstGalleryGroupedPhotos.map((group) =>
         group.map((p) =>
@@ -531,7 +558,7 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     }));
   },
 
-  // ===== 右键菜单行为统一入口 =====
+  // 弹窗===== 右键菜单行为统一入口 =====
   fnHandleContextMenuAction: async (actionId, photo, page) => {
     set({ currentSelectedPhoto: photo, currentPage: page });
 
@@ -545,13 +572,13 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
 
           const anyWindow = window as any;
 
-          // 1. 如果 preload 暴露了专门的 openPath，则优先直接用 shell.openPath 打开本地文件
+          // 弹窗1. 如果 preload 暴露了专门的 openPath，则优先直接使用 ElectronAPI.openPath 打开本地文件
           if (anyWindow?.ElectronAPI?.openPath) {
             await anyWindow.ElectronAPI.openPath(rawPath);
             break;
           }
 
-          // 2. 否则退回到 file:/// URL + openExternal 的方案
+          // 弹窗2. 否则退回到 file:/// 弹窗URL + openExternal 的方案
           const normalizedPath = rawPath.replace(/\\/g, "/");
           const fileUrl = `file:///${encodeURI(normalizedPath)}`;
           await anyWindow?.ElectronAPI?.openExternal?.(fileUrl);
@@ -594,51 +621,16 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
         break;
       }
       case "delete-file": {
-        const { boolSkipDeleteConfirm } = state;
-
         // 如果用户未勾选“跳过确认”，则先弹出确认对话框，由 UI 组件统一处理真正删除动作
-        if (!boolSkipDeleteConfirm) {
-          set({ boolShowDeleteConfirm: true, objPendingDeletePhoto: photo });
-          break;
-        }
-
-        // 否则直接执行删除逻辑（与对话框点击确认后的逻辑保持一致）
-        try {
-          const res = await (window as any)?.ElectronAPI?.deleteFile?.(
-            photo.filePath,
-          );
-          if (res && res.success) {
-            try {
-              await deletePhotoByPath(photo.filePath);
-            } catch (error) {
-              console.warn(
-                "[contextMenu] delete-file -> delete-db warn:",
-                error,
-              );
-            }
-            set((s) => ({
-              lstAllPhotos: s.lstAllPhotos.filter(
-                (p) => p.filePath !== photo.filePath,
-              ),
-              lstGalleryGroupedPhotos: s.lstGalleryGroupedPhotos
-                .map((group) =>
-                  group.filter((p) => p.filePath !== photo.filePath),
-                )
-                .filter((group) => group.length > 0),
-              lstPreviewPhotoDetails: s.lstPreviewPhotoDetails.filter(
-                (p) => p.filePath !== photo.filePath,
-              ),
-            }));
-          } else {
-            console.error("[contextMenu] delete-file failed:", res);
-          }
-        } catch (error) {
-          console.error("[contextMenu] delete-file failed:", error);
+        if (state.boolSkipDeleteConfirm) {
+          await get().fnExecuteDeleteFile(photo); // 弹窗直接执行删除
+        } else {
+          set({ boolShowDeleteConfirm: true, objPendingDeletePhoto: photo }); // 弹窗显示确认对话框
         }
         break;
       }
       case "show-info": {
-        // 异步获取元数据（带缓存），避免阻塞 UI
+        // 弹窗异步获取元数据（带缓存），避免阻塞 UI
         void Promise.resolve().then(async () => {
           const metadata = await get().fnGetPhotoMetadata(photo.filePath);
           if (metadata) {

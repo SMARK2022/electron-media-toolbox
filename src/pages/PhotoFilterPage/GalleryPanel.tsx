@@ -37,8 +37,32 @@ const GalleryGroup: React.FC<GalleryGroupProps> = React.memo(
       </div>
     );
   },
+  (prev, next) => {
+    // 自定义比较函数，深度比较关键属性而非引用
+    const groupSame =
+      prev.group.length === next.group.length &&
+      prev.group.every(
+        (p, i) =>
+          p.filePath === next.group[i]?.filePath &&
+          p.isEnabled === next.group[i]?.isEnabled,
+      );
+    const highlightSame =
+      prev.highlightPhotos.length === next.highlightPhotos.length &&
+      prev.highlightPhotos.every(
+        (p, i) => p.filePath === next.highlightPhotos[i]?.filePath,
+      );
+
+    return (
+      groupSame &&
+      highlightSame &&
+      prev.index === next.index &&
+      prev.isGroupMode === next.isGroupMode &&
+      prev.groupLabel === next.groupLabel &&
+      typeof prev.onPhotoClick === typeof next.onPhotoClick
+    );
+  },
 );
-GalleryGroup.displayName = "GalleryGroup"; // 便于在 React DevTools 中识别
+GalleryGroup.displayName = "GalleryGroup";
 
 interface GalleryPanelProps {
   totalPhotoCount: number;

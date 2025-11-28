@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { CustomSlider } from "@/components/CustomSlider";
 import PhotoDetailsTable from "./PhotoDetailsTable"; // 预览下方的详细信息 & 开关表格
 import { AlertCircle, Image as ImageIcon, RotateCcw, Trash2 } from "lucide-react";
-import { usePhotoFilterSelectors } from "../../helpers/store/usePhotoFilterStore"; // 只订阅与 SidePanel 相关的状态和 action
+import { usePhotoFilterSelectors } from "../../helpers/store/usePhotoFilterStore";
 import { PhotoService } from "@/helpers/services/PhotoService";
+import { useCallback } from "react";
 
 interface SidePanelProps {
   previewHeightPercent: number;
@@ -35,32 +36,43 @@ export const SidePanel: React.FC<SidePanelProps> = ({
   // 预览容器 ref，用于获取实际高度
   const previewContainerRef = React.useRef<HTMLDivElement>(null);
 
-  const handleSliderChange = (value: number) => {
-    fnSetSimilarityThreshold(value); // 修改阈值时直接写入 store（内部已负责持久化）
-  };
+  // 稳定的回调函数，避免每次 render 都重建（特别是对于 onChange）
+  const handleSliderChange = useCallback(
+    (value: number) => fnSetSimilarityThreshold(value), // 直接写入 store 持久化
+    [fnSetSimilarityThreshold],
+  );
 
-  // 包装拖动事件处理，传递容器的 DOMRect
-  const handleStartPreviewMouseDrag = React.useCallback((clientY: number) => {
-    if (previewContainerRef.current) {
-      const rect = previewContainerRef.current.getBoundingClientRect();
-      onStartPreviewMouseDrag(clientY, rect);
-    }
-  }, [onStartPreviewMouseDrag]);
+  // 拖动事件包装，传递容器的 DOMRect（使用 useCallback 稳定引用）
+  const handleStartPreviewMouseDrag = useCallback(
+    (clientY: number) => {
+      if (previewContainerRef.current) {
+        const rect = previewContainerRef.current.getBoundingClientRect();
+        onStartPreviewMouseDrag(clientY, rect);
+      }
+    },
+    [onStartPreviewMouseDrag],
+  );
 
-  const handleStartPreviewTouchDrag = React.useCallback((clientY: number) => {
-    if (previewContainerRef.current) {
-      const rect = previewContainerRef.current.getBoundingClientRect();
-      onStartPreviewTouchDrag(clientY, rect);
-    }
-  }, [onStartPreviewTouchDrag]);
+  const handleStartPreviewTouchDrag = useCallback(
+    (clientY: number) => {
+      if (previewContainerRef.current) {
+        const rect = previewContainerRef.current.getBoundingClientRect();
+        onStartPreviewTouchDrag(clientY, rect);
+      }
+    },
+    [onStartPreviewTouchDrag],
+  );
 
-  const handleDisableRedundant = React.useCallback(async () => {
-    await fnDisableRedundantInGroups(); // 调用 store 中的批量禁用逻辑
-  }, [fnDisableRedundantInGroups]);
+  // 批量操作回调（保持异步处理顺序）
+  const handleDisableRedundant = useCallback(
+    () => fnDisableRedundantInGroups(),
+    [fnDisableRedundantInGroups],
+  );
 
-  const handleEnableAll = async () => {
-    await fnEnableAllPhotos(); // 启用全部图片
-  };
+  const handleEnableAll = useCallback(
+    () => fnEnableAllPhotos(),
+    [fnEnableAllPhotos],
+  );
 
   return (
     <Tabs

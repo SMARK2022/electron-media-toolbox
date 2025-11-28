@@ -153,21 +153,46 @@ function ServerStatusMonitorDrawer({
 
 export default function PhotoFilterSubpage() {
   const { t } = useTranslation();
-  const {
-    lstGalleryGroupedPhotos,
-    lstPreviewPhotoDetails,
-    numSimilarityThreshold,
-    boolShowDisabledPhotos,
-    strServerStatusText,
-    objServerStatusData,
-    numLeftPaneWidthVw,
-    numPreviewHeightPercent,
-    fnSetShowDisabledPhotos,
-    fnSetLeftPaneWidthVw,
-    fnSetPreviewHeightPercent,
-    fnSelectPreviewPhotos,
-    fnTogglePhotoEnabledFromGrid,
-  } = usePhotoFilterSelectors();
+  // 精细化订阅：拆分相关的状态，避免无关state导致的整体重渲染
+  const lstGalleryGroupedPhotos = usePhotoFilterStore(
+    (s) => s.lstGalleryGroupedPhotos,
+  );
+  const lstPreviewPhotoDetails = usePhotoFilterStore(
+    (s) => s.lstPreviewPhotoDetails,
+  );
+  const numSimilarityThreshold = usePhotoFilterStore(
+    (s) => s.numSimilarityThreshold,
+  );
+  const boolShowDisabledPhotos = usePhotoFilterStore(
+    (s) => s.boolShowDisabledPhotos,
+  );
+  const strServerStatusText = usePhotoFilterStore(
+    (s) => s.strServerStatusText,
+  );
+  const objServerStatusData = usePhotoFilterStore(
+    (s) => s.objServerStatusData,
+  );
+  const numLeftPaneWidthVw = usePhotoFilterStore(
+    (s) => s.numLeftPaneWidthVw,
+  );
+  const numPreviewHeightPercent = usePhotoFilterStore(
+    (s) => s.numPreviewHeightPercent,
+  );
+  const fnSetShowDisabledPhotos = usePhotoFilterStore(
+    (s) => s.fnSetShowDisabledPhotos,
+  );
+  const fnSetLeftPaneWidthVw = usePhotoFilterStore(
+    (s) => s.fnSetLeftPaneWidthVw,
+  );
+  const fnSetPreviewHeightPercent = usePhotoFilterStore(
+    (s) => s.fnSetPreviewHeightPercent,
+  );
+  const fnSelectPreviewPhotos = usePhotoFilterStore(
+    (s) => s.fnSelectPreviewPhotos,
+  );
+  const fnTogglePhotoEnabledFromGrid = usePhotoFilterStore(
+    (s) => s.fnTogglePhotoEnabledFromGrid,
+  );
 
   // ========== PhotoFilterEffects 逻辑直接嵌入 ==========
   const fnSetCurrentPage = usePhotoFilterStore((s: any) => s.fnSetCurrentPage);
