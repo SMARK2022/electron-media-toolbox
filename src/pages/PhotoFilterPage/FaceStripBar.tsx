@@ -197,7 +197,7 @@ const FaceThumbnail: React.FC<FaceThumbnailProps> = ({
 
 export interface FaceStripBarProps {
   faces: FaceInfo[];
-  imageSrc: string;
+  imageSrc?: string; // 可选的图片源，为空时组件不渲染
   activeIndex: number | null;
   onFaceSelect: (face: FaceInfo, index: number) => void;
   label: string;

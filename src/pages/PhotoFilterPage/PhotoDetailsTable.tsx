@@ -330,7 +330,7 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
           onStartPreviewMouseDrag(e.clientY);
         }}
         onTouchStart={(e) => {
-          if (e.touches && e.touches[0]) {
+          if (e.touches?.[0]) {
             e.stopPropagation();
             onStartPreviewTouchDrag(e.touches[0].clientY);
           }
@@ -486,21 +486,22 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
     </div>
   );
 }, (prev, next) => {
-  // 自定义比较：仅在关键 props 变化时重渲染
-  if (prev.previewHeightPercent !== next.previewHeightPercent) return false;
-  if (prev.isPreviewEnabled !== next.isPreviewEnabled) return false;
+  // 自定义比较函数：仅在关键 props 变化时重渲染（返回 true=相同无需渲染，false=不同需重渲染）
+  if (prev.previewHeightPercent !== next.previewHeightPercent) return false; // 预览高度变化需重渲染
+  if (prev.isPreviewEnabled !== next.isPreviewEnabled) return false; // 启用状态变化需重渲染
 
-  // photo 深度比较（避免引用变化触发无意义重渲染）
+  // photo 深度比较（避免引用变化导致无意义重渲染）
   const pPhoto = prev.photo, nPhoto = next.photo;
-  if (!pPhoto && !nPhoto) return true;
-  if (!pPhoto || !nPhoto) return false;
+  if (!pPhoto && !nPhoto) return true; // 都为 null/undefined 时相同，无需重渲染
+  if (!pPhoto || !nPhoto) return false; // 一个为 null/undefined 时不同，需重渲染
+  // 逐字段比较关键字段，全部相同时无需重渲染
   return (
-    pPhoto.filePath === nPhoto.filePath &&
-    pPhoto.isEnabled === nPhoto.isEnabled &&
-    pPhoto.faceData === nPhoto.faceData &&
-    pPhoto.info === nPhoto.info &&
-    pPhoto.similarity === nPhoto.similarity &&
-    pPhoto.IQA === nPhoto.IQA
+    pPhoto.filePath === nPhoto.filePath && // 文件路径相同
+    pPhoto.isEnabled === nPhoto.isEnabled && // 启用状态相同
+    pPhoto.faceData === nPhoto.faceData && // 人脸数据相同
+    pPhoto.info === nPhoto.info && // 文件信息相同
+    pPhoto.similarity === nPhoto.similarity && // 相似度相同
+    pPhoto.IQA === nPhoto.IQA // IQA 评分相同
   );
 });
 

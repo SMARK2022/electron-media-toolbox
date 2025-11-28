@@ -7,7 +7,7 @@ export interface PreviewFocusRegion {
 }
 
 interface ImagePreviewProps {
-  src: string;
+  src?: string; // 可选的图片源，为空时不渲染
   width?: string | number;
   height?: string | number;
   focusRegion?: PreviewFocusRegion;
@@ -274,12 +274,12 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   }, [fitToContainer]);
 
   // 图片加载后自适应（区分首次加载和切换图片）
-  const prevSrc = useRef<string>("");
+  const prevSrc = useRef<string>(""); // 前一次加载的图片源
   useEffect(() => {
     if (imageSize.width > 0) {
       const isInitialLoad = prevSrc.current === "";
       fitToContainer(isInitialLoad);
-      prevSrc.current = src;
+      prevSrc.current = src ?? ""; // 保存当前源（为 undefined 时使用空字符串）
     }
   }, [imageSize, fitToContainer, src]);
 
@@ -303,38 +303,45 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
     };
   }, []);
 
-  // 滚轮缩放（以鼠标为中心）
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (isDragging) return;
+  // 滚轮缩放（以鼠标为中心，使用非被动监听器支持 preventDefault）
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-    // 计算新缩放比例（相对于自适应尺寸）
-    const delta = -Math.sign(e.deltaY) * ZOOM_SPEED;
-    let newScale = scale + delta * scale;
-    newScale = Math.min(Math.max(newScale, MIN_SCALE), MAX_SCALE);
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault(); // 在非被动监听器中调用，防止页面滚动
+      if (isDragging) return;
 
-    // 获取鼠标相对容器的位置
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
+      // 计算新缩放比例（相对于自适应尺寸）
+      const delta = -Math.sign(e.deltaY) * ZOOM_SPEED;
+      let newScale = scale + delta * scale;
+      newScale = Math.min(Math.max(newScale, MIN_SCALE), MAX_SCALE);
 
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+      // 获取鼠标相对容器的位置
+      const rect = container.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
 
-    // 保持鼠标下的点不动
-    const newX = mouseX - (mouseX - position.x) * (newScale / scale);
-    const newY = mouseY - (mouseY - position.y) * (newScale / scale);
+      // 保持鼠标下的点不动
+      const newX = mouseX - (mouseX - position.x) * (newScale / scale);
+      const newY = mouseY - (mouseY - position.y) * (newScale / scale);
 
-    // 应用边界限制
-    const clampedPos = getClampedPosition({ x: newX, y: newY }, newScale);
+      // 应用边界限制
+      const clampedPos = getClampedPosition({ x: newX, y: newY }, newScale);
 
-    setIsAnimating(true);
-    setScale(newScale);
-    setPosition(clampedPos);
+      setIsAnimating(true);
+      setScale(newScale);
+      setPosition(clampedPos);
 
-    // 触发缩放提示显示 & 防抖通知父组件
-    triggerZoomBadge();
-    debouncedUserInteraction();
-  };
+      // 触发缩放提示显示 & 防抖通知父组件
+      triggerZoomBadge();
+      debouncedUserInteraction();
+    };
+
+    // 添加非被动事件监听器（{ passive: false } 允许调用 preventDefault）
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    return () => container.removeEventListener("wheel", handleWheel);
+  }, [scale, position, isDragging, MIN_SCALE, MAX_SCALE, ZOOM_SPEED, getClampedPosition, triggerZoomBadge, debouncedUserInteraction]);
 
   // 鼠标拖拽
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -418,20 +425,21 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
         minWidth: 0,
         minHeight: 0,
       }}
-      onWheel={handleWheel}
       onDoubleClick={handleDoubleClick}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      {/* 隐藏的原始图片用于获取尺寸 */}
-      <img
-        src={src}
-        alt="Original"
-        onLoad={handleImageLoad}
-        style={{ display: "none" }}
-      />
+      {/* 隐藏的原始图片用于获取尺寸（src 为空时不渲染，避免重复加载页面） */}
+      {src && (
+        <img
+          src={src}
+          alt="Original"
+          onLoad={handleImageLoad}
+          style={{ display: "none" }}
+        />
+      )}
 
       {/* 实际渲染的图片 */}
       {imageSize.width > 0 && (
