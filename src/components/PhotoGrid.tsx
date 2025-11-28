@@ -512,7 +512,7 @@ const PhotoGridItem = React.memo(
         style={{ width: `${width}px` }}
         className={cn(
           "group relative flex-none overflow-hidden rounded-lg border transition-all duration-200",
-          "cursor-pointer hover:-translate-y-1 hover:shadow-lg focus-visible:outline-none",
+          "cursor-pointer hover:shadow-lg focus-visible:outline-none",
           isHighlighted
             ? "border-blue-500 shadow-md ring-2 ring-blue-200 dark:ring-blue-900"
             : "border-gray-200 shadow-sm hover:border-gray-300 dark:border-slate-700 dark:hover:border-slate-600",
@@ -552,340 +552,260 @@ const PhotoGridItem = React.memo(
   },
 );
 
-// ========== 主网格组件 ==========
-// 辅助函数：浅比较 Photo 数组的关键属性
-const shallowEqualPhotoArray = (prevPhotos: Photo[], nextPhotos: Photo[]): boolean => {
-  if (prevPhotos.length !== nextPhotos.length) return false;
-  return prevPhotos.every((p, i) => {
-    const n = nextPhotos[i];
-    return (
-      p.filePath === n.filePath &&
-      p.isEnabled === n.isEnabled &&
-      p.info === n.info &&
-      p.fileUrl === n.fileUrl
-    );
-  });
+// ========== 辅助函数：浅比较 Photo 数组 ==========
+const shallowEqualPhotoArray = (prev: Photo[], next: Photo[]): boolean => {
+  if (prev.length !== next.length) return false;
+  return prev.every((p, i) => p.filePath === next[i].filePath && p.isEnabled === next[i].isEnabled && p.info === next[i].info && p.fileUrl === next[i].fileUrl);
 };
 
+// ========== 主网格组件 ==========
 export const PhotoGridEnhance = React.memo(function PhotoGridEnhance({
   photos = [],
   width = 200,
   onPhotoClick,
-  highlightPhotos: initialHighlightPhotos,
   onContextMenuAction,
   page = "filter",
 }: PhotoGridProps & {
   onPhotoClick?: (photos: Photo[], event: string) => void | Promise<void>;
-  highlightPhotos?: Photo[];
   onContextMenuAction?: (action: string, photo: Photo) => void;
 }) {
   const { t } = useTranslation();
 
-  // 创建全局 IntersectionObserver 单例，所有 cell 共享
+  // 创建全局 IntersectionObserver 单例
   const observerRef = useRef<IntersectionObserver | null>(null);
   useEffect(() => {
-    // 只在首次挂载时创建一次
     if (!observerRef.current) {
       observerRef.current = new IntersectionObserver(
-        (entries) => {
-          // 处理可见性变化，触发图片加载
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              const img = entry.target as HTMLImageElement;
-              if (img.dataset.src) {
-                img.src = img.dataset.src;
-                delete img.dataset.src;
-              }
-            }
-          });
-        },
+        (entries) => entries.forEach((e) => {
+          if (e.isIntersecting) {
+            const img = e.target as HTMLImageElement;
+            if (img.dataset.src) { img.src = img.dataset.src; delete img.dataset.src; }
+          }
+        }),
         { root: null, threshold: 0.01 },
       );
     }
-    return () => {
-      // 组件卸载时断开所有观察
-      observerRef.current?.disconnect();
-    };
+    return () => observerRef.current?.disconnect();
   }, []);
 
-  // 分解 selector，每个状态单独订阅，避免对象引用变化导致无限循环
-  const boolShowDeleteConfirm = usePhotoFilterStore(
-    (s) => s.boolShowDeleteConfirm,
-  );
-  const boolSkipDeleteConfirm = usePhotoFilterStore(
-    (s) => s.boolSkipDeleteConfirm,
-  );
-  const objPendingDeletePhoto = usePhotoFilterStore(
-    (s) => s.objPendingDeletePhoto,
-  );
-  const fnCloseDeleteConfirm = usePhotoFilterStore(
-    (s) => s.fnCloseDeleteConfirm,
-  );
-  const fnSetSkipDeleteConfirm = usePhotoFilterStore(
-    (s) => s.fnSetSkipDeleteConfirm,
-  );
-  const fnExecuteDeleteFile = usePhotoFilterStore(
-    (s) => s.fnExecuteDeleteFile,
-  );
-
-  const boolShowInfoDialog = usePhotoFilterStore(
-    (s) => s.boolShowInfoDialog,
-  );
+  // 从 store 订阅状态（精细化选择器）
+  const boolShowDeleteConfirm = usePhotoFilterStore((s) => s.boolShowDeleteConfirm);
+  const boolSkipDeleteConfirm = usePhotoFilterStore((s) => s.boolSkipDeleteConfirm);
+  const objPendingDeletePhoto = usePhotoFilterStore((s) => s.objPendingDeletePhoto);
+  const fnCloseDeleteConfirm = usePhotoFilterStore((s) => s.fnCloseDeleteConfirm);
+  const fnSetSkipDeleteConfirm = usePhotoFilterStore((s) => s.fnSetSkipDeleteConfirm);
+  const fnExecuteDeleteFile = usePhotoFilterStore((s) => s.fnExecuteDeleteFile);
+  const boolShowInfoDialog = usePhotoFilterStore((s) => s.boolShowInfoDialog);
   const objInfoPhoto = usePhotoFilterStore((s) => s.objInfoPhoto);
   const objInfoMetadata = usePhotoFilterStore((s) => s.objInfoMetadata);
-  const fnCloseInfoDialog = usePhotoFilterStore(
-    (s) => s.fnCloseInfoDialog,
-  );
-
+  const fnCloseInfoDialog = usePhotoFilterStore((s) => s.fnCloseInfoDialog);
   const contextMenuGroups = usePhotoFilterStore((s) => s.contextMenuGroups);
-  const fnHandleContextMenuAction = usePhotoFilterStore(
-    (s) => s.fnHandleContextMenuAction,
-  );
+  const fnHandleContextMenuAction = usePhotoFilterStore((s) => s.fnHandleContextMenuAction);
 
-  const photosArray = useMemo(
-    () => (Array.isArray(photos) ? photos : []),
-    [photos],
-  );
+  // filter 页面使用 store 管理 focus/highlight，其他页面使用本地 state
+  const storeFocusedPath = usePhotoFilterStore((s) => s.focusedPhotoFilePath);
+  const storeHighlightPaths = usePhotoFilterStore((s) => s.highlightedPhotoFilePaths);
 
+  const photosArray = useMemo(() => (Array.isArray(photos) ? photos : []), [photos]);
   const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const highlightFileNamesRef = useRef<Set<string>>(new Set());
-  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    visible: boolean;
-    x: number;
-    y: number;
-    photo: Photo | null;
-  }>({ visible: false, x: 0, y: 0, photo: null });
+  const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; photo: Photo | null }>({ visible: false, x: 0, y: 0, photo: null });
 
-  useEffect(() => {
-    itemRefs.current = new Array(photosArray.length).fill(null);
-    setFocusedIndex(null); // 重置焦点避免索引越界
-  }, [photosArray.length]);
+  // 本地 focus 状态（用于 import/export 页面）
+  const [localFocusedIndex, setLocalFocusedIndex] = useState<number | null>(null);
+  const [localHighlightPaths, setLocalHighlightPaths] = useState<Set<string>>(new Set());
 
-  // 同步高亮照片 Set，仅当 prop 变化时更新
-  useEffect(() => {
-    const names = new Set<string>();
-    initialHighlightPhotos?.forEach((p) => names.add(p.fileName));
-    highlightFileNamesRef.current = names;
-  }, [initialHighlightPhotos]); // 仅依赖 initialHighlightPhotos
+  // 根据页面类型决定使用 store 还是本地状态
+  const isFilterPage = page === "filter";
+  const focusedIndex = useMemo(() => {
+    if (isFilterPage) {
+      return storeFocusedPath ? photosArray.findIndex((p) => p.filePath === storeFocusedPath) : -1;
+    }
+    return localFocusedIndex ?? -1;
+  }, [isFilterPage, storeFocusedPath, localFocusedIndex, photosArray]);
 
-  const isPhotoHighlighted = useCallback(
-    (fileName: string): boolean => highlightFileNamesRef.current.has(fileName),
-    [],
-  ); // 常数时间查询，无依赖
+  const highlightedPaths = isFilterPage ? storeHighlightPaths : localHighlightPaths;
 
-  const triggerOnPhotoClick = useCallback(
-    (selected: Photo[], event: string) => {
-      if (!onPhotoClick) return;
-      setTimeout(() => {
-        void onPhotoClick(selected, event);
-      }, 0);
-    },
-    [onPhotoClick],
-  );
+  // 重置 refs 数组
+  useEffect(() => { itemRefs.current = new Array(photosArray.length).fill(null); }, [photosArray.length]);
 
-  // 查找垂直邻居，用于方向键导航，包装成 useCallback 以稳定引用
-  const findVerticalNeighbor = useCallback(
-    (currentIndex: number, direction: "up" | "down"): number | null => {
-      const currentEl = itemRefs.current[currentIndex];
-      if (!currentEl) return null;
+  // 触发外部回调（异步包装避免阻塞）
+  const triggerClick = useCallback((photo: Photo, event: string) => {
+    if (onPhotoClick) setTimeout(() => void onPhotoClick([photo], event), 0);
+  }, [onPhotoClick]);
 
-      const currentRect = currentEl.getBoundingClientRect();
-      const currentCx = currentRect.left + currentRect.width / 2;
-      const currentCy = currentRect.top + currentRect.height / 2;
+  // 选择指定索引的照片（统一入口，区分页面类型）
+  const selectByIndex = useCallback((idx: number, event: "Select" | "Change") => {
+    const photo = photosArray[idx];
+    if (!photo) return;
 
-      let bestIndex: number | null = null;
-      let bestRowDelta = Infinity;
-      let bestColDelta = Infinity;
-      const rowEps = 4;
+    if (isFilterPage) {
+      triggerClick(photo, event); // filter 页面通过回调触发 store 更新
+    } else {
+      // import/export 页面使用本地状态
+      setLocalFocusedIndex(idx);
+      setLocalHighlightPaths(new Set([photo.filePath]));
+      if (event === "Change" && onPhotoClick) {
+        setTimeout(() => void onPhotoClick([photo], event), 0);
+      }
+    }
+  }, [photosArray, isFilterPage, triggerClick, onPhotoClick]);
 
-      itemRefs.current.forEach((el, index) => {
-        if (!el || index === currentIndex) return;
+  // 查找垂直邻居（稳定版本算法，修复偏移问题）
+  const findVerticalNeighbor = useCallback((currentIdx: number, dir: "up" | "down"): number | null => {
+    const currentEl = itemRefs.current[currentIdx];
+    if (!currentEl) return null;
 
-        const rect = el.getBoundingClientRect();
-        const cx = rect.left + rect.width / 2;
-        const cy = rect.top + rect.height / 2;
+    const currentRect = currentEl.getBoundingClientRect();
+    const currentCx = currentRect.left + currentRect.width / 2;  // 当前元素中心 X
+    const currentCy = currentRect.top + currentRect.height / 2;  // 当前元素中心 Y
 
-        const deltaY = cy - currentCy;
-        const deltaX = cx - currentCx;
+    let bestIndex: number | null = null;
+    let bestRowDelta = Infinity;
+    let bestColDelta = Infinity;
+    const rowEps = 4; // 行容差（px），同一行内的微小 Y 偏差视为同行
 
-        if (direction === "up" && cy >= currentCy) return;
-        if (direction === "down" && cy <= currentCy) return;
+    itemRefs.current.forEach((el, i) => {
+      if (!el || i === currentIdx) return;
 
-        const rowDelta = Math.abs(deltaY);
-        const colDelta = Math.abs(deltaX);
+      const rect = el.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const deltaY = cy - currentCy;
+      const deltaX = cx - currentCx;
 
-        if (rowDelta + rowEps < bestRowDelta) {
-          bestRowDelta = rowDelta;
+      // 方向过滤：上键只找上方元素，下键只找下方元素
+      if (dir === "up" && cy >= currentCy) return;
+      if (dir === "down" && cy <= currentCy) return;
+
+      const rowDelta = Math.abs(deltaY);
+      const colDelta = Math.abs(deltaX);
+
+      // 优先选择行距最小的元素
+      if (rowDelta + rowEps < bestRowDelta) {
+        bestRowDelta = rowDelta;
+        bestColDelta = colDelta;
+        bestIndex = i;
+      } else if (Math.abs(rowDelta - bestRowDelta) <= rowEps) {
+        // 行距相近时，选择列距最小的（最接近当前列的）
+        if (colDelta < bestColDelta) {
           bestColDelta = colDelta;
-          bestIndex = index;
-        } else if (Math.abs(rowDelta - bestRowDelta) <= rowEps) {
-          if (colDelta < bestColDelta) {
-            bestColDelta = colDelta;
-            bestIndex = index;
-          }
-        }
-      });
-
-      return bestIndex;
-    },
-    [],
-  ); // itemRefs 是 useRef，不会变化，所以没有依赖
-
-  const selectPhotoByIndex = useCallback(
-    (index: number, event: "Select" | "Change") => {
-      const photo = photosArray[index];
-      if (!photo) return;
-      setFocusedIndex(index);
-      triggerOnPhotoClick([photo], event);
-    },
-    [photosArray, triggerOnPhotoClick],
-  ); // 仅依赖 photosArray（已memoized）和 triggerOnPhotoClick
-
-  const handleContextMenu = useCallback(
-    (e: React.MouseEvent, photo: Photo, index: number) => {
-      e.preventDefault();
-      e.stopPropagation();
-      selectPhotoByIndex(index, "Select");
-      setContextMenu({
-        visible: true,
-        x: e.clientX,
-        y: e.clientY,
-        photo: photo,
-      });
-    },
-    [selectPhotoByIndex],
-  );
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (photosArray.length === 0) return;
-      if (focusedIndex === null) {
-        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
-          e.preventDefault();
-          selectPhotoByIndex(0, "Select");
-        }
-        return;
-      }
-      switch (e.key) {
-        case "ArrowUp":
-        case "ArrowDown": {
-          e.preventDefault();
-          const dir = e.key === "ArrowUp" ? "up" : "down";
-          const target = findVerticalNeighbor(focusedIndex, dir);
-          if (target !== null) selectPhotoByIndex(target, "Select");
-          break;
-        }
-        case "ArrowLeft": {
-          e.preventDefault();
-          if (focusedIndex > 0) selectPhotoByIndex(focusedIndex - 1, "Select");
-          break;
-        }
-        case "ArrowRight": {
-          e.preventDefault();
-          if (focusedIndex < photosArray.length - 1)
-            selectPhotoByIndex(focusedIndex + 1, "Select");
-          break;
-        }
-        case "Enter": {
-          e.preventDefault();
-          selectPhotoByIndex(focusedIndex, "Change");
-          break;
+          bestIndex = i;
         }
       }
-    },
-    [photosArray.length, focusedIndex, selectPhotoByIndex, findVerticalNeighbor],
-  );
+    });
+    return bestIndex;
+  }, []);
+
+  // 自动滚动到焦点元素
+  useEffect(() => {
+    if (focusedIndex >= 0) {
+      itemRefs.current[focusedIndex]?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    }
+  }, [focusedIndex]);
+
+  // 右键菜单处理
+  const handleContextMenu = useCallback((e: React.MouseEvent, photo: Photo, idx: number) => {
+    e.preventDefault(); e.stopPropagation();
+    selectByIndex(idx, "Select");
+    setContextMenu({ visible: true, x: e.clientX, y: e.clientY, photo });
+  }, [selectByIndex]);
+
+  // 键盘导航（简化逻辑，支持所有页面）
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (!photosArray.length) return;
+
+    // 无焦点时按方向键选中第一个
+    if (focusedIndex < 0) {
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+        e.preventDefault();
+        selectByIndex(0, "Select");
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case "ArrowUp": case "ArrowDown": {
+        e.preventDefault();
+        const targetIdx = findVerticalNeighbor(focusedIndex, e.key === "ArrowUp" ? "up" : "down");
+        if (targetIdx !== null) selectByIndex(targetIdx, "Select");
+        break;
+      }
+      case "ArrowLeft": {
+        e.preventDefault();
+        if (focusedIndex > 0) selectByIndex(focusedIndex - 1, "Select");
+        break;
+      }
+      case "ArrowRight": {
+        e.preventDefault();
+        if (focusedIndex < photosArray.length - 1) selectByIndex(focusedIndex + 1, "Select");
+        break;
+      }
+      case "Enter": {
+        e.preventDefault();
+        selectByIndex(focusedIndex, "Change");
+        break;
+      }
+    }
+  }, [photosArray.length, focusedIndex, selectByIndex, findVerticalNeighbor]);
 
   return (
     <>
-      <div
-        className="flex flex-wrap gap-3 outline-none"
-        tabIndex={0}
-        onKeyDown={handleKeyDown}
-      >
-        {photosArray.map((photo, index) => {
-          const highlighted = isPhotoHighlighted(photo.fileName);
-          const itemKey = `${index}-${photo.filePath}`;
-
-          return (
-            <PhotoGridItem
-              key={itemKey}
-              photo={photo}
-              index={index}
-              width={width}
-              page={page}
-              isHighlighted={highlighted}
-              isFocused={focusedIndex === index}
-              observer={observerRef.current}
-              onSelect={selectPhotoByIndex}
-              onContextMenu={handleContextMenu}
-              onFocus={setFocusedIndex}
-              setRef={(el) => {
-                itemRefs.current[index] = el;
-              }}
-            />
-          );
-        })}
+      <div className="flex flex-wrap gap-3 outline-none" tabIndex={0} onKeyDown={handleKeyDown}>
+        {photosArray.map((photo, index) => (
+          <PhotoGridItem
+            key={`${index}-${photo.filePath}`}
+            photo={photo}
+            index={index}
+            width={width}
+            page={page}
+            isHighlighted={highlightedPaths.has(photo.filePath)}
+            isFocused={focusedIndex === index}
+            observer={observerRef.current}
+            onSelect={selectByIndex}
+            onContextMenu={handleContextMenu}
+            onFocus={(i) => selectByIndex(i, "Select")}
+            setRef={(el) => { itemRefs.current[index] = el; }}
+          />
+        ))}
       </div>
 
       {/* 右键菜单 */}
       {contextMenu.visible && contextMenu.photo && (
         <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
+          x={contextMenu.x} y={contextMenu.y}
           targetName={contextMenu.photo.fileName}
           isEnabled={contextMenu.photo.isEnabled ?? true}
-          page={page}
-          groups={contextMenuGroups}
-          onClose={() => setContextMenu({ ...contextMenu, visible: false })}
+          page={page} groups={contextMenuGroups}
+          onClose={() => setContextMenu((c) => ({ ...c, visible: false }))}
           onAction={(action) => {
             if (contextMenu.photo) {
-              if (onContextMenuAction) {
-                onContextMenuAction(action, contextMenu.photo);
-              } else {
-                void fnHandleContextMenuAction(action, contextMenu.photo, page);
-              }
+              onContextMenuAction ? onContextMenuAction(action, contextMenu.photo) : void fnHandleContextMenuAction(action, contextMenu.photo, page);
             }
-            setContextMenu({ ...contextMenu, visible: false });
+            setContextMenu((c) => ({ ...c, visible: false }));
           }}
         />
       )}
 
-      {/* 删除确认对话框：通过 Portal 挂载到 body，避免界面阻塞重绘 */}
+      {/* 删除确认对话框 */}
       <DeleteConfirmPortal
         open={boolShowDeleteConfirm && !!objPendingDeletePhoto}
-        photo={objPendingDeletePhoto}
-        skipConfirm={boolSkipDeleteConfirm}
-        onClose={fnCloseDeleteConfirm}
-        onSetSkipConfirm={fnSetSkipDeleteConfirm}
-        onConfirm={async () => {
-          const target = objPendingDeletePhoto;
-          fnCloseDeleteConfirm(); // 先关闭弹窗
-          if (target) await fnExecuteDeleteFile(target); // 执行删除（不会再弹窗）
-        }}
+        photo={objPendingDeletePhoto} skipConfirm={boolSkipDeleteConfirm}
+        onClose={fnCloseDeleteConfirm} onSetSkipConfirm={fnSetSkipDeleteConfirm}
+        onConfirm={async () => { fnCloseDeleteConfirm(); if (objPendingDeletePhoto) await fnExecuteDeleteFile(objPendingDeletePhoto); }}
       />
 
       <PhotoInfoDialog
         open={boolShowInfoDialog}
-        onOpenChange={(open) => {
-          if (!open) fnCloseInfoDialog();
-        }}
-        photo={objInfoPhoto}
-        metadata={objInfoMetadata as any}
+        onOpenChange={(open) => { if (!open) fnCloseInfoDialog(); }}
+        photo={objInfoPhoto} metadata={objInfoMetadata as any}
       />
     </>
   );
-}, (prev, next) => {
-  // React.memo 的比较函数：如果返回 true，则跳过重渲染
-  return (
-    prev.width === next.width &&
-    prev.page === next.page &&
-    prev.onPhotoClick === next.onPhotoClick &&
-    prev.onContextMenuAction === next.onContextMenuAction &&
-    shallowEqualPhotoArray(prev.photos || [], next.photos || [])
-  );
-});
+}, (prev, next) => (
+  prev.width === next.width && prev.page === next.page &&
+  prev.onPhotoClick === next.onPhotoClick && prev.onContextMenuAction === next.onContextMenuAction &&
+  shallowEqualPhotoArray(prev.photos || [], next.photos || [])
+));
 
 // ========== 删除确认对话框（Portal 版本）==========
 interface DeleteConfirmPortalProps {

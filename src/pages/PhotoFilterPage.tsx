@@ -468,18 +468,6 @@ export default function PhotoFilterSubpage() {
     });
   };
 
-  // 当前高亮照片列表（只在 previewPhotos 变化时重建）
-  const highlightPhotos = React.useMemo<Photo[]>(() => {
-    if (!lstPreviewPhotoDetails.length) return [];
-    return lstPreviewPhotoDetails.map((photo) => ({
-      fileName: photo.fileName,
-      fileUrl: photo.fileUrl,
-      filePath: photo.filePath,
-      info: photo.info ?? "",
-      isEnabled: photo.isEnabled ?? true,
-    }));
-  }, [lstPreviewPhotoDetails]);
-
   const totalPhotoCount = lstGalleryGroupedPhotos.flat().length;
 
   return (
@@ -498,7 +486,6 @@ export default function PhotoFilterSubpage() {
           <div className="bg-background/80 flex h-[calc(100vh-85px)] w-full flex-col space-y-4 rounded-xl p-3 shadow-sm">
             <GalleryPanel
               totalPhotoCount={totalPhotoCount}
-              highlightPhotos={highlightPhotos}
               onPhotoClick={handlePhotoClick}
             />
 

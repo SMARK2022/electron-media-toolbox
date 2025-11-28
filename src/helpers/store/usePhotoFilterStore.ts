@@ -65,10 +65,11 @@ export interface EyeStatistics {
 }
 
 interface PhotoFilterState {
-  // 弹窗通用照片状态（3 个页面复用）
-  lstAllPhotos: Photo[]; // 弹窗当前相册中所有照片（扁平列表）
-  currentPage: PhotoPage; // 弹窗当前所在页面（可用于差异化行为）
-  currentSelectedPhoto: Photo | null; // 弹窗最近一次在任意页面选中的照片
+  // ===== 通用照片状态（3 个页面复用）=====
+  lstAllPhotos: Photo[];                    // 当前相册中所有照片（扁平列表）
+  currentPage: PhotoPage;                   // 当前所在页面
+  focusedPhotoFilePath: string | null;      // 当前焦点照片路径（统一 focus/highlight/preview）
+  highlightedPhotoFilePaths: Set<string>;   // 高亮照片集合（跟随焦点自动更新）
 
   lstGalleryGroupedPhotos: Photo[][];
   lstPreviewPhotoDetails: PhotoExtend[];
@@ -114,10 +115,10 @@ interface PhotoFilterState {
     }[];
   }[];
 
-  // 弹窗actions - 通用
+  // ===== Actions - 通用 =====
   fnSetAllPhotos: (photos: Photo[]) => void;
   fnSetCurrentPage: (page: PhotoPage) => void;
-  fnSetCurrentSelectedPhoto: (photo: Photo | null) => void;
+  fnSelectPhoto: (photo: Photo | null) => Promise<void>; // 统一选择：同步 focus/highlight/preview
   fnSetGalleryGroupedPhotos: (groups: Photo[][]) => void;
   fnSetGalleryMode: (mode: GalleryMode) => void;
   fnSetRightPanelTab: (tab: "filter" | "preview") => void;
@@ -164,10 +165,11 @@ interface PhotoFilterState {
 }
 
 export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
-  // 弹窗===== 通用照片状态=====
+  // ===== 通用照片状态初始化 =====
   lstAllPhotos: [],
   currentPage: "filter",
-  currentSelectedPhoto: null,
+  focusedPhotoFilePath: null,
+  highlightedPhotoFilePaths: new Set(),
   lstGalleryGroupedPhotos: [], // 弹窗左侧画廊展示用的照片分组（二维数组：group -> photos）
   lstPreviewPhotoDetails: [], // 弹窗右侧预览面板当前展示的照片（支持多选扩展）
   modeGalleryView: "group", // 弹窗画廊模式：按组显示还是全部平铺
@@ -259,12 +261,32 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     },
   ],
 
-  // 弹窗===== Actions 实现 =====
+  // ===== Actions 实现 =====
   fnSetAllPhotos: (photos) => set({ lstAllPhotos: photos }),
   fnSetCurrentPage: (page) => set({ currentPage: page }),
-  fnSetCurrentSelectedPhoto: (photo) => set({ currentSelectedPhoto: photo }),
-  fnSetGalleryGroupedPhotos: (groups) =>
-    set({ lstGalleryGroupedPhotos: groups }),
+
+  // 统一选择函数：同步更新 focus/highlight，异步更新 preview（不阻塞键盘导航）
+  fnSelectPhoto: async (photo) => {
+    if (!photo) {
+      set({ focusedPhotoFilePath: null, highlightedPhotoFilePaths: new Set(), lstPreviewPhotoDetails: [] });
+      return;
+    }
+    // 同步更新 focus + highlight（立即生效，不阻塞）
+    set({
+      focusedPhotoFilePath: photo.filePath,
+      highlightedPhotoFilePaths: new Set([photo.filePath]),
+      tabRightPanel: "preview",
+    });
+    // 异步更新 preview 详情（较慢，不阻塞用户操作）
+    getPhotosExtendByPhotos([photo]).then((extended) => {
+      // 只有当前焦点未变化时才更新预览（避免覆盖新选择）
+      if (get().focusedPhotoFilePath === photo.filePath) {
+        set({ lstPreviewPhotoDetails: extended, boolCurrentPreviewEnabled: extended[0]?.isEnabled ?? false });
+      }
+    }).catch(console.error);
+  },
+
+  fnSetGalleryGroupedPhotos: (groups) => set({ lstGalleryGroupedPhotos: groups }),
 
   fnSetGalleryMode: (mode) => set({ modeGalleryView: mode }), // 弹窗切换画廊展示模式
   fnSetRightPanelTab: (tab) => set({ tabRightPanel: tab }), // 弹窗切换右侧 Tab
@@ -408,99 +430,45 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     }
   },
 
-  // 弹窗清空元数据缓存（如相册重载时调用）
+  // 清空元数据缓存（如相册重载时调用）
   fnClearMetadataCache: () => set({ mapExifMetadataCache: new Map() }),
 
+  // 保持兼容性的包装函数（内部直接调用 fnSelectPhoto）
   fnSelectPreviewPhotos: async (clickPhotos: Photo[]) => {
-    if (!clickPhotos.length) return;
-    const extended = await getPhotosExtendByPhotos(clickPhotos);
-    set({
-      lstPreviewPhotoDetails: extended,
-      tabRightPanel: "preview",
-      boolCurrentPreviewEnabled: extended[0]?.isEnabled ?? false,
-    });
+    if (clickPhotos.length > 0) await get().fnSelectPhoto(clickPhotos[0]);
   },
-  //TODO
+
+  // 切换照片启用状态，禁用时自动切换焦点到下一张
   fnTogglePhotoEnabledFromGrid: async (target: Photo) => {
-    const { boolShowDisabledPhotos, lstGalleryGroupedPhotos } = get();
-    const newEnabled = !(target.isEnabled ?? true); // 弹窗反转启用状态
-    await updatePhotoEnabledStatus(target.filePath, newEnabled); // 弹窗写入数据状态
+    const { boolShowDisabledPhotos, lstGalleryGroupedPhotos, fnSelectPhoto } = get();
+    const newEnabled = !(target.isEnabled ?? true);       // 反转状态
+    await updatePhotoEnabledStatus(target.filePath, newEnabled);
 
-    // 弹窗禁用图片时，需要找到下一张（或上一张）图片作为新的预览焦点
-    let nextPreviewPhoto: Photo | null = null;
-    let nextPreviewExtended: PhotoExtend[] = [];
-
+    // 计算下一张焦点照片（禁用且隐藏时需要）
+    let nextPhoto: Photo | null = null;
     if (!newEnabled && !boolShowDisabledPhotos) {
-      // 弹窗在所有分组中找到当前图片的位置，并选择相邻的图片
       const flatPhotos = lstGalleryGroupedPhotos.flat();
-      const currentIndex = flatPhotos.findIndex(
-        (p) => p.filePath === target.filePath,
-      );
-
-      if (currentIndex !== -1) {
-        // 弹窗优先选择下一张，如果没有则选择上一张
-        if (currentIndex < flatPhotos.length - 1) {
-          nextPreviewPhoto = flatPhotos[currentIndex + 1];
-        } else if (currentIndex > 0) {
-          nextPreviewPhoto = flatPhotos[currentIndex - 1];
-        }
-      }
-
-      // 弹窗预先获取下一张图片的扩展信息，避免中间状态闪烁
-      if (nextPreviewPhoto) {
-        try {
-          nextPreviewExtended = await getPhotosExtendByPhotos([
-            nextPreviewPhoto,
-          ]);
-        } catch (error) {
-          console.error("获取下一张预览图片失败:", error);
-        }
-      }
+      const idx = flatPhotos.findIndex((p) => p.filePath === target.filePath);
+      if (idx !== -1) nextPhoto = flatPhotos[idx + 1] ?? flatPhotos[idx - 1] ?? null;
     }
 
+    // 更新画廊分组状态
     set((state) => {
-      let nextPhotos: Photo[][];
-      if (!newEnabled && !boolShowDisabledPhotos) {
-        nextPhotos = state.lstGalleryGroupedPhotos
-          .map((group) => group.filter((p) => p.filePath !== target.filePath))
-          .filter((group) => group.length > 0);
-      } else {
-        nextPhotos = state.lstGalleryGroupedPhotos.map((group) =>
-          group.map((p) =>
-            p.filePath === target.filePath
-              ? { ...p, isEnabled: newEnabled }
-              : p,
-          ),
-        );
-      }
+      const nextGroups = !newEnabled && !boolShowDisabledPhotos
+        ? state.lstGalleryGroupedPhotos.map((g) => g.filter((p) => p.filePath !== target.filePath)).filter((g) => g.length > 0)
+        : state.lstGalleryGroupedPhotos.map((g) => g.map((p) => p.filePath === target.filePath ? { ...p, isEnabled: newEnabled } : p));
 
-      const nextPreview = state.lstPreviewPhotoDetails.map((p) =>
-        p.filePath === target.filePath ? { ...p, isEnabled: newEnabled } : p,
-      );
-
-      // 弹窗如果禁用图片且有下一张预览图，直接切换（避免中间空状态）
-      if (
-        !newEnabled &&
-        !boolShowDisabledPhotos &&
-        nextPreviewExtended.length > 0
-      ) {
-        return {
-          lstGalleryGroupedPhotos: nextPhotos,
-          lstPreviewPhotoDetails: nextPreviewExtended,
-          tabRightPanel: "preview",
-          boolCurrentPreviewEnabled: nextPreviewExtended[0]?.isEnabled ?? false,
-        };
-      }
+      const nextPreview = state.lstPreviewPhotoDetails.map((p) => p.filePath === target.filePath ? { ...p, isEnabled: newEnabled } : p);
 
       return {
-        lstGalleryGroupedPhotos: nextPhotos,
-        lstPreviewPhotoDetails:
-          newEnabled || boolShowDisabledPhotos ? nextPreview : [],
-        tabRightPanel:
-          newEnabled || boolShowDisabledPhotos ? "preview" : "filter",
+        lstGalleryGroupedPhotos: nextGroups,
+        lstPreviewPhotoDetails: newEnabled || boolShowDisabledPhotos ? nextPreview : [],
         boolCurrentPreviewEnabled: newEnabled,
       };
     });
+
+    // 自动切换焦点到下一张（统一通过 fnSelectPhoto 处理 focus/highlight/preview 同步）
+    if (nextPhoto) await fnSelectPhoto(nextPhoto);
   },
 
   fnDisableRedundantInGroups: async () => {
@@ -571,9 +539,9 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     }));
   },
 
-  // 弹窗===== 右键菜单行为统一入口 =====
+  // ===== 右键菜单行为统一入口 =====
   fnHandleContextMenuAction: async (actionId, photo, page) => {
-    set({ currentSelectedPhoto: photo, currentPage: page });
+    set({ focusedPhotoFilePath: photo.filePath, currentPage: page });
 
     const state = get();
 
@@ -696,4 +664,7 @@ export const useGallerySelectors = () => ({
   lstGalleryGroupedPhotos: usePhotoFilterStore((s) => s.lstGalleryGroupedPhotos),
   modeGalleryView: usePhotoFilterStore((s) => s.modeGalleryView),
   fnSetGalleryMode: usePhotoFilterStore((s) => s.fnSetGalleryMode),
+  highlightedPhotoFilePaths: usePhotoFilterStore((s) => s.highlightedPhotoFilePaths),
+  focusedPhotoFilePath: usePhotoFilterStore((s) => s.focusedPhotoFilePath), // 当前焦点照片
+  fnSelectPhoto: usePhotoFilterStore((s) => s.fnSelectPhoto),              // 统一选择函数
 });
