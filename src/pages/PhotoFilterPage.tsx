@@ -21,7 +21,6 @@ import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { Photo } from "@/helpers/ipc/database/db";
 import {
-  usePhotoFilterSelectors,
   usePhotoFilterStore,
   type ServerData,
 } from "../helpers/store/usePhotoFilterStore";
@@ -166,15 +165,9 @@ export default function PhotoFilterSubpage() {
   const boolShowDisabledPhotos = usePhotoFilterStore(
     (s) => s.boolShowDisabledPhotos,
   );
-  const strServerStatusText = usePhotoFilterStore(
-    (s) => s.strServerStatusText,
-  );
-  const objServerStatusData = usePhotoFilterStore(
-    (s) => s.objServerStatusData,
-  );
-  const numLeftPaneWidthVw = usePhotoFilterStore(
-    (s) => s.numLeftPaneWidthVw,
-  );
+  const strServerStatusText = usePhotoFilterStore((s) => s.strServerStatusText);
+  const objServerStatusData = usePhotoFilterStore((s) => s.objServerStatusData);
+  const numLeftPaneWidthVw = usePhotoFilterStore((s) => s.numLeftPaneWidthVw);
   const numPreviewHeightPercent = usePhotoFilterStore(
     (s) => s.numPreviewHeightPercent,
   );

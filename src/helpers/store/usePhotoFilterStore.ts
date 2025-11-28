@@ -663,7 +663,37 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   },
 }));
 
-export const usePhotoFilterSelectors = () => {
-  const state = usePhotoFilterStore((s) => s);
-  return state;
-};
+/**
+ * usePhotoFilterSelectors: 返回整个 store（慎用，会导致任意状态变化触发重渲染）
+ * 推荐使用下方精细化的 selector hooks
+ */
+export const usePhotoFilterSelectors = () => usePhotoFilterStore((s) => s);
+
+// ============================================================================
+// 精细化 Selector Hooks（按组件职责拆分，避免无关状态变化触发重渲染）
+// ============================================================================
+
+/** SidePanel 专用 selector：只订阅右侧面板需要的状态 */
+export const useSidePanelSelectors = () => ({
+  tabRightPanel: usePhotoFilterStore((s) => s.tabRightPanel),
+  fnSetRightPanelTab: usePhotoFilterStore((s) => s.fnSetRightPanelTab),
+  numSimilarityThreshold: usePhotoFilterStore((s) => s.numSimilarityThreshold),
+  fnSetSimilarityThreshold: usePhotoFilterStore((s) => s.fnSetSimilarityThreshold),
+  fnDisableRedundantInGroups: usePhotoFilterStore((s) => s.fnDisableRedundantInGroups),
+  fnEnableAllPhotos: usePhotoFilterStore((s) => s.fnEnableAllPhotos),
+});
+
+/** PhotoDetailsTable 专用 selector：只订阅预览详情需要的状态 */
+export const usePreviewDetailsSelectors = () => ({
+  lstPreviewPhotoDetails: usePhotoFilterStore((s) => s.lstPreviewPhotoDetails),
+  boolCurrentPreviewEnabled: usePhotoFilterStore((s) => s.boolCurrentPreviewEnabled),
+  fnUpdateFromDetailsPanel: usePhotoFilterStore((s) => s.fnUpdateFromDetailsPanel),
+  fnSetCurrentPreviewEnabled: usePhotoFilterStore((s) => s.fnSetCurrentPreviewEnabled),
+});
+
+/** GalleryPanel 专用 selector：只订阅画廊展示需要的状态 */
+export const useGallerySelectors = () => ({
+  lstGalleryGroupedPhotos: usePhotoFilterStore((s) => s.lstGalleryGroupedPhotos),
+  modeGalleryView: usePhotoFilterStore((s) => s.modeGalleryView),
+  fnSetGalleryMode: usePhotoFilterStore((s) => s.fnSetGalleryMode),
+});

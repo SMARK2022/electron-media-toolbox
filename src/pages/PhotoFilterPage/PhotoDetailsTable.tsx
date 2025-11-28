@@ -29,12 +29,7 @@ import { FaceStripBar, FaceInfo } from "./FaceStripBar";
 interface PhotoDetailsTableProps {
   photo?: PhotoExtend;
   isPreviewEnabled: boolean;
-  setIsPreviewEnabled: React.Dispatch<React.SetStateAction<boolean>>;
-  updatePhotoEnabledStatus: (
-    filePath: string,
-    isEnabled: boolean,
-  ) => Promise<void>;
-  setPhotos: React.Dispatch<React.SetStateAction<any[]>>;
+  updatePhotoEnabledStatus: (filePath: string, isEnabled: boolean) => Promise<void>;
   onPhotoStatusChanged?: () => void;
   previewHeightPercent: number;
   onStartPreviewMouseDrag: (clientY: number) => void;
@@ -133,12 +128,14 @@ const PreviewPlaceholder: React.FC<{ height?: string }> = ({ height }) => {
 
 // FaceThumbnail / FaceStrip 已抽离到 FaceStripBar.tsx
 
-const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
+/**
+ * PhotoDetailsTable: 预览详情面板组件
+ * 使用 React.memo + 自定义比较函数优化渲染性能
+ */
+const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
   photo,
   isPreviewEnabled,
-  setIsPreviewEnabled,
   updatePhotoEnabledStatus,
-  setPhotos,
   onPhotoStatusChanged,
   previewHeightPercent,
   onStartPreviewMouseDrag,
@@ -146,30 +143,20 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
 }) => {
   const { t } = useTranslation();
   const [isUpdating, setIsUpdating] = useState(false);
-  const [focusRegion, setFocusRegion] = useState<PreviewFocusRegion | null>(
-    null,
-  );
+  const [focusRegion, setFocusRegion] = useState<PreviewFocusRegion | null>(null);
   const [activeFaceIndex, setActiveFaceIndex] = useState<number | null>(null);
 
-  // 人脸追踪器实例（持久化）
+  // 人脸追踪器实例 & 状态
   const faceTrackerRef = useRef<FaceTracker>(new FaceTracker());
-
-  // 追踪模式是否激活（用户选择人脸后激活，手动交互后取消）
   const [isTrackingActive, setIsTrackingActive] = useState(false);
-
-  // 是否为图片切换后的首次聚焦（用于禁用动画）
   const [isFirstFocusAfterSwitch, setIsFirstFocusAfterSwitch] = useState(false);
 
-  // 记录上一张图片的 filePath，用于检测图片切换
+  // 图片切换检测 & 匹配标记
   const prevFilePathRef = useRef<string>("");
-
-  // 标记当前图片是否已经完成人脸匹配（避免重复匹配）
   const matchedForCurrentPhotoRef = useRef<string>("");
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
 
-  // 图片尺寸缓存（用于人脸追踪）
-  const [imageSize, setImageSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
-
-  // 从 photo 中解构字段，如果 photo 为空则使用默认值
+  // 解构 photo 字段（提前解构避免条件判断后使用）
   const {
     fileName = "",
     filePath = "",
@@ -181,210 +168,123 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
     IQA,
     isEnabled,
     faceData,
-    fileUrl,
   } = photo ?? {};
 
-  // 将所有 hooks 移到条件返回之前，确保 hooks 调用顺序一致
+  // 解析人脸数据（仅依赖 faceData）
   const faces = useMemo<FaceInfo[]>(() => {
     if (!faceData) return [];
     try {
       const parsed = JSON.parse(faceData);
-      if (!parsed?.faces || !Array.isArray(parsed.faces)) return [];
+      if (!Array.isArray(parsed?.faces)) return [];
       return parsed.faces
         .map((item: any) => ({
           bbox: item?.bbox as [number, number, number, number],
           score: typeof item?.score === "number" ? item.score : undefined,
           eye_open: typeof item?.eye_open === "number" ? item.eye_open : undefined,
         }))
-        .filter(
-          (face: FaceInfo) =>
-            Array.isArray(face.bbox) && face.bbox.length === 4,
-        );
-    } catch (error) {
-      console.warn("[PhotoDetailsTable] Failed to parse faceData", error);
+        .filter((f: FaceInfo) => Array.isArray(f.bbox) && f.bbox.length === 4);
+    } catch {
       return [];
     }
   }, [faceData]);
 
-  // 图片切换时：尝试匹配人脸并自动聚焦
-  // 注意：需要等待 imageSize 更新后才能进行匹配
+  // 图片切换时重置追踪状态
   useEffect(() => {
-    const isNewPhoto = filePath !== prevFilePathRef.current;
+    if (filePath === prevFilePathRef.current) return;
 
-    if (isNewPhoto) {
-      // 标记为图片切换后的首次聚焦（禁用动画）
-      setIsFirstFocusAfterSwitch(true);
+    setIsFirstFocusAfterSwitch(true);
+    prevFilePathRef.current = filePath;
+    matchedForCurrentPhotoRef.current = "";
 
-      // 先记录新的 filePath，并重置匹配标记
-      prevFilePathRef.current = filePath;
-      matchedForCurrentPhotoRef.current = ""; // 重置匹配标记
-
-      // 如果追踪模式未激活或没有人脸数据，直接清除选中状态
-      if (!isTrackingActive || !faceTrackerRef.current.hasTracking() || faces.length === 0) {
-        setActiveFaceIndex(null);
-        setFocusRegion(null);
-      }
-      // 如果追踪模式激活但 imageSize 还未更新（为0），则等待 imageSize 更新后再匹配
-      // 这种情况会在下面的 imageSize 监听 effect 中处理
-
-      // 延迟重置首次聚焦标记（给图片加载和聚焦一点时间）
-      setTimeout(() => {
-        setIsFirstFocusAfterSwitch(false);
-      }, 150);
-    }
-  }, [filePath, faces, isTrackingActive]);
-
-  // 当 imageSize 更新且处于追踪模式时，尝试匹配人脸
-  useEffect(() => {
-    // 检查是否已经为当前图片完成了匹配
-    if (matchedForCurrentPhotoRef.current === filePath) {
-      return; // 已经匹配过了，跳过
+    if (!isTrackingActive || !faceTrackerRef.current.hasTracking() || !faces.length) {
+      setActiveFaceIndex(null);
+      setFocusRegion(null);
     }
 
-    if (
-      isTrackingActive &&
-      faceTrackerRef.current.hasTracking() &&
-      faces.length > 0 &&
-      imageSize.width > 0 &&
-      imageSize.height > 0
-    ) {
-      // 标记已为当前图片完成匹配
-      matchedForCurrentPhotoRef.current = filePath;
+    const timer = setTimeout(() => setIsFirstFocusAfterSwitch(false), 150);
+    return () => clearTimeout(timer);
+  }, [filePath, faces.length, isTrackingActive]);
 
-      const matchResult = faceTrackerRef.current.findMatch(
-        faces as TrackerFaceInfo[],
-        imageSize,
-      );
+  // 追踪模式下自动匹配人脸
+  useEffect(() => {
+    if (matchedForCurrentPhotoRef.current === filePath) return;
+    if (!isTrackingActive || !faceTrackerRef.current.hasTracking()) return;
+    if (!faces.length || imageSize.width <= 0 || imageSize.height <= 0) return;
 
-      // console.log("[FaceTracker] Match result:", matchResult);
+    matchedForCurrentPhotoRef.current = filePath;
+    const { matchedIndex } = faceTrackerRef.current.findMatch(faces as TrackerFaceInfo[], imageSize);
 
-      if (matchResult.matchedIndex !== null) {
-        // 找到匹配的人脸，自动聚焦（置信度判断已在 faceTracker 内部完成）
-        const matchedFace = faces[matchResult.matchedIndex];
-        setActiveFaceIndex(matchResult.matchedIndex);
-        setFocusRegion({
-          bbox: matchedFace.bbox,
-          zoomFactor: 1.25,
-          requestId: Date.now(),
-        });
-
-        // 更新追踪状态
-        faceTrackerRef.current.setTrackedFace(
-          matchedFace as TrackerFaceInfo,
-          matchResult.matchedIndex,
-          imageSize,
-          faces.length,
-        );
-      } else {
-        // 没有匹配，清除选中状态但保持追踪模式（等待下一张图片继续匹配）
-        setActiveFaceIndex(null);
-        setFocusRegion(null);
-      }
+    if (matchedIndex !== null) {
+      const matchedFace = faces[matchedIndex];
+      setActiveFaceIndex(matchedIndex);
+      setFocusRegion({ bbox: matchedFace.bbox, zoomFactor: 1.25, requestId: Date.now() });
+      faceTrackerRef.current.setTrackedFace(matchedFace as TrackerFaceInfo, matchedIndex, imageSize, faces.length);
+    } else {
+      setActiveFaceIndex(null);
+      setFocusRegion(null);
     }
   }, [filePath, imageSize, faces, isTrackingActive]);
 
-  // 当图片加载完成时获取尺寸（通过隐藏的 img 元素）
+  // 加载图片获取尺寸
   useEffect(() => {
     if (!filePath) {
       setImageSize({ width: 0, height: 0 });
       return;
     }
-
     const img = new Image();
-    img.onload = () => {
-      setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
-    };
+    img.onload = () => setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
     img.src = `local-resource://${filePath}`;
-
-    return () => {
-      img.onload = null;
-    };
+    return () => { img.onload = null; };
   }, [filePath]);
 
-  const formatted = useMemo(
-    () => ({
-      size: formatBytes(fileSize),
-      similarity: formatSimilarity(similarity),
-      iqa: formatIQA(IQA),
-      dateDisplay: date ? date : "-",
-    }),
-    [fileSize, similarity, IQA, date],
-  );
+  // 格式化显示数据
+  const formatted = useMemo(() => ({
+    size: formatBytes(fileSize),
+    similarity: formatSimilarity(similarity),
+    iqa: formatIQA(IQA),
+    dateDisplay: date ?? "-",
+  }), [fileSize, similarity, IQA, date]);
 
   const previewSrc = filePath ? `local-resource://${filePath}` : "";
-  const facePreviewSrc = previewSrc;
 
+  // 切换启用状态（简化：直接调用 store action，由 store 统一处理状态同步）
   const handleToggle = useCallback(async (checked: boolean) => {
     if (isUpdating || !filePath) return;
     setIsUpdating(true);
     try {
       await updatePhotoEnabledStatus(filePath, checked);
-
-      setPhotos((prevPhotos) =>
-        prevPhotos.map((group) =>
-          group.map((p: PhotoExtend) =>
-            p.filePath === filePath
-              ? {
-                  ...p,
-                  isEnabled: checked,
-                }
-              : p,
-          ),
-        ),
-      );
-      setIsPreviewEnabled(checked);
       onPhotoStatusChanged?.();
     } catch (err) {
       console.error("[PhotoDetailsTable] 更新启用状态失败:", err);
     } finally {
       setIsUpdating(false);
     }
-  }, [isUpdating, filePath, updatePhotoEnabledStatus, setPhotos, setIsPreviewEnabled, onPhotoStatusChanged]);
+  }, [isUpdating, filePath, updatePhotoEnabledStatus, onPhotoStatusChanged]);
 
+  // 人脸选择（激活追踪模式）
   const handleFaceSelect = useCallback((face: FaceInfo, index: number) => {
     setActiveFaceIndex(index);
-    setFocusRegion({
-      bbox: face.bbox,
-      zoomFactor: 1.25,
-      requestId: Date.now(),
-    });
-
-    // 用户手动选择人脸时，更新追踪状态并激活追踪模式
+    setFocusRegion({ bbox: face.bbox, zoomFactor: 1.25, requestId: Date.now() });
     if (imageSize.width > 0) {
-      faceTrackerRef.current.setTrackedFace(
-        face as TrackerFaceInfo,
-        index,
-        imageSize,
-        faces.length,
-      );
-      // 激活追踪模式
+      faceTrackerRef.current.setTrackedFace(face as TrackerFaceInfo, index, imageSize, faces.length);
       setIsTrackingActive(true);
     }
   }, [imageSize, faces.length]);
 
-  // 用户手动交互时取消追踪模式
+  // 用户交互取消追踪
   const handleUserInteraction = useCallback(() => {
-    // 清除追踪状态
     faceTrackerRef.current.clearTracking();
     setIsTrackingActive(false);
     setActiveFaceIndex(null);
     setFocusRegion(null);
-    console.log("[FaceTracker] Tracking cancelled due to user interaction");
   }, []);
 
-  const faceLabel = t("photoDetailsTable.faceDetected", {
-    count: faces.length,
-    defaultValue: `检测到 ${faces.length} 个人脸`,
-  });
+  const faceLabel = t("photoDetailsTable.faceDetected", { count: faces.length, defaultValue: `检测到 ${faces.length} 个人脸` });
   const faceHelper = isTrackingActive
-    ? t("photoDetailsTable.faceTrackingMode", {
-        defaultValue: "正在追踪人物，任意拖动以取消",
-      })
-    : t("photoDetailsTable.faceTapToFocus", {
-        defaultValue: "点击头像以聚焦对应区域",
-      });
+    ? t("photoDetailsTable.faceTrackingMode", { defaultValue: "正在追踪人物，任意拖动以取消" })
+    : t("photoDetailsTable.faceTapToFocus", { defaultValue: "点击头像以聚焦对应区域" });
 
-  // 条件返回移到所有 hooks 之后
+  // 无照片时显示占位符
   if (!photo) {
     return (
       <div className="flex h-full flex-col">
@@ -510,7 +410,7 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
 
           <FaceStripBar
             faces={faces}
-            imageSrc={facePreviewSrc}
+            imageSrc={previewSrc}
             activeIndex={activeFaceIndex}
             onFaceSelect={handleFaceSelect}
             label={faceLabel}
@@ -577,6 +477,25 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = ({
       </div>
     </div>
   );
-};
+}, (prev, next) => {
+  // 自定义比较：仅在关键 props 变化时重渲染
+  if (prev.previewHeightPercent !== next.previewHeightPercent) return false;
+  if (prev.isPreviewEnabled !== next.isPreviewEnabled) return false;
+
+  // photo 深度比较（避免引用变化触发无意义重渲染）
+  const pPhoto = prev.photo, nPhoto = next.photo;
+  if (!pPhoto && !nPhoto) return true;
+  if (!pPhoto || !nPhoto) return false;
+  return (
+    pPhoto.filePath === nPhoto.filePath &&
+    pPhoto.isEnabled === nPhoto.isEnabled &&
+    pPhoto.faceData === nPhoto.faceData &&
+    pPhoto.info === nPhoto.info &&
+    pPhoto.similarity === nPhoto.similarity &&
+    pPhoto.IQA === nPhoto.IQA
+  );
+});
+
+PhotoDetailsTable.displayName = "PhotoDetailsTable";
 
 export default PhotoDetailsTable;

@@ -4,8 +4,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Layers, Grid, Image as ImageIcon } from "lucide-react";
 import { Photo } from "@/helpers/ipc/database/db";
-import { PhotoGridEnhance } from "@/components/PhotoGrid"; // 复用全局的增强版缩略图网格组件
-import { usePhotoFilterSelectors } from "../../helpers/store/usePhotoFilterStore"; // 只订阅 gallery 相关状态（photos + mode）
+import { PhotoGridEnhance } from "@/components/PhotoGrid";
+import { useGallerySelectors } from "../../helpers/store/usePhotoFilterStore"; // 精细化 selector
 
 interface GalleryGroupProps {
   group: Photo[];
@@ -17,49 +17,29 @@ interface GalleryGroupProps {
 }
 
 const GalleryGroup: React.FC<GalleryGroupProps> = React.memo(
-  ({ group, index, isGroupMode, groupLabel, highlightPhotos, onPhotoClick }) => {
-    // 分组模式且有数据时显示分组标题
-    const header = isGroupMode && group.length > 0 && (
-      <div className="mb-1 flex items-center gap-2 px-1 pt-1 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
-        <span>{groupLabel} {index + 1}</span>
-        <div className="h-px flex-1 bg-slate-200 dark:bg-slate-400" />
-      </div>
-    );
-
-    return (
-      <div className="mb-2 last:mb-0">
-        {header}
-        <PhotoGridEnhance
-          photos={group}
-          onPhotoClick={onPhotoClick}
-          highlightPhotos={highlightPhotos}
-        />
-      </div>
-    );
-  },
+  ({ group, index, isGroupMode, groupLabel, highlightPhotos, onPhotoClick }) => (
+    <div className="mb-2 last:mb-0">
+      {isGroupMode && group.length > 0 && (
+        <div className="mb-1 flex items-center gap-2 px-1 pt-1 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+          <span>{groupLabel} {index + 1}</span>
+          <div className="h-px flex-1 bg-slate-200 dark:bg-slate-400" />
+        </div>
+      )}
+      <PhotoGridEnhance
+        photos={group}
+        onPhotoClick={onPhotoClick}
+        highlightPhotos={highlightPhotos}
+      />
+    </div>
+  ),
   (prev, next) => {
-    // 自定义比较函数，深度比较关键属性而非引用
-    const groupSame =
-      prev.group.length === next.group.length &&
-      prev.group.every(
-        (p, i) =>
-          p.filePath === next.group[i]?.filePath &&
-          p.isEnabled === next.group[i]?.isEnabled,
-      );
-    const highlightSame =
-      prev.highlightPhotos.length === next.highlightPhotos.length &&
-      prev.highlightPhotos.every(
-        (p, i) => p.filePath === next.highlightPhotos[i]?.filePath,
-      );
-
-    return (
-      groupSame &&
-      highlightSame &&
-      prev.index === next.index &&
-      prev.isGroupMode === next.isGroupMode &&
-      prev.groupLabel === next.groupLabel &&
-      typeof prev.onPhotoClick === typeof next.onPhotoClick
-    );
+    // 深度比较：group 内容、高亮列表、模式等
+    const groupSame = prev.group.length === next.group.length &&
+      prev.group.every((p, i) => p.filePath === next.group[i]?.filePath && p.isEnabled === next.group[i]?.isEnabled);
+    const highlightSame = prev.highlightPhotos.length === next.highlightPhotos.length &&
+      prev.highlightPhotos.every((p, i) => p.filePath === next.highlightPhotos[i]?.filePath);
+    return groupSame && highlightSame && prev.index === next.index &&
+      prev.isGroupMode === next.isGroupMode && prev.groupLabel === next.groupLabel;
   },
 );
 GalleryGroup.displayName = "GalleryGroup";
@@ -70,39 +50,34 @@ interface GalleryPanelProps {
   onPhotoClick: (photos: Photo[], event: string) => void | Promise<void>;
 }
 
-export const GalleryPanel: React.FC<GalleryPanelProps> = ({
+export const GalleryPanel: React.FC<GalleryPanelProps> = React.memo(({
   totalPhotoCount,
   highlightPhotos,
   onPhotoClick,
 }) => {
   const { t } = useTranslation();
-  const {
-    lstGalleryGroupedPhotos,
-    modeGalleryView,
-    fnSetGalleryMode,
-  } = usePhotoFilterSelectors(); // 从 store 中取出画廊需要的最小状态
+  const { lstGalleryGroupedPhotos, modeGalleryView, fnSetGalleryMode } = useGallerySelectors();
+
+  const handleModeChange = React.useCallback(
+    (val: string) => fnSetGalleryMode(val as "group" | "total"),
+    [fnSetGalleryMode],
+  );
 
   return (
     <Tabs
       id="gallery-pannel"
       value={modeGalleryView}
-      onValueChange={(val) => fnSetGalleryMode(val as "group" | "total")}
+      onValueChange={handleModeChange}
       className="space-y-3"
     >
-  {/* 顶部工具栏：模式切换 + 总数提示 */}
+      {/* 顶部工具栏：模式切换 + 总数提示 */}
       <div className="flex items-center justify-between gap-3">
         <TabsList className="bg-muted/70 grid w-[280px] grid-cols-2">
-          <TabsTrigger
-            value="group"
-            className="flex items-center gap-1.5 text-sm"
-          >
+          <TabsTrigger value="group" className="flex items-center gap-1.5 text-sm">
             <Layers className="h-3.5 w-3.5" />
             {t("filterPage.galleryMode")}
           </TabsTrigger>
-          <TabsTrigger
-            value="total"
-            className="flex items-center gap-1.5 text-sm"
-          >
+          <TabsTrigger value="total" className="flex items-center gap-1.5 text-sm">
             <Grid className="h-3.5 w-3.5" />
             {t("filterPage.totalMode")}
           </TabsTrigger>
@@ -119,7 +94,7 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = ({
         </div>
       </div>
 
-  {/* Scrollable Gallery：宽度随左侧容器自适应 */}
+      {/* Scrollable Gallery */}
       <ScrollArea className="mx-auto h-[calc(100vh-220px)] w-full rounded-xl border p-3 dark:bg-slate-900">
         {lstGalleryGroupedPhotos.map((group, index) => (
           <GalleryGroup
@@ -133,8 +108,8 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = ({
           />
         ))}
 
-  {lstGalleryGroupedPhotos.length === 0 && (
-          <div className="text-muted-foreground flex h-[calc(70vh-100px)] flex-col items-center justify-center text中心 text-center">
+        {lstGalleryGroupedPhotos.length === 0 && (
+          <div className="text-muted-foreground flex h-[calc(70vh-100px)] flex-col items-center justify-center text-center">
             <div className="mb-3 rounded-full bg-white p-4 shadow-sm">
               <ImageIcon className="h-8 w-8 opacity-30" />
             </div>
@@ -150,4 +125,6 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = ({
       </ScrollArea>
     </Tabs>
   );
-};
+});
+
+GalleryPanel.displayName = "GalleryPanel";

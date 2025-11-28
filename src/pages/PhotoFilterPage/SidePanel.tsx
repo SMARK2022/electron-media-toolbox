@@ -3,11 +3,11 @@ import { useTranslation } from "react-i18next";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { CustomSlider } from "@/components/CustomSlider";
-import PhotoDetailsTable from "./PhotoDetailsTable"; // 预览下方的详细信息 & 开关表格
+import PhotoDetailsTable from "./PhotoDetailsTable";
 import { AlertCircle, Image as ImageIcon, RotateCcw, Trash2 } from "lucide-react";
-import { usePhotoFilterSelectors } from "../../helpers/store/usePhotoFilterStore";
+import { useSidePanelSelectors, usePreviewDetailsSelectors } from "../../helpers/store/usePhotoFilterStore";
 import { PhotoService } from "@/helpers/services/PhotoService";
-import { useCallback } from "react";
+import { useCallback, useRef, useMemo } from "react";
 
 interface SidePanelProps {
   previewHeightPercent: number;
@@ -15,12 +15,14 @@ interface SidePanelProps {
   onStartPreviewTouchDrag: (clientY: number, containerRect: DOMRect) => void;
 }
 
-export const SidePanel: React.FC<SidePanelProps> = ({
+export const SidePanel: React.FC<SidePanelProps> = React.memo(({
   previewHeightPercent,
   onStartPreviewMouseDrag,
   onStartPreviewTouchDrag,
 }) => {
   const { t } = useTranslation();
+
+  // 精细化订阅：拆分 SidePanel 和 PreviewDetails 的状态，避免无关 state 导致的重渲染
   const {
     tabRightPanel,
     fnSetRightPanelTab,
@@ -28,51 +30,46 @@ export const SidePanel: React.FC<SidePanelProps> = ({
     fnSetSimilarityThreshold,
     fnDisableRedundantInGroups,
     fnEnableAllPhotos,
+  } = useSidePanelSelectors();
+
+  const {
     lstPreviewPhotoDetails,
     boolCurrentPreviewEnabled,
     fnUpdateFromDetailsPanel,
-  } = usePhotoFilterSelectors(); // 只关心 panelTab / slider / 预览 / 批量操作等
+  } = usePreviewDetailsSelectors();
 
-  // 预览容器 ref，用于获取实际高度
-  const previewContainerRef = React.useRef<HTMLDivElement>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
 
-  // 稳定的回调函数，避免每次 render 都重建（特别是对于 onChange）
+  // 稳定的回调函数（使用 useCallback 避免每次 render 重建）
   const handleSliderChange = useCallback(
-    (value: number) => fnSetSimilarityThreshold(value), // 直接写入 store 持久化
+    (value: number) => fnSetSimilarityThreshold(value),
     [fnSetSimilarityThreshold],
   );
 
-  // 拖动事件包装，传递容器的 DOMRect（使用 useCallback 稳定引用）
   const handleStartPreviewMouseDrag = useCallback(
     (clientY: number) => {
-      if (previewContainerRef.current) {
-        const rect = previewContainerRef.current.getBoundingClientRect();
-        onStartPreviewMouseDrag(clientY, rect);
-      }
+      const rect = previewContainerRef.current?.getBoundingClientRect();
+      if (rect) onStartPreviewMouseDrag(clientY, rect);
     },
     [onStartPreviewMouseDrag],
   );
 
   const handleStartPreviewTouchDrag = useCallback(
     (clientY: number) => {
-      if (previewContainerRef.current) {
-        const rect = previewContainerRef.current.getBoundingClientRect();
-        onStartPreviewTouchDrag(clientY, rect);
-      }
+      const rect = previewContainerRef.current?.getBoundingClientRect();
+      if (rect) onStartPreviewTouchDrag(clientY, rect);
     },
     [onStartPreviewTouchDrag],
   );
 
-  // 批量操作回调（保持异步处理顺序）
-  const handleDisableRedundant = useCallback(
-    () => fnDisableRedundantInGroups(),
-    [fnDisableRedundantInGroups],
-  );
+  const handleDisableRedundant = useCallback(() => fnDisableRedundantInGroups(), [fnDisableRedundantInGroups]);
+  const handleEnableAll = useCallback(() => fnEnableAllPhotos(), [fnEnableAllPhotos]);
 
-  const handleEnableAll = useCallback(
-    () => fnEnableAllPhotos(),
-    [fnEnableAllPhotos],
-  );
+  // 稳定化 PhotoDetailsTable 需要的 photo prop，只在真正变化时更新引用
+  const currentPhoto = useMemo(() => lstPreviewPhotoDetails[0], [lstPreviewPhotoDetails]);
+
+  // 稳定化空操作回调（避免每次渲染创建新函数）
+  const noopRefresh = useCallback(() => PhotoService.refreshPhotos(), []);
 
   return (
     <Tabs
@@ -155,12 +152,10 @@ export const SidePanel: React.FC<SidePanelProps> = ({
       >
         <div ref={previewContainerRef} className="flex h-full flex-col overflow-hidden">
           <PhotoDetailsTable
-            photo={lstPreviewPhotoDetails[0]}
+            photo={currentPhoto}
             isPreviewEnabled={boolCurrentPreviewEnabled}
-            setIsPreviewEnabled={() => {}}
             updatePhotoEnabledStatus={fnUpdateFromDetailsPanel}
-            setPhotos={() => {}}
-            onPhotoStatusChanged={() => PhotoService.refreshPhotos()}
+            onPhotoStatusChanged={noopRefresh}
             previewHeightPercent={previewHeightPercent}
             onStartPreviewMouseDrag={handleStartPreviewMouseDrag}
             onStartPreviewTouchDrag={handleStartPreviewTouchDrag}
@@ -169,4 +164,6 @@ export const SidePanel: React.FC<SidePanelProps> = ({
       </TabsContent>
     </Tabs>
   );
-};
+});
+
+SidePanel.displayName = "SidePanel";
