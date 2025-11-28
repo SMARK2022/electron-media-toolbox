@@ -79,7 +79,7 @@ _BLINK_MODEL_PATH = Path(get_resource_path("checkpoint/2d106det_batch.onnx"))
 _BLINK_SESSION: Optional[ort.InferenceSession] = None
 _BLINK_INPUT_NAME: str = ""
 _BLINK_IS_DML = False
-_BLINK_MAX_BATCH: int = 4  # 眨眼检测最大 batch size
+_BLINK_MAX_BATCH: int = 8  # 眨眼检测最大 batch size
 # 106->68 映射表 (dlib风格)
 _MAP_106_TO_68 = np.array([1, 10, 12, 14, 16, 3, 5, 7, 0, 23, 21, 19, 32, 30, 28, 26, 17, 43, 48, 49, 51, 50, 102, 103, 104, 105, 101, 72, 73, 74, 86, 78, 79, 80, 85, 84, 35, 41, 42, 39, 37, 36, 89, 95, 96, 93, 91, 90, 52, 64, 63, 71, 67, 68, 61, 58, 59, 53, 56, 55, 65, 66, 62, 70, 69, 57, 60, 54], dtype=np.int64)
 _RIGHT_EYE_IDX = list(range(36, 42))
@@ -94,7 +94,7 @@ _OCEC_INPUT_NAME: str = ""
 _OCEC_INPUT_H: int = 30
 _OCEC_INPUT_W: int = 48
 _OCEC_IS_DML = False
-_OCEC_MAX_BATCH: int = 8  # 眨眼检测最大 batch size
+_OCEC_MAX_BATCH: int = 16  # 眨眼检测最大 batch size
 
 # ============================================================================
 # 🔧 新增：全局 DirectML 总锁（用于协调所有 DML Session）
@@ -529,7 +529,7 @@ def infer_iqa_from_bgr(img_bgr: np.ndarray, color_space: str = "RGB") -> float:
     return float(score) * 20.0
 
 
-def detect_faces_from_bgr(img_bgr: np.ndarray, score_thresh: float = 0.5) -> dict:
+def detect_faces_from_bgr(img_bgr: np.ndarray, score_thresh: float = 0.6) -> dict:
     """在 BGR 图像上做人脸检测 + 眨眼检测，返回易于前端消费的 JSON 结构。
 
     返回示例：

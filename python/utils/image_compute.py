@@ -297,7 +297,7 @@ def ensure_face_cached(
     if img_bgr is None:
         img_bgr = cv_imread(file_path)
 
-    face_info = detect_faces_from_bgr(img_bgr, score_thresh=0.5)
+    face_info = detect_faces_from_bgr(img_bgr, score_thresh=0.6)
     face_cache[file_path] = face_info
 
     # 实时写入数据库
