@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   getPhotosExtendByCriteria,
   PhotoExtend,
@@ -188,10 +187,8 @@ export default function PhotoExportSubpage() {
         </div>
       </AlertDialog>
 
-      <ScrollArea className="mx-auto h-[calc(100vh-180px)] min-h-[60vh] w-full max-w-full rounded-md border p-3">
-        {/* 导出页使用与筛选页 / 导入页一致的网格组件和右键菜单 */}
-        <PhotoGridEnhance photos={photos} page="export" />
-      </ScrollArea>
+      {/* 虚拟化照片网格（自带滚动容器）*/}
+      <PhotoGridEnhance photos={photos} page="export" containerHeight="calc(100vh - 180px)" />
     </div>
   );
 }

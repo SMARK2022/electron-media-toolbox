@@ -1,23 +1,20 @@
 /**
- * PhotoGrid 组件
- * ============
- * 照片网格展示组件，支持以下功能：
- * - 懒加载图片，进入视口后才加载
- * - 眨眼状态指示条（磨砂玻璃风格），显示闭眼/疑似/正常人脸数量
+ * PhotoGrid 组件 - 虚拟化版本
+ * ==========================
+ * 高性能照片网格展示组件，支持以下功能：
+ * - 虚拟化渲染：仅渲染可见区域的照片，大幅提升性能
+ * - 懒加载图片：进入视口后才加载图片资源
+ * - 眨眼状态指示条：磨砂玻璃风格，显示闭眼/疑似/正常人脸数量
  * - 右键菜单：打开文件、打开文件夹、启用/禁用、删除等操作
  * - 删除确认对话框（Portal 挂载，避免界面阻塞）
  * - 照片详情弹窗（元数据展示）
  * - 键盘导航（方向键 + Enter）
  */
 
-import React, {
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-  useMemo,
-} from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import ReactDOM from "react-dom";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import missing_icon from "@/assets/images/cat_missing.svg";
 import { Photo } from "@/helpers/ipc/database/db";
 import { cn } from "@/lib/utils";
@@ -558,34 +555,45 @@ const shallowEqualPhotoArray = (prev: Photo[], next: Photo[]): boolean => {
   return prev.every((p, i) => p.filePath === next[i].filePath && p.isEnabled === next[i].isEnabled && p.info === next[i].info && p.fileUrl === next[i].fileUrl);
 };
 
-// ========== 主网格组件 ==========
+// ========== 虚拟化常量 ==========
+const ITEM_WIDTH = 200;                           // 每个格子宽度 (px)
+const ITEM_HEIGHT = 220;                          // 每个格子高度（含标题区）(px)
+const GAP = 12;                                   // 格子间距 (px)
+const OVERSCAN = 2;                               // 上下额外渲染行数
+
+// ========== 主网格组件（虚拟化版本）==========
+export interface PhotoGridEnhanceProps extends PhotoGridProps {
+  onPhotoClick?: (photos: Photo[], event: string) => void | Promise<void>;
+  onContextMenuAction?: (action: string, photo: Photo) => void;
+  /** 容器高度，默认自动填满父容器。虚拟化需要明确高度 */
+  containerHeight?: number | string;
+}
+
 export const PhotoGridEnhance = React.memo(function PhotoGridEnhance({
   photos = [],
-  width = 200,
+  width = ITEM_WIDTH,
   onPhotoClick,
   onContextMenuAction,
   page = "filter",
-}: PhotoGridProps & {
-  onPhotoClick?: (photos: Photo[], event: string) => void | Promise<void>;
-  onContextMenuAction?: (action: string, photo: Photo) => void;
-}) {
+  containerHeight = "100%",
+}: PhotoGridEnhanceProps) {
   const { t } = useTranslation();
+  const scrollViewportRef = useRef<HTMLDivElement>(null);                                 // ScrollArea 内部 viewport
+  const [containerWidth, setContainerWidth] = useState(800);
 
-  // 创建全局 IntersectionObserver 单例
-  const observerRef = useRef<IntersectionObserver | null>(null);
+  const columns = useMemo(() => Math.max(1, Math.floor((containerWidth + GAP) / (width + GAP))), [containerWidth, width]);
+
+  // 监听容器宽度变化
   useEffect(() => {
-    if (!observerRef.current) {
-      observerRef.current = new IntersectionObserver(
-        (entries) => entries.forEach((e) => {
-          if (e.isIntersecting) {
-            const img = e.target as HTMLImageElement;
-            if (img.dataset.src) { img.src = img.dataset.src; delete img.dataset.src; }
-          }
-        }),
-        { root: null, threshold: 0.01 },
-      );
-    }
-    return () => observerRef.current?.disconnect();
+    if (!scrollViewportRef.current?.parentElement) return;
+    const container = scrollViewportRef.current.parentElement;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) setContainerWidth(entry.contentRect.width);
+    });
+    observer.observe(container);
+    setContainerWidth(container.clientWidth);
+    return () => observer.disconnect();
   }, []);
 
   // 从 store 订阅状态（精细化选择器）
@@ -601,173 +609,165 @@ export const PhotoGridEnhance = React.memo(function PhotoGridEnhance({
   const fnCloseInfoDialog = usePhotoFilterStore((s) => s.fnCloseInfoDialog);
   const contextMenuGroups = usePhotoFilterStore((s) => s.contextMenuGroups);
   const fnHandleContextMenuAction = usePhotoFilterStore((s) => s.fnHandleContextMenuAction);
-
-  // filter 页面使用 store 管理 focus/highlight，其他页面使用本地 state
   const storeFocusedPath = usePhotoFilterStore((s) => s.focusedPhotoFilePath);
   const storeHighlightPaths = usePhotoFilterStore((s) => s.highlightedPhotoFilePaths);
 
   const photosArray = useMemo(() => (Array.isArray(photos) ? photos : []), [photos]);
-  const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const rowCount = useMemo(() => Math.ceil(photosArray.length / columns), [photosArray.length, columns]);
+  const itemRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
   const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; photo: Photo | null }>({ visible: false, x: 0, y: 0, photo: null });
 
   // 本地 focus 状态（用于 import/export 页面）
   const [localFocusedIndex, setLocalFocusedIndex] = useState<number | null>(null);
   const [localHighlightPaths, setLocalHighlightPaths] = useState<Set<string>>(new Set());
 
-  // 根据页面类型决定使用 store 还是本地状态
   const isFilterPage = page === "filter";
   const focusedIndex = useMemo(() => {
-    if (isFilterPage) {
-      return storeFocusedPath ? photosArray.findIndex((p) => p.filePath === storeFocusedPath) : -1;
-    }
+    if (isFilterPage) return storeFocusedPath ? photosArray.findIndex((p) => p.filePath === storeFocusedPath) : -1;
     return localFocusedIndex ?? -1;
   }, [isFilterPage, storeFocusedPath, localFocusedIndex, photosArray]);
-
   const highlightedPaths = isFilterPage ? storeHighlightPaths : localHighlightPaths;
 
-  // 重置 refs 数组
-  useEffect(() => { itemRefs.current = new Array(photosArray.length).fill(null); }, [photosArray.length]);
+  // 虚拟化 hook
+  const rowVirtualizer = useVirtualizer({
+    count: rowCount,
+    getScrollElement: () => scrollViewportRef.current,
+    estimateSize: () => ITEM_HEIGHT + GAP,
+    overscan: OVERSCAN,
+    measureElement: typeof window !== 'undefined' ? (element) => element?.getBoundingClientRect().height : undefined,
+  });
 
-  // 触发外部回调（异步包装避免阻塞）
+  // 触发外部回调（异步避免阻塞）
   const triggerClick = useCallback((photo: Photo, event: string) => {
     if (onPhotoClick) setTimeout(() => void onPhotoClick([photo], event), 0);
   }, [onPhotoClick]);
 
-  // 选择指定索引的照片（统一入口，区分页面类型）
+  // 选择指定索引的照片
   const selectByIndex = useCallback((idx: number, event: "Select" | "Change") => {
     const photo = photosArray[idx];
     if (!photo) return;
-
     if (isFilterPage) {
-      triggerClick(photo, event); // filter 页面通过回调触发 store 更新
+      triggerClick(photo, event);
     } else {
-      // import/export 页面使用本地状态
       setLocalFocusedIndex(idx);
       setLocalHighlightPaths(new Set([photo.filePath]));
-      if (event === "Change" && onPhotoClick) {
-        setTimeout(() => void onPhotoClick([photo], event), 0);
-      }
+      if (event === "Change" && onPhotoClick) setTimeout(() => void onPhotoClick([photo], event), 0);
     }
   }, [photosArray, isFilterPage, triggerClick, onPhotoClick]);
 
-  // 查找垂直邻居（稳定版本算法，修复偏移问题）
-  const findVerticalNeighbor = useCallback((currentIdx: number, dir: "up" | "down"): number | null => {
-    const currentEl = itemRefs.current[currentIdx];
-    if (!currentEl) return null;
+  // 键盘导航（防止冒泡到 ScrollArea）
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (!photosArray.length || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter"].includes(e.key)) return;
 
-    const currentRect = currentEl.getBoundingClientRect();
-    const currentCx = currentRect.left + currentRect.width / 2;  // 当前元素中心 X
-    const currentCy = currentRect.top + currentRect.height / 2;  // 当前元素中心 Y
+    e.preventDefault();
+    e.stopPropagation();
 
-    let bestIndex: number | null = null;
-    let bestRowDelta = Infinity;
-    let bestColDelta = Infinity;
-    const rowEps = 4; // 行容差（px），同一行内的微小 Y 偏差视为同行
+    if (focusedIndex < 0) {
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) selectByIndex(0, "Select");
+      return;
+    }
 
-    itemRefs.current.forEach((el, i) => {
-      if (!el || i === currentIdx) return;
-
-      const rect = el.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const deltaY = cy - currentCy;
-      const deltaX = cx - currentCx;
-
-      // 方向过滤：上键只找上方元素，下键只找下方元素
-      if (dir === "up" && cy >= currentCy) return;
-      if (dir === "down" && cy <= currentCy) return;
-
-      const rowDelta = Math.abs(deltaY);
-      const colDelta = Math.abs(deltaX);
-
-      // 优先选择行距最小的元素
-      if (rowDelta + rowEps < bestRowDelta) {
-        bestRowDelta = rowDelta;
-        bestColDelta = colDelta;
-        bestIndex = i;
-      } else if (Math.abs(rowDelta - bestRowDelta) <= rowEps) {
-        // 行距相近时，选择列距最小的（最接近当前列的）
-        if (colDelta < bestColDelta) {
-          bestColDelta = colDelta;
-          bestIndex = i;
-        }
+    const row = Math.floor(focusedIndex / columns), col = focusedIndex % columns;
+    switch (e.key) {
+      case "ArrowUp":
+        if (row > 0) selectByIndex((row - 1) * columns + col, "Select");
+        break;
+      case "ArrowDown": {
+        const nextIdx = (row + 1) * columns + col;
+        if (nextIdx < photosArray.length) selectByIndex(nextIdx, "Select");
+        else if ((row + 1) * columns < photosArray.length) selectByIndex(photosArray.length - 1, "Select");
+        break;
       }
-    });
-    return bestIndex;
-  }, []);
+      case "ArrowLeft":
+        if (focusedIndex > 0) selectByIndex(focusedIndex - 1, "Select");
+        break;
+      case "ArrowRight":
+        if (focusedIndex < photosArray.length - 1) selectByIndex(focusedIndex + 1, "Select");
+        break;
+      case "Enter":
+        selectByIndex(focusedIndex, "Change");
+        break;
+    }
+  }, [photosArray.length, focusedIndex, columns, selectByIndex]);
 
-  // 自动滚动到焦点元素
+  // 焦点滚动
   useEffect(() => {
     if (focusedIndex >= 0) {
-      itemRefs.current[focusedIndex]?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+      const scrollElement = scrollViewportRef.current;
+      if (scrollElement) {
+        const itemEl = itemRefs.current.get(focusedIndex);
+        if (itemEl) itemEl.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+      }
     }
   }, [focusedIndex]);
 
   // 右键菜单处理
   const handleContextMenu = useCallback((e: React.MouseEvent, photo: Photo, idx: number) => {
-    e.preventDefault(); e.stopPropagation();
+    e.preventDefault();
+    e.stopPropagation();
     selectByIndex(idx, "Select");
     setContextMenu({ visible: true, x: e.clientX, y: e.clientY, photo });
   }, [selectByIndex]);
 
-  // 键盘导航（简化逻辑，支持所有页面）
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (!photosArray.length) return;
-
-    // 无焦点时按方向键选中第一个
-    if (focusedIndex < 0) {
-      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
-        e.preventDefault();
-        selectByIndex(0, "Select");
-      }
-      return;
-    }
-
-    switch (e.key) {
-      case "ArrowUp": case "ArrowDown": {
-        e.preventDefault();
-        const targetIdx = findVerticalNeighbor(focusedIndex, e.key === "ArrowUp" ? "up" : "down");
-        if (targetIdx !== null) selectByIndex(targetIdx, "Select");
-        break;
-      }
-      case "ArrowLeft": {
-        e.preventDefault();
-        if (focusedIndex > 0) selectByIndex(focusedIndex - 1, "Select");
-        break;
-      }
-      case "ArrowRight": {
-        e.preventDefault();
-        if (focusedIndex < photosArray.length - 1) selectByIndex(focusedIndex + 1, "Select");
-        break;
-      }
-      case "Enter": {
-        e.preventDefault();
-        selectByIndex(focusedIndex, "Change");
-        break;
-      }
-    }
-  }, [photosArray.length, focusedIndex, selectByIndex, findVerticalNeighbor]);
+  const itemWidth = width;                                                                 // 左对齐：不再计算 margin
 
   return (
     <>
-      <div className="flex flex-wrap gap-3 outline-none" tabIndex={0} onKeyDown={handleKeyDown}>
-        {photosArray.map((photo, index) => (
-          <PhotoGridItem
-            key={`${index}-${photo.filePath}`}
-            photo={photo}
-            index={index}
-            width={width}
-            page={page}
-            isHighlighted={highlightedPaths.has(photo.filePath)}
-            isFocused={focusedIndex === index}
-            observer={observerRef.current}
-            onSelect={selectByIndex}
-            onContextMenu={handleContextMenu}
-            onFocus={(i) => selectByIndex(i, "Select")}
-            setRef={(el) => { itemRefs.current[index] = el; }}
-          />
-        ))}
-      </div>
+      <ScrollArea className="relative h-full w-full" style={{ height: containerHeight }}>
+        <div
+          ref={scrollViewportRef}
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          className="h-full w-full outline-none"
+        >
+          {/* 虚拟化内容区域（左对齐） */}
+          <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const startIdx = virtualRow.index * columns;
+              const rowPhotos = photosArray.slice(startIdx, startIdx + columns);
+              return (
+                <div
+                  key={virtualRow.key}
+                  style={{
+                    position: "absolute",
+                    top: virtualRow.start,
+                    left: 0,
+                    width: "100%",
+                    display: "flex",
+                    gap: GAP,
+                    padding: `0 ${GAP}px`,                                                 // 左右内边距，保持一致性
+                  }}
+                >
+                  {rowPhotos.map((photo, colIdx) => {
+                    const idx = startIdx + colIdx;
+                    return (
+                      <PhotoGridItem
+                        key={photo.filePath}
+                        photo={photo}
+                        index={idx}
+                        width={itemWidth}
+                        page={page}
+                        isHighlighted={highlightedPaths.has(photo.filePath)}
+                        isFocused={focusedIndex === idx}
+                        observer={null}
+                        onSelect={selectByIndex}
+                        onContextMenu={handleContextMenu}
+                        onFocus={(i) => selectByIndex(i, "Select")}
+                        setRef={(el) => { if (el) itemRefs.current.set(idx, el); else itemRefs.current.delete(idx); }}
+                      />
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+          {/* 空状态 */}
+          {photosArray.length === 0 && (
+            <div className="flex h-full items-center justify-center text-sm text-gray-400">{t("common.noData")}</div>
+          )}
+        </div>
+        <ScrollBar orientation="vertical" />
+      </ScrollArea>
 
       {/* 右键菜单 */}
       {contextMenu.visible && contextMenu.photo && (
@@ -778,9 +778,7 @@ export const PhotoGridEnhance = React.memo(function PhotoGridEnhance({
           page={page} groups={contextMenuGroups}
           onClose={() => setContextMenu((c) => ({ ...c, visible: false }))}
           onAction={(action) => {
-            if (contextMenu.photo) {
-              onContextMenuAction ? onContextMenuAction(action, contextMenu.photo) : void fnHandleContextMenuAction(action, contextMenu.photo, page);
-            }
+            if (contextMenu.photo) onContextMenuAction ? onContextMenuAction(action, contextMenu.photo) : void fnHandleContextMenuAction(action, contextMenu.photo, page);
             setContextMenu((c) => ({ ...c, visible: false }));
           }}
         />
@@ -802,7 +800,7 @@ export const PhotoGridEnhance = React.memo(function PhotoGridEnhance({
     </>
   );
 }, (prev, next) => (
-  prev.width === next.width && prev.page === next.page &&
+  prev.width === next.width && prev.page === next.page && prev.containerHeight === next.containerHeight &&
   prev.onPhotoClick === next.onPhotoClick && prev.onContextMenuAction === next.onContextMenuAction &&
   shallowEqualPhotoArray(prev.photos || [], next.photos || [])
 ));

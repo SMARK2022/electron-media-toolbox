@@ -497,25 +497,8 @@ export default function PhotoImportSubpage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
-        <ScrollArea className="mx-auto h-[calc(100vh-160px)] w-full max-w-full rounded-md border p-4">
-          <PhotoGridEnhance photos={photos} page="import" />
-          {photos.length === 0 && (
-            <div className="text-muted-foreground flex h-[calc(70vh-100px)] flex-col items-center justify-center text-center">
-              <div className="mb-3 rounded-full bg-white p-4 shadow-sm">
-                <ImageIcon className="h-8 w-8 opacity-30" />
-              </div>
-              <p className="text-sm font-medium">
-                {t("importPage.noPhotosFoundTitle") || "No photos found"}
-              </p>
-              <p className="text-muted-foreground mt-1 max-w-xs text-xs">
-                {t("importPage.noPhotosFoundDesc") ||
-                  "Try adjusting filters, importing more photos, or running a new detection task."}
-              </p>
-            </div>
-          )}
-        </ScrollArea>
-      </div>
+      {/* 虚拟化照片网格（自带滚动容器）*/}
+      <PhotoGridEnhance photos={photos} page="import" containerHeight="calc(100vh - 160px)" />
     </div>
   );
 }
