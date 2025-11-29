@@ -92,10 +92,15 @@ const InfoRow: React.FC<InfoRowProps> = ({
   );
 };
 
-const GroupBadge: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+// 分组徽章组件：使用 React.memo 避免父组件重渲染时的无意义重新创建
+const GroupBadge = React.memo(
+  ({ groupId, label }: { groupId: number; label: string }) => (
   <span className="bg-background inline-flex items-center rounded-md border border-slate-200 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200">
-    {children}
-  </span>
+      <Hash className="mr-1 h-3 w-3 text-slate-400" />
+      {label} {groupId}
+    </span>
+  ),
+  (prev, next) => prev.groupId === next.groupId && prev.label === next.label,
 );
 
 const PreviewPlaceholder: React.FC<{ height?: string }> = ({ height }) => {
@@ -290,7 +295,12 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
     ? t("photoDetailsTable.faceTrackingMode", { defaultValue: "正在追踪人物，任意拖动以取消" })
     : t("photoDetailsTable.faceTapToFocus", { defaultValue: "点击头像以聚焦对应区域" });
 
-
+  // 无图片时显示占位符，有图片时显示预览详情
+  if (!photo) {
+    return (
+      <PreviewPlaceholder height="100%" />
+    );
+  }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -350,10 +360,10 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
                     {t("photoDetailsTable.currentPreviewPhoto")}
                   </p>
                   {groupId !== undefined && groupId !== null && (
-                    <GroupBadge>
-                      <Hash className="mr-1 h-3 w-3 text-slate-400" />
-                      {t("photoDetailsTable.groupNumber")} {groupId}
-                    </GroupBadge>
+                    <GroupBadge
+                      groupId={groupId}
+                      label={t("photoDetailsTable.groupNumber")}
+                    />
                   )}
                 </div>
                 <div className="flex items-start gap-1.5">
@@ -418,14 +428,14 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
           />
 
           <ScrollArea className="flex-1">
-            <div className="space-y-1.5 px-3.5 py-2">
+            <div className="space-y-1.5 px-3.5 py-1">
               <InfoRow
                 icon={MapPin}
                 label={t("photoDetailsTable.filePath")}
                 value={filePath}
                 valueClassName="font-mono text-[11px] text-muted-foreground"
               />
-              <div className="grid gap-1.5 pt-1 sm:grid-cols-2">
+              <div className="grid gap-1 sm:grid-cols-2">
                 <InfoRow
                   icon={HardDrive}
                   label={t("photoDetailsTable.fileSize")}
@@ -444,7 +454,7 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
                 label={t("photoDetailsTable.fileInfo")}
                 value={info}
               />
-              <div className="grid gap-1.5 pt-1 sm:grid-cols-2">
+              <div className="grid gap-1 sm:grid-cols-2">
                 <InfoRow
                   icon={Percent}
                   label={t("photoDetailsTable.similarity")}

@@ -143,6 +143,9 @@ const resources = {
           "Please click 'Import Photos' to import photos into the gallery for management.",
       },
       exportPage: {
+        noPhotosFoundTitle: "No photos found",
+        noPhotosFoundDesc:
+          "Please click 'Import Photos' to import photos into the gallery for management.",
         folderPathPlaceholder: "Enter export folder path...",
         folderExists: "Folder exists",
         folderNotExists: "Folder does not exist",
@@ -365,6 +368,8 @@ const resources = {
         noPhotosFoundDesc: "请点击导入照片以导入到图库中进行管理。",
       },
       exportPage: {
+        noPhotosFoundTitle: "未找到照片",
+        noPhotosFoundDesc: "请点击导入照片以导入到图库中进行管理。",
         folderPathPlaceholder: "请输入导出文件夹路径...",
         folderExists: "文件夹存在",
         folderNotExists: "文件夹不存在",

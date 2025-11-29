@@ -22,7 +22,7 @@ import {
 import { copyPhotos, folderExists } from "@/lib/system";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
-import { Save, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { Save, CheckCircle2, XCircle, Loader2, Image as ImageIcon } from "lucide-react";
 import { usePhotoFilterStore } from "@/helpers/store/usePhotoFilterStore";
 
 export default function PhotoExportSubpage() {
@@ -188,7 +188,21 @@ export default function PhotoExportSubpage() {
       </AlertDialog>
 
       {/* 虚拟化照片网格（自带滚动容器）*/}
-      <PhotoGridEnhance photos={photos} page="export" containerHeight="calc(100vh - 180px)" />
+
+      {photos.length === 0? (
+        <div className="text-muted-foreground flex h-[calc(70vh-100px)] flex-col items-center justify-center text-center">
+          <div className="mb-3 rounded-full bg-white p-4 shadow-sm">
+            <ImageIcon className="h-8 w-8 opacity-30" />
+          </div>
+          <p className="text-sm font-medium">
+            {t("exportPage.noPhotosFoundTitle") || "No photos found"}
+          </p>
+          <p className="text-muted-foreground mt-1 max-w-xs text-xs">
+            {t("exportPage.noPhotosFoundDesc") ||
+              "No enabled photos available for export. Enable photos to export them."}
+          </p>
+        </div>
+      ):<PhotoGridEnhance photos={photos} page="export" containerHeight="calc(100vh - 180px)" />}
     </div>
   );
 }

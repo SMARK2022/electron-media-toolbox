@@ -761,10 +761,6 @@ export const PhotoGridEnhance = React.memo(function PhotoGridEnhance({
               );
             })}
           </div>
-          {/* 空状态 */}
-          {photosArray.length === 0 && (
-            <div className="flex h-full items-center justify-center text-sm text-gray-400">{t("common.noData")}</div>
-          )}
         </div>
         <ScrollBar orientation="vertical" />
       </ScrollArea>
