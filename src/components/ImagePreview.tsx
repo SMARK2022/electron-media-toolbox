@@ -55,21 +55,19 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   const [showZoomBadge, setShowZoomBadge] = useState(false);
   const zoomBadgeTimer = useRef<NodeJS.Timeout | null>(null);
   const focusRegionRef = useRef<PreviewFocusRegion | null>(null);
-  // 防抖 onUserInteraction 回调（300ms 内只触发一次，避免频繁重渲染父组件）
-  const userInteractionTimer = useRef<NodeJS.Timeout | null>(null);
+  // 用户交互标志：一次交互后立即生效，后续调用忽略（避免多次渲染）
+  const userInteractionTriggered = useRef(false);
 
   // 缩放限制（相对于自适应尺寸）
   const MIN_SCALE = 1; // 最小就是自适应大小
   const MAX_SCALE = 50; // 最大 20 倍
   const ZOOM_SPEED = 0.1;
 
-  // 防抖触发 onUserInteraction 回调（300ms 内只触发一次）
-  const debouncedUserInteraction = useCallback(() => {
-    if (userInteractionTimer.current) clearTimeout(userInteractionTimer.current);
-    userInteractionTimer.current = setTimeout(() => {
-      onUserInteraction?.();
-      userInteractionTimer.current = null;
-    }, 300); // 防抖延迟 300ms
+  // 一次触发 onUserInteraction 回调（第一次调用时立即执行，后续调用无效，重置引用时清空标志）
+  const triggerUserInteraction = useCallback(() => {
+    if (userInteractionTriggered.current) return; // 已触发过，忽略后续调用
+    userInteractionTriggered.current = true; // 标记已触发
+    onUserInteraction?.(); // 立即执行回调
   }, [onUserInteraction]);
 
   // 显示并自动隐藏缩放提示
@@ -283,25 +281,29 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
     }
   }, [imageSize, fitToContainer, src]);
 
+  // 响应 focusRegion 变化：有效值则聚焦，null/undefined 则清除引用（避免重复聚焦）
   useEffect(() => {
-    if (!focusRegion) return;
-    focusRegionRef.current = focusRegion;
-    // 使用 disableFocusAnimation 参数控制是否跳过动画
-    focusOnRegion(focusRegion, disableFocusAnimation);
+    if (focusRegion) {
+      focusRegionRef.current = focusRegion; // 保存当前聚焦区域
+      focusOnRegion(focusRegion, disableFocusAnimation); // 执行聚焦
+    } else {
+      focusRegionRef.current = null; // 清除引用，防止后续 effect 重复聚焦
+    }
   }, [focusRegion, focusOnRegion, disableFocusAnimation]);
 
+  // 容器/图片尺寸变化时：仅在有有效聚焦区域时重新聚焦（保持视图稳定）
   useEffect(() => {
-    if (!focusRegionRef.current) return;
-    focusOnRegion(focusRegionRef.current, disableFocusAnimation);
+    if (!focusRegionRef.current) return; // 无聚焦区域时不处理，依赖 fitToContainer 自适应
+    focusOnRegion(focusRegionRef.current, disableFocusAnimation); // 重新聚焦以适应新尺寸
   }, [focusOnRegion, imageSize, containerSize, baseScale, disableFocusAnimation]);
 
-  // 清理定时器
+  // 重置图片源时清空交互标志（允许新图片首次交互触发回调）
   useEffect(() => {
+    userInteractionTriggered.current = false;
     return () => {
-      if (userInteractionTimer.current) clearTimeout(userInteractionTimer.current);
       if (zoomBadgeTimer.current) clearTimeout(zoomBadgeTimer.current);
     };
-  }, []);
+  }, [src]);
 
   // 滚轮缩放（以鼠标为中心，使用非被动监听器支持 preventDefault）
   useEffect(() => {
@@ -333,15 +335,15 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
       setScale(newScale);
       setPosition(clampedPos);
 
-      // 触发缩放提示显示 & 防抖通知父组件
+      // 触发缩放提示显示 & 通知父组件用户进行了交互
       triggerZoomBadge();
-      debouncedUserInteraction();
+      triggerUserInteraction();
     };
 
     // 添加非被动事件监听器（{ passive: false } 允许调用 preventDefault）
     container.addEventListener("wheel", handleWheel, { passive: false });
     return () => container.removeEventListener("wheel", handleWheel);
-  }, [scale, position, isDragging, MIN_SCALE, MAX_SCALE, ZOOM_SPEED, getClampedPosition, triggerZoomBadge, debouncedUserInteraction]);
+  }, [scale, position, isDragging, MIN_SCALE, MAX_SCALE, ZOOM_SPEED, getClampedPosition, triggerZoomBadge, triggerUserInteraction]);
 
   // 鼠标拖拽
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -349,8 +351,8 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
     setIsDragging(true);
     setIsAnimating(false);
     setLastMousePosition({ x: e.clientX, y: e.clientY });
-    // 防抖通知父组件用户进行了手动交互
-    debouncedUserInteraction();
+    // 立即通知父组件用户进行了拖拽交互
+    triggerUserInteraction();
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -379,8 +381,8 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     triggerZoomBadge(); // 双击也显示提示
-    // 防抖通知父组件用户进行了手动交互
-    debouncedUserInteraction();
+    // 立即通知父组件用户进行了双击交互
+    triggerUserInteraction();
 
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;

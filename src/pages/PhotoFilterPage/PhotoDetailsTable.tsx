@@ -188,22 +188,25 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
     }
   }, [faceData]);
 
-  // 图片切换时重置追踪状态
+  // 图片切换时重置追踪状态（非追踪模式下清除聚焦，追踪模式下等待匹配）
   useEffect(() => {
-    if (filePath === prevFilePathRef.current) return;
+    if (filePath === prevFilePathRef.current) return; // 同一张图片无需处理
+    prevFilePathRef.current = filePath; // 更新记录的图片路径
+    matchedForCurrentPhotoRef.current = ""; // 重置匹配标记
 
-    setIsFirstFocusAfterSwitch(true);
-    prevFilePathRef.current = filePath;
-    matchedForCurrentPhotoRef.current = "";
-
-    if (!isTrackingActive || !faceTrackerRef.current.hasTracking() || !faces.length) {
-      setActiveFaceIndex(null);
-      setFocusRegion(null);
+    // 非追踪模式 或 追踪器无状态 或 无人脸数据：清除聚焦状态，恢复自适应视图
+    if (!isTrackingActive || !faceTrackerRef.current.hasTracking()) {
+      setActiveFaceIndex(null); // 清除选中人脸
+      setFocusRegion(null); // 清除聚焦区域（通知 ImagePreview 重置）
+      setIsFirstFocusAfterSwitch(false); // 无需动画标记
+      return;
     }
 
-    const timer = setTimeout(() => setIsFirstFocusAfterSwitch(false), 150);
+    // 追踪模式：标记首次聚焦（禁用动画），等待自动匹配 effect 处理
+    setIsFirstFocusAfterSwitch(true);
+    const timer = setTimeout(() => setIsFirstFocusAfterSwitch(false), 150); // 150ms 后恢复动画
     return () => clearTimeout(timer);
-  }, [filePath, faces.length, isTrackingActive]);
+  }, [filePath, isTrackingActive]);
 
   // 追踪模式下自动匹配人脸
   useEffect(() => {
@@ -273,20 +276,13 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
     }
   }, [imageSize, faces.length]);
 
-  // 用户交互取消追踪（防抖 300ms，避免频繁重渲染）
-  const userInteractionTimer = useRef<NodeJS.Timeout | null>(null);
+  // 用户交互取消追踪（一次性触发，无防抖，避免持续交互时无法取消）
   const handleUserInteraction = useCallback(() => {
-    if (userInteractionTimer.current) clearTimeout(userInteractionTimer.current);
-    userInteractionTimer.current = setTimeout(() => {
-      // 只在追踪模式下处理，避免不必要的状态更新
-      if (isTrackingActive) {
-        faceTrackerRef.current.clearTracking();
-        setIsTrackingActive(false);
-        setActiveFaceIndex(null);
-        setFocusRegion(null);
-      }
-      userInteractionTimer.current = null;
-    }, 250); // 防抖延迟 300ms，合并频繁交互
+    if (!isTrackingActive) return; // 非追踪模式下直接返回，避免无意义更新
+    faceTrackerRef.current.clearTracking(); // 清除追踪器内部状态
+    setIsTrackingActive(false); // 关闭追踪模式
+    setActiveFaceIndex(null); // 清除选中人脸
+    setFocusRegion(null); // 清除聚焦区域（传递 null 通知 ImagePreview 重置）
   }, [isTrackingActive]);
 
   const faceLabel = t("photoDetailsTable.faceDetected", { count: faces.length, defaultValue: `检测到 ${faces.length} 个人脸` });
@@ -294,12 +290,7 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
     ? t("photoDetailsTable.faceTrackingMode", { defaultValue: "正在追踪人物，任意拖动以取消" })
     : t("photoDetailsTable.faceTapToFocus", { defaultValue: "点击头像以聚焦对应区域" });
 
-  // 清理防抖定时器
-  useEffect(() => {
-    return () => {
-      if (userInteractionTimer.current) clearTimeout(userInteractionTimer.current);
-    };
-  }, []);
+
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
