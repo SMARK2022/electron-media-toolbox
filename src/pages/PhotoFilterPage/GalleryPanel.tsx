@@ -323,7 +323,11 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = React.memo(({ totalPhot
   const selectByPath = useCallback((filePath: string, event: "Select" | "Change") => {
     const photo = lstGalleryGroupedPhotos.flat().find((p) => p.filePath === filePath);
     if (!photo) return;
-    triggerClick(photo, event);
+    triggerClick(photo, event); // 触发外部回调（异步），保持原行为
+    // 确保画廊容器获得焦点，后续上下左右键由画廊处理而非滚动条滚动 // 保持键盘焦点在画廊
+    setTimeout(() => {
+      try { scrollViewportRef.current?.focus(); } catch (e) { /* 安全忽略 */ }
+    }, 0);
   }, [lstGalleryGroupedPhotos, triggerClick]);
 
   // 键盘导航：按分组计算行列位置，处理不完整行的情况
@@ -414,6 +418,8 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = React.memo(({ totalPhot
       if (scrollElement) {
         const itemEl = itemRefs.current.get(storeFocusedPath);
         if (itemEl) itemEl.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+        // 在滚动到焦点元素后，将键盘焦点设置到滚动容器，保证键盘事件落在画廊上而不是触发滚动条 // 保持键盘控制一致
+        setTimeout(() => { try { scrollElement.focus(); } catch (e) { /* ignore */ } }, 120);
       }
     }
   }, [storeFocusedPath]);
