@@ -28,6 +28,7 @@ import {
   Eye,
   EyeOff,
   AlertTriangle,
+  Image as ImageIcon
 } from "lucide-react";
 import {
   usePhotoFilterStore,
@@ -534,10 +535,17 @@ export const PhotoGridEnhance = React.memo(function PhotoGridEnhance({
             </div>
           ) : (
             <div className="text-muted-foreground flex h-[calc(70vh-100px)] flex-col items-center justify-center text-center">
-              <div className="mb-3 rounded-full bg-white p-4 shadow-sm"><span className="h-8 w-8 opacity-30">📷</span></div>
-              <p className="text-sm font-medium">{t("filterPage.noPhotosFoundTitle") || "No photos found"}</p>
-              <p className="text-muted-foreground mt-1 max-w-xs text-xs">{t("filterPage.noPhotosFoundDesc") || "Try adjusting filters or importing more photos."}</p>
-            </div>
+                      <div className="mb-3 rounded-full bg-white dark:bg-slate-800 p-4 shadow-sm">
+                        <ImageIcon className="h-8 w-8 opacity-30" />
+                      </div>
+                      <p className="text-sm font-medium">
+                        {t("importPage.noPhotosFoundTitle") || "No photos found"}
+                      </p>
+                      <p className="text-muted-foreground mt-1 max-w-xs text-xs">
+                        {t("importPage.noPhotosFoundDesc") ||
+                          "Try adjusting filters, importing more photos, or running a new detection task."}
+                      </p>
+                    </div>
           )}
         </div>
         <ScrollBar orientation="vertical" />
