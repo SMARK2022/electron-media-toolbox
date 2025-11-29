@@ -470,21 +470,26 @@ function FileImportDrawer({ onImported }: FileImportDrawerProps) {
 
 export default function PhotoImportSubpage() {
   const { t } = useTranslation();
-  const photos = usePhotoFilterStore((s) => s.lstAllPhotos);
+  const photos = usePhotoFilterStore((s) => s.lstAllPhotos); // 显示完整照片列表
   const fnSetAllPhotos = usePhotoFilterStore((s) => s.fnSetAllPhotos);
   const fnSetCurrentPage = usePhotoFilterStore((s) => s.fnSetCurrentPage);
+  const boolShowDisabledPhotos = usePhotoFilterStore((s) => s.boolShowDisabledPhotos);
+  const fnSetShowDisabledPhotos = usePhotoFilterStore((s) => s.fnSetShowDisabledPhotos);
 
-  // 进入页面时设置当前页面类型
+  // 进入页面时设置当前页面类型，并确保显示完整列表（包括禁用照片）
   React.useEffect(() => {
-    fnSetCurrentPage("import");
-  }, [fnSetCurrentPage]);
+    fnSetCurrentPage("import"); // 标记当前页面为导入
+    if (!boolShowDisabledPhotos) {
+      fnSetShowDisabledPhotos(true); // 导入页面需要显示所有照片（包括禁用的）
+    }
+  }, [fnSetCurrentPage, boolShowDisabledPhotos, fnSetShowDisabledPhotos]);
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50/60 p-4 px-4 py-2 dark:bg-gray-900">
       <div className="mb-2 flex justify-between">
         <FileImportDrawer
           onImported={(newPhotos) => {
-            fnSetAllPhotos(newPhotos);
+            fnSetAllPhotos(newPhotos); // 导入后更新完整列表
           }}
         />
         <div className="bg-muted inline-flex items-center rounded-full px-3 py-1 text-sm font-medium">

@@ -191,9 +191,10 @@ export default function PhotoFilterSubpage() {
   const fnSetCurrentPage = usePhotoFilterStore((s: any) => s.fnSetCurrentPage);
   const modeGalleryView = usePhotoFilterStore((s: any) => s.modeGalleryView);
 
-  // 进入页面时设置标识
+  // 进入页面时设置标识并刷新完整照片列表（恢复导出页面可能改变的状态）
   React.useEffect(() => {
-    fnSetCurrentPage("filter");
+    fnSetCurrentPage("filter"); // 标记当前页面为过滤
+    PhotoService.refreshPhotos(); // 重新加载完整照片列表（避免导出页面污染）
   }, [fnSetCurrentPage]);
 
   // 配置变化时刷新（使用 ref 防止首次触发）
@@ -203,7 +204,7 @@ export default function PhotoFilterSubpage() {
       isFirstMountRef.current = false;
       return;
     }
-    PhotoService.refreshPhotos();
+    PhotoService.refreshPhotos(); // 配置变化时（如显示禁用照片、切换视图）重新加载
   }, [boolShowDisabledPhotos, modeGalleryView]);
 
   // ========== 左右分栏拖动逻辑 ==========

@@ -64,7 +64,7 @@ class PhotoServiceImpl {
       await initializeDatabase();
 
       // 加载初始照片数据
-      await this.loadInitialPhotos();
+      await this.loadPhotos();
 
       // 启动轮询
       this.startPolling();
@@ -92,7 +92,7 @@ class PhotoServiceImpl {
   // ========== 数据加载 ==========
 
   /** 加载初始照片数据到 Store */
-  private async loadInitialPhotos(): Promise<void> {
+  private async loadPhotos(): Promise<void> {
     try {
       const savedPhotos = await getPhotos();
       const store = usePhotoFilterStore.getState();
@@ -115,6 +115,7 @@ class PhotoServiceImpl {
     const { modeGalleryView, strSortedColumnKey, boolShowDisabledPhotos } = store;
 
     try {
+      await this.loadPhotos(); // 先加载最新照片列表
       // 总览模式：使用 -2 获取所有照片；分组模式：使用 -1 获取未分组照片
       const photos: PhotoExtend[] = await getPhotosExtendByCriteria(
         modeGalleryView === "group" ? -1 : -2,

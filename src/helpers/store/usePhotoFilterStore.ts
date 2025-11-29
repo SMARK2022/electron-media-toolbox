@@ -66,7 +66,8 @@ export interface EyeStatistics {
 
 interface PhotoFilterState {
   // ===== 通用照片状态（3 个页面复用）=====
-  lstAllPhotos: Photo[];                    // 当前相册中所有照片（扁平列表）
+  lstAllPhotos: Photo[];                    // 当前相册中所有照片（扁平列表，import/filter 页面）
+  lstExportPhotos: Photo[];                 // 导出页面专用照片列表（仅启用的照片，避免污染 lstAllPhotos）
   currentPage: PhotoPage;                   // 当前所在页面
   focusedPhotoFilePath: string | null;      // 当前焦点照片路径（统一 focus/highlight/preview）
   highlightedPhotoFilePaths: Set<string>;   // 高亮照片集合（跟随焦点自动更新）
@@ -117,6 +118,7 @@ interface PhotoFilterState {
 
   // ===== Actions - 通用 =====
   fnSetAllPhotos: (photos: Photo[]) => void;
+  fnSetExportPhotos: (photos: Photo[]) => void;       // 导出页面专用：设置仅启用照片列表，避免污染 lstAllPhotos
   fnSetCurrentPage: (page: PhotoPage) => void;
   fnSelectPhoto: (photo: Photo | null) => Promise<void>; // 统一选择：同步 focus/highlight/preview
   fnSetGalleryGroupedPhotos: (groups: Photo[][]) => void;
@@ -166,7 +168,8 @@ interface PhotoFilterState {
 
 export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   // ===== 通用照片状态初始化 =====
-  lstAllPhotos: [],
+  lstAllPhotos: [],                         // import/filter 页面的完整照片列表
+  lstExportPhotos: [],                      // export 页面的启用照片列表（独立维护，避免污染 lstAllPhotos）
   currentPage: "filter",
   focusedPhotoFilePath: null,
   highlightedPhotoFilePaths: new Set(),
@@ -262,7 +265,8 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   ],
 
   // ===== Actions 实现 =====
-  fnSetAllPhotos: (photos) => set({ lstAllPhotos: photos }),
+  fnSetAllPhotos: (photos) => set({ lstAllPhotos: photos }), // import/filter 页面的完整列表
+  fnSetExportPhotos: (photos) => set({ lstExportPhotos: photos }), // export 页面的启用列表（独立维护）
   fnSetCurrentPage: (page) => set({ currentPage: page }),
 
   // 统一选择函数：同步更新 focus/highlight，异步更新 preview（不阻塞键盘导航）
