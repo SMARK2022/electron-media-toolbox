@@ -66,41 +66,32 @@ type InfoRowProps = {
   valueClassName?: string;
 };
 
-const InfoRow: React.FC<InfoRowProps> = ({
-  icon: Icon,
-  label,
-  value,
-  valueClassName,
-}) => {
-  if (value === undefined || value === null || value === "") return null;
+const InfoRow = React.memo<InfoRowProps>(
+  ({ icon: Icon, label, value, valueClassName }) => {
+    if (value === undefined || value === null || value === "") return null;
 
-  return (
-    <div className="group border-border/60 flex flex-col gap-0.5 border-b py-1.5 last:border-b-0">
-      <div className="text-muted-foreground flex items-center gap-1.5 text-[11px] font-medium">
-        <Icon className="h-3.5 w-3.5" />
-        <span>{label}</span>
+    return (
+      <div className="group border-border/60 flex flex-col gap-0.5 border-b py-1.5 last:border-b-0">
+        <div className="text-muted-foreground flex items-center gap-1.5 text-[11px] font-medium">
+          <Icon className="h-3.5 w-3.5" />
+          <span>{label}</span>
+        </div>
+        <div
+          className={cn(
+            "text-foreground/90 pl-4 text-[13px] leading-snug break-all",
+            valueClassName,
+          )}
+        >
+          {value}
+        </div>
       </div>
-      <div
-        className={cn(
-          "text-foreground/90 pl-4 text-[13px] leading-snug break-all",
-          valueClassName,
-        )}
-      >
-        {value}
-      </div>
-    </div>
-  );
-};
-
-// 分组徽章组件：使用 React.memo 避免父组件重渲染时的无意义重新创建
-const GroupBadge = React.memo(
-  ({ groupId, label }: { groupId: number; label: string }) => (
-  <span className="bg-background inline-flex items-center rounded-md border border-slate-200 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200">
-      <Hash className="mr-1 h-3 w-3 text-slate-400" />
-      {label} {groupId}
-    </span>
-  ),
-  (prev, next) => prev.groupId === next.groupId && prev.label === next.label,
+    );
+  },
+  (prev, next) =>
+    prev.icon === next.icon &&
+    prev.label === next.label &&
+    prev.value === next.value &&
+    prev.valueClassName === next.valueClassName,
 );
 
 const PreviewPlaceholder: React.FC<{ height?: string }> = ({ height }) => {
@@ -317,7 +308,8 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
           height="100%"
           width="100%"
           focusRegion={focusRegion ?? undefined}
-          onUserInteraction={handleUserInteraction}
+          // 仅在追踪模式激活时传入取消追踪的回调，否则不传（等效于空函数）
+          onUserInteraction={isTrackingActive ? handleUserInteraction : undefined}
           disableFocusAnimation={isFirstFocusAfterSwitch}
         />
       </div>
@@ -360,10 +352,10 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
                     {t("photoDetailsTable.currentPreviewPhoto")}
                   </p>
                   {groupId !== undefined && groupId !== null && (
-                    <GroupBadge
-                      groupId={groupId}
-                      label={t("photoDetailsTable.groupNumber")}
-                    />
+                    <span className="bg-background inline-flex items-center rounded-md border border-slate-200 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200">
+                      <Hash className="mr-1 h-3 w-3 text-slate-400" />
+                      {t("photoDetailsTable.groupNumber")} {groupId}
+                    </span>
                   )}
                 </div>
                 <div className="flex items-start gap-1.5">
@@ -502,7 +494,11 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(({
     pPhoto.faceData === nPhoto.faceData && // 人脸数据相同
     pPhoto.info === nPhoto.info && // 文件信息相同
     pPhoto.similarity === nPhoto.similarity && // 相似度相同
-    pPhoto.IQA === nPhoto.IQA // IQA 评分相同
+    pPhoto.IQA === nPhoto.IQA && // IQA 评分相同
+    pPhoto.groupId === nPhoto.groupId && // 分组 ID 相同
+    pPhoto.fileName === nPhoto.fileName && // 文件名相同
+    pPhoto.fileSize === nPhoto.fileSize && // 文件大小相同
+    pPhoto.date === nPhoto.date // 文件日期相同
   );
 });
 

@@ -330,85 +330,69 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = React.memo(({ totalPhot
     }, 0);
   }, [lstGalleryGroupedPhotos, triggerClick]);
 
-  // 键盘导航：按分组计算行列位置，处理不完整行的情况
+  // 键盘导航：左右按线性顺序（同组换行 → 跨组），上下按列对齐（跨行/跨组保持列位置）
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter"].includes(e.key)) return;
+
+    // 无焦点时，任意方向键选中首张照片
     if (!storeFocusedPath && e.key !== "Enter") {
       const firstPhoto = lstGalleryGroupedPhotos[0]?.[0];
-      if (firstPhoto && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
-        e.preventDefault();
-        e.stopPropagation();
-        selectByPath(firstPhoto.filePath, "Select");
-      }
+      if (firstPhoto) { e.preventDefault(); e.stopPropagation(); selectByPath(firstPhoto.filePath, "Select"); }
       return;
     }
 
-    // 根据 focusedPath 查找所在分组及组内位置
-    let targetGroupIdx = -1, targetRowIdx = -1, targetColIdx = -1;
-    for (let gi = 0; gi < lstGalleryGroupedPhotos.length; gi++) {
+    // 查找当前焦点在分组中的位置
+    let gIdx = -1, pIdx = -1; // gIdx: 分组索引, pIdx: 组内照片索引
+    outer: for (let gi = 0; gi < lstGalleryGroupedPhotos.length; gi++) {
       const group = lstGalleryGroupedPhotos[gi];
       for (let pi = 0; pi < group.length; pi++) {
-        if (group[pi].filePath === storeFocusedPath) {
-          targetGroupIdx = gi;
-          targetRowIdx = Math.floor(pi / columns);
-          targetColIdx = pi % columns;
-          break;
-        }
+        if (group[pi].filePath === storeFocusedPath) { gIdx = gi; pIdx = pi; break outer; }
       }
-      if (targetGroupIdx >= 0) break;
     }
+    if (gIdx < 0) return; // 未找到焦点
 
-    if (targetGroupIdx < 0) return; // 未找到焦点
-
+    const group = lstGalleryGroupedPhotos[gIdx];
+    const rowIdx = Math.floor(pIdx / columns), colIdx = pIdx % columns; // 当前行列
+    const totalRows = Math.ceil(group.length / columns); // 本组总行数
     let nextPhoto: Photo | null = null;
-    const currentGroup = lstGalleryGroupedPhotos[targetGroupIdx];
-    const currentRowStart = targetRowIdx * columns;
-    const currentRowEnd = Math.min(currentRowStart + columns, currentGroup.length);
 
     switch (e.key) {
-      case "ArrowLeft": // 同行左移
-        if (targetColIdx > 0) nextPhoto = currentGroup[currentRowStart + targetColIdx - 1];
-        else if (targetGroupIdx > 0) { // 上一组最后一行最右
-          const prevGroup = lstGalleryGroupedPhotos[targetGroupIdx - 1];
-          const prevLastRowStart = Math.floor((prevGroup.length - 1) / columns) * columns;
-          nextPhoto = prevGroup[prevGroup.length - 1];
+      case "ArrowLeft": // 左移：同行左移 → 上一行末尾 → 上一组末尾
+        if (pIdx > 0) nextPhoto = group[pIdx - 1]; // 组内前一个
+        else if (gIdx > 0) nextPhoto = lstGalleryGroupedPhotos[gIdx - 1].at(-1)!; // 上一组最后一个
+        break;
+
+      case "ArrowRight": // 右移：同行右移 → 下一行开头 → 下一组开头
+        if (pIdx < group.length - 1) nextPhoto = group[pIdx + 1]; // 组内后一个
+        else if (gIdx < lstGalleryGroupedPhotos.length - 1) nextPhoto = lstGalleryGroupedPhotos[gIdx + 1][0]; // 下一组第一个
+        break;
+
+      case "ArrowUp": // 上移：同组上一行同列 → 上一组最后行同列（不足则取末尾）
+        if (rowIdx > 0) nextPhoto = group[(rowIdx - 1) * columns + colIdx]; // 同组上一行
+        else if (gIdx > 0) { // 跨组到上一组最后行
+          const prev = lstGalleryGroupedPhotos[gIdx - 1];
+          const prevLastRowStart = Math.floor((prev.length - 1) / columns) * columns;
+          nextPhoto = prev[Math.min(prevLastRowStart + colIdx, prev.length - 1)];
         }
         break;
 
-      case "ArrowRight": // 同行右移
-        if (targetColIdx < currentRowEnd - currentRowStart - 1) nextPhoto = currentGroup[currentRowStart + targetColIdx + 1];
-        else if (targetGroupIdx < lstGalleryGroupedPhotos.length - 1) nextPhoto = lstGalleryGroupedPhotos[targetGroupIdx + 1][0]; // 下一组首个
-        break;
-
-      case "ArrowUp": // 上移
-        if (targetRowIdx > 0) nextPhoto = currentGroup[currentRowStart - columns + targetColIdx];
-        else if (targetGroupIdx > 0) { // 上一组同列
-          const prevGroup = lstGalleryGroupedPhotos[targetGroupIdx - 1];
-          const prevLastRowStart = Math.floor((prevGroup.length - 1) / columns) * columns;
-          nextPhoto = prevGroup[Math.min(prevLastRowStart + targetColIdx, prevGroup.length - 1)];
+      case "ArrowDown": // 下移：同组下一行同列 → 下一组首行同列（不足则取末尾）
+        if (rowIdx < totalRows - 1) { // 同组下一行
+          const nextIdx = (rowIdx + 1) * columns + colIdx;
+          nextPhoto = group[Math.min(nextIdx, group.length - 1)]; // 不足取末尾
+        } else if (gIdx < lstGalleryGroupedPhotos.length - 1) { // 跨组到下一组首行
+          const next = lstGalleryGroupedPhotos[gIdx + 1];
+          nextPhoto = next[Math.min(colIdx, next.length - 1)];
         }
         break;
 
-      case "ArrowDown": // 下移
-        if (targetRowIdx < Math.floor((currentGroup.length - 1) / columns)) nextPhoto = currentGroup[currentRowStart + columns + targetColIdx];
-        else if (targetGroupIdx < lstGalleryGroupedPhotos.length - 1) { // 下一组同列
-          const nextGroup = lstGalleryGroupedPhotos[targetGroupIdx + 1];
-          nextPhoto = nextGroup[Math.min(targetColIdx, nextGroup.length - 1)];
-        }
-        break;
-
-      case "Enter": // 打开照片
-        e.preventDefault();
-        e.stopPropagation();
-        triggerClick(currentGroup[currentRowStart + targetColIdx], "Change");
+      case "Enter": // 回车：激活当前照片
+        e.preventDefault(); e.stopPropagation();
+        triggerClick(group[pIdx], "Change");
         return;
     }
 
-    if (nextPhoto) {
-      e.preventDefault();
-      e.stopPropagation();
-      selectByPath(nextPhoto.filePath, "Select");
-    }
+    if (nextPhoto) { e.preventDefault(); e.stopPropagation(); selectByPath(nextPhoto.filePath, "Select"); }
   }, [lstGalleryGroupedPhotos, storeFocusedPath, columns, selectByPath, triggerClick]);
 
   // 焦点滚动
