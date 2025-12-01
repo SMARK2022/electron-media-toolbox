@@ -116,6 +116,43 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onAction, targ
 };
 
 // ========== 工具函数 ==========
+/**
+ * 比较两个 Photo 对象是否相等
+ * 检查所有关键字段：filePath、fileName、fileUrl、info、isEnabled
+ */
+function isPhotoEqual(photoA: Photo | undefined, photoB: Photo | undefined): boolean {
+  if (photoA === photoB) return true;
+  if (!photoA || !photoB) return false;
+  return (
+    photoA.filePath === photoB.filePath &&
+    photoA.fileName === photoB.fileName &&
+    photoA.fileUrl === photoB.fileUrl &&
+    photoA.info === photoB.info &&
+    photoA.isEnabled === photoB.isEnabled
+  );
+}
+
+/**
+ * 比较两个 Photo 数组是否相等
+ * 进行深度比较，检查数组长度和每个元素
+ */
+function arePhotoArraysEqual(arrA: Photo[] | undefined, arrB: Photo[] | undefined): boolean {
+  if (arrA === arrB) return true;
+  if (!arrA || !arrB) return arrA === arrB;
+  if (arrA.length !== arrB.length) return false;
+  return arrA.every((photoA, idx) => isPhotoEqual(photoA, arrB[idx]));
+}
+
+/**
+ * 比较两个分组照片数组（二维数组）是否相等
+ */
+function areGroupedPhotosEqual(groupsA: Photo[][] | undefined, groupsB: Photo[][] | undefined): boolean {
+  if (groupsA === groupsB) return true;
+  if (!groupsA || !groupsB) return groupsA === groupsB;
+  if (groupsA.length !== groupsB.length) return false;
+  return groupsA.every((groupA, idx) => arePhotoArraysEqual(groupA, groupsB[idx]));
+}
+
 function ellipsizeMiddle(name: string, maxLength = 36): string {
   if (!name || name.length <= maxLength) return name;
   const dotIndex = name.lastIndexOf(".");
@@ -257,9 +294,9 @@ export interface PhotoGridEnhanceProps extends PhotoGridProps {
 // ========== 主网格组件（统一虚拟化：支持分组+平铺模式） ==========
 export const PhotoGridEnhance = React.memo(function PhotoGridEnhance({
   photos = [],
+  groupedPhotos = [], // 分组模式下的分组数据
   page = "filter",
   isGroupMode = false, // 是否为分组模式（GalleryPanel 使用）
-  groupedPhotos = [], // 分组模式下的分组数据
   containerHeight = "100%",
   onPhotoClick,
 }: PhotoGridEnhanceProps) {
@@ -586,7 +623,7 @@ export const PhotoGridEnhance = React.memo(function PhotoGridEnhance({
   prev.isGroupMode === next.isGroupMode &&
   prev.containerHeight === next.containerHeight &&
   prev.onPhotoClick === next.onPhotoClick &&
-  (prev.isGroupMode ? prev.groupedPhotos?.length === next.groupedPhotos?.length : prev.photos?.length === next.photos?.length)
+  (prev.isGroupMode ? areGroupedPhotosEqual(prev.groupedPhotos, next.groupedPhotos) : arePhotoArraysEqual(prev.photos, next.photos))
 ));
 
 // ========== 删除确认对话框（Portal 版本）==========
