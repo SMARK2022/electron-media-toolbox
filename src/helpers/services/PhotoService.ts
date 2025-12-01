@@ -6,11 +6,12 @@
  * - 服务端状态轮询
  * - 照片数据同步
  * - 任务提交与进度追踪
+ * - 导入任务（缩略图 + EXIF）后台处理
  *
  * 服务在 App 级别初始化，所有页面共享同一实例
  */
 
-import { initializeDatabase, getPhotos, getPhotosExtendByCriteria, Photo, PhotoExtend } from "@/helpers/ipc/database/db";
+import { initializeDatabase, getPhotos, getPhotosExtendByCriteria, addPhotosExtend, clearPhotos, updatePhotoExtendByPath, Photo, PhotoExtend } from "@/helpers/ipc/database/db";
 import { usePhotoFilterStore, type ServerData } from "@/helpers/store/usePhotoFilterStore";
 
 // ============================================================================
@@ -20,6 +21,12 @@ const SERVER_BASE_URL = "http://localhost:8000";
 const SERVER_STATUS_INTERVAL = 500; // 服务端状态轮询间隔（ms）
 const PHOTOS_REFRESH_INTERVAL = 4000; // 照片刷新间隔（ms）
 const IDLE_DETECT_THRESHOLD = 2000; // 空闲检测阈值（ms）- 距离上次检测空闲满2秒后暂停
+const EXIF_BATCH_SIZE = 5; // EXIF 批量读取大小（每批并发数）
+const EXIF_BATCH_DELAY = 100; // EXIF 批次间隔（ms）
+const EXIF_DB_BATCH_SIZE = 20; // 每 20 条 EXIF 记录批量写入数据库一次
+
+// 路径规范化工具函数
+const normalizePath = (p: string) => p.replace(/\\/g, "/");
 
 // ============================================================================
 // 服务状态类型
@@ -30,6 +37,17 @@ interface ServiceState {
   lastStatusTime: number;
   lastPhotosTime: number;
   lastIdleDetectTime: number | null; // 上次检测到空闲的时间
+}
+
+// 导入任务状态
+interface ImportTaskState {
+  isRunning: boolean; // 是否正在执行导入任务
+  isComplete: boolean; // 任务是否完成
+  totalFiles: number; // 总文件数
+  processedFiles: number; // 已处理文件数
+  thumbnailProgress: number; // 缩略图进度 (0-100)
+  exifProgress: number; // EXIF 读取进度 (0-100)
+  currentFile?: string; // 当前处理文件名
 }
 
 // ============================================================================
@@ -44,8 +62,20 @@ class PhotoServiceImpl {
     lastIdleDetectTime: null,
   };
 
+  private importTask: ImportTaskState = {
+    isRunning: false,
+    isComplete: false,
+    totalFiles: 0,
+    processedFiles: 0,
+    thumbnailProgress: 0,
+    exifProgress: 0,
+  };
+
   private statusTimer: ReturnType<typeof setInterval> | null = null;
   private photosTimer: ReturnType<typeof setInterval> | null = null;
+  private importProgressTimer: ReturnType<typeof setInterval> | null = null; // 导入进度轮询定时器
+  private importTaskSubscribers: ((state: ImportTaskState) => void)[] = []; // 导入任务订阅列表
+  private currentImportTaskId: number = 0; // 当前导入任务 ID（递增，用于区分不同任务）
   private formatStatusFn: ((data: ServerData | null) => string) | null = null;
 
   // ========== 生命周期 ==========
@@ -87,6 +117,59 @@ class PhotoServiceImpl {
   /** 设置状态格式化函数（由组件提供 i18n 翻译） */
   setStatusFormatter(fn: (data: ServerData | null) => string): void {
     this.formatStatusFn = fn;
+  }
+
+  // ========== 导入任务订阅 ==========
+
+  /** 订阅导入任务状态变化 */
+  subscribeImportTask(listener: (state: ImportTaskState) => void): () => void {
+    this.importTaskSubscribers.push(listener);
+    listener({ ...this.importTask }); // 立即回调当前状态
+    return () => {
+      this.importTaskSubscribers = this.importTaskSubscribers.filter(
+        (l) => l !== listener
+      );
+    };
+  }
+
+  /** 通知所有订阅者导入任务状态更新 */
+  private notifyImportTaskSubscribers(): void {
+    const state = { ...this.importTask };
+    this.importTaskSubscribers.forEach((listener) => listener(state));
+  }
+
+  /** 取消导入任务 */
+  cancelImportTask(): void {
+    if (!this.importTask.isRunning) return;
+    console.log("[PhotoService] Cancelling import task, invalidating taskId:", this.currentImportTaskId);
+    // 递增任务 ID，使所有旧任务的更新操作失效
+    this.currentImportTaskId++;
+    this.importTask = {
+      isRunning: false,
+      isComplete: false,
+      totalFiles: 0,
+      processedFiles: 0,
+      thumbnailProgress: 0,
+      exifProgress: 0,
+    };
+    this.notifyImportTaskSubscribers();
+    if (this.importProgressTimer) {
+      clearInterval(this.importProgressTimer);
+      this.importProgressTimer = null;
+    }
+  }
+
+  /** 关闭导入 Toast（重置完成状态） */
+  dismissImportToast(): void {
+    this.importTask = {
+      isRunning: false,
+      isComplete: false,
+      totalFiles: 0,
+      processedFiles: 0,
+      thumbnailProgress: 0,
+      exifProgress: 0,
+    };
+    this.notifyImportTaskSubscribers();
   }
 
   // ========== 数据加载 ==========
@@ -324,41 +407,302 @@ class PhotoServiceImpl {
     }
   }
 
-  /** 提交缩略图生成任务 */
-  async submitThumbnailTask(options: {
+  /**
+   * 提交导入任务（整合缩略图生成 + EXIF 读取）
+   * 立即将照片添加到列表，后台异步处理缩略图和 EXIF
+   * 新导入时自动取消之前的任务
+   */
+  async submitImportTask(options: {
     filePaths: string[];
-    thumbsPath?: string;
-    width?: number;
-    height?: number;
+    onComplete?: () => void;
   }): Promise<boolean> {
-    try {
-      let thumbsPath = options.thumbsPath || "../.cache/.thumbs";
-      try {
-        const electronAPI = (window as any)?.ElectronAPI;
-        if (electronAPI?.getThumbsCacheDir) {
-          thumbsPath = await electronAPI.getThumbsCacheDir();
+    const { filePaths, onComplete } = options;
+    if (!filePaths.length) return false;
+
+    // 1. 如果已有导入任务运行中，先取消它（递增 taskId 使旧任务失效）
+    if (this.importTask.isRunning) {
+      console.log("[PhotoService] Cancelling previous import task");
+      this.currentImportTaskId++;
+    }
+
+    // 2. 递增并捕获当前任务 ID
+    this.currentImportTaskId++;
+    const taskId = this.currentImportTaskId;
+    console.log(`[PhotoService] Starting import task with ID: ${taskId}`);
+
+    // 3. 路径去重与规范化
+    const uniquePaths = [...new Set(filePaths.map(normalizePath))].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true })
+    );
+    const total = uniquePaths.length;
+    console.log(`[PhotoService] Starting import task for ${total} files`);
+
+    // 4. 初始化导入任务状态
+    this.importTask = {
+      isRunning: true,
+      isComplete: false,
+      totalFiles: total,
+      processedFiles: 0,
+      thumbnailProgress: 0,
+      exifProgress: 0,
+    };
+    this.notifyImportTaskSubscribers();
+
+    // 5. 立即构建占位照片列表并写入 DB + Store
+    const placeholderPhotos: PhotoExtend[] = uniquePaths.map((absPath) => ({
+      fileName: absPath.split("/").pop() || "",
+      fileUrl: `thumbnail-resource://${absPath}`,
+      filePath: absPath,
+      isEnabled: true,
+    }));
+    clearPhotos();
+    initializeDatabase();
+    addPhotosExtend(placeholderPhotos);
+    const store = usePhotoFilterStore.getState();
+    store.fnSetAllPhotos(
+      placeholderPhotos.map((p) => ({
+        fileName: p.fileName,
+        fileUrl: p.fileUrl,
+        filePath: p.filePath,
+        info: "",
+        isEnabled: true,
+      }))
+    );
+
+    // 6. 启动缩略图生成（后台，传入 taskId）
+    this.startThumbnailGeneration(uniquePaths, taskId).catch(console.error);
+
+    // 7. 启动 EXIF 读取（后台，带进度更新，传入 taskId）
+    this.startExifExtraction(uniquePaths, taskId)
+      .then(() => {
+        // 检查任务是否仍然有效
+        if (taskId !== this.currentImportTaskId) {
+          console.log(`[PhotoService] Import task ${taskId} was superseded, skipping completion`);
+          return;
         }
-      } catch (error) {
-        console.warn("[PhotoService] getThumbsCacheDir failed:", error);
+        this.finishImportTask(taskId);
+        onComplete?.();
+      })
+      .catch((err) => {
+        if (taskId !== this.currentImportTaskId) {
+          console.log(`[PhotoService] Import task ${taskId} was superseded, ignoring error`);
+          return;
+        }
+        console.error("[PhotoService] EXIF extraction error:", err);
+        this.finishImportTask(taskId);
+      });
+
+    // 8. 启动进度轮询（定期更新状态）
+    this.startImportProgressPolling();
+
+    return true;
+  }
+
+  /** 生成进度文本 */
+  private getImportProgressText(): string {
+    const { thumbnailProgress, exifProgress, processedFiles, totalFiles } = this.importTask;
+    const avgProgress = Math.round((thumbnailProgress + exifProgress) / 2);
+    return `缩略图: ${Math.round(thumbnailProgress)}% | EXIF: ${Math.round(exifProgress)}% | 总进度: ${avgProgress}% (${processedFiles}/${totalFiles} 张)`;
+  }
+
+  /** 启动缩略图生成任务 */
+  private async startThumbnailGeneration(filePaths: string[], taskId: number): Promise<void> {
+    try {
+      // 检查任务是否仍然有效
+      if (taskId !== this.currentImportTaskId) {
+        console.log(`[PhotoService] Thumbnail task ${taskId} superseded, skipping`);
+        return;
       }
 
-      fetch(`${SERVER_BASE_URL}/generate_thumbnails`, {
+      let thumbsPath = "../.cache/.thumbs";
+      try {
+        const electronAPI = (window as any)?.ElectronAPI;
+        if (electronAPI?.getThumbsCacheDir) thumbsPath = await electronAPI.getThumbsCacheDir();
+      } catch (e) { /* ignore */ }
+
+      await fetch(`${SERVER_BASE_URL}/generate_thumbnails`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          file_paths: options.filePaths,
-          thumbs_path: thumbsPath,
-          width: options.width ?? 128,
-          height: options.height ?? 128,
-        }),
-      }).catch(error => console.error("[PhotoService] Thumbnail task error:", error));
+        body: JSON.stringify({ file_paths: filePaths, thumbs_path: thumbsPath, width: 128, height: 128 }),
+      });
+
+      // 检查任务是否仍然有效
+      if (taskId !== this.currentImportTaskId) {
+        console.log(`[PhotoService] Thumbnail task ${taskId} superseded after fetch, skipping store update`);
+        return;
+      }
 
       usePhotoFilterStore.getState().fnSetServerPollingNeeded(true);
-      return true;
     } catch (error) {
-      console.error("[PhotoService] Submit thumbnail task error:", error);
-      return false;
+      console.error("[PhotoService] Thumbnail generation error:", error);
     }
+  }
+
+  /** 启动 EXIF 读取任务（分批处理，带进度更新，更新 DB 和 Store） */
+  private async startExifExtraction(filePaths: string[], taskId: number): Promise<void> {
+    const total = filePaths.length;
+    let completed = 0;
+    const exifBatch: Array<{ path: string; updates: { date?: string; fileSize?: number; info?: string } }> = []; // 缓存要写入的 EXIF 数据
+
+    for (let i = 0; i < total; i += EXIF_BATCH_SIZE) {
+      // 检查任务是否仍然有效
+      if (taskId !== this.currentImportTaskId) {
+        console.log(`[PhotoService] EXIF task ${taskId} superseded at batch ${i}, stopping`);
+        return;
+      }
+
+      const batch = filePaths.slice(i, i + EXIF_BATCH_SIZE);
+      await Promise.all(
+        batch.map(async (absPath) => {
+          // 在处理每个文件前检查任务是否仍然有效
+          if (taskId !== this.currentImportTaskId) return;
+
+          try {
+            const store = usePhotoFilterStore.getState(); // 每次获取最新 store
+            const metadata = await store.fnGetPhotoMetadata(absPath);
+
+            // 异步操作后再次检查任务是否仍然有效
+            if (taskId !== this.currentImportTaskId) return;
+
+            const exifData = metadata?.exif ?? null;
+
+            // 解析 EXIF 数据
+            const captureTime = exifData?.captureTime
+              ? new Date(exifData.captureTime * 1000).toLocaleString()
+              : undefined;
+            const fileSize = exifData?.fileSize ?? undefined;
+            const infoStr =
+              exifData?.ExposureTime && exifData?.LensModel
+                ? `1/${Math.round(1 / exifData.ExposureTime)} ${exifData.LensModel}`
+                : undefined;
+
+            // 收集 EXIF 数据到缓存，而不是立即写入
+            exifBatch.push({ path: absPath, updates: { date: captureTime, fileSize, info: infoStr } });
+
+            // 检查任务是否仍然有效，然后才更新 Store
+            if (taskId !== this.currentImportTaskId) return;
+
+            // 实时更新 Store 中的照片信息（UI 实时反馈）
+            const currentStore = usePhotoFilterStore.getState();
+            currentStore.fnSetAllPhotos(
+              currentStore.lstAllPhotos.map((p) =>
+                p.filePath === absPath
+                  ? { ...p, info: captureTime || "" }
+                  : p
+              )
+            );
+          } catch (e) {
+            console.warn(
+              `[PhotoService] EXIF extraction failed for ${absPath}:`,
+              e
+            );
+          }
+
+          // 更新进度前检查任务是否仍然有效
+          if (taskId !== this.currentImportTaskId) return;
+
+          completed++;
+          this.importTask.processedFiles = completed; // 更新已处理文件数
+          this.importTask.exifProgress = (completed / total) * 100;
+          this.notifyImportTaskSubscribers();
+
+          // 缓存满 EXIF_DB_BATCH_SIZE 条或最后一条时，批量写入数据库
+          if (exifBatch.length >= EXIF_DB_BATCH_SIZE || completed === total) {
+            // 写入数据库前检查任务是否仍然有效
+            if (taskId !== this.currentImportTaskId) return;
+            await this.writeExifBatchToDb(exifBatch);
+            exifBatch.length = 0; // 清空缓存
+          }
+        })
+      );
+
+      // 批次间延迟前检查任务是否仍然有效
+      if (taskId !== this.currentImportTaskId) {
+        console.log(`[PhotoService] EXIF task ${taskId} superseded after batch, stopping`);
+        return;
+      }
+
+      if (i + EXIF_BATCH_SIZE < total) {
+        await new Promise((r) => setTimeout(r, EXIF_BATCH_DELAY));
+      }
+    }
+
+    // 最后确保所有剩余数据都写入数据库
+    if (taskId === this.currentImportTaskId && exifBatch.length > 0) {
+      await this.writeExifBatchToDb(exifBatch);
+    }
+  }
+
+  /** 批量将 EXIF 数据写入数据库 */
+  private async writeExifBatchToDb(
+    batch: Array<{ path: string; updates: { date?: string; fileSize?: number; info?: string } }>
+  ): Promise<void> {
+    if (batch.length === 0) return;
+    try {
+      // 顺序执行数据库更新，保持事务的原子性和一致性
+      for (const item of batch) {
+        await updatePhotoExtendByPath(item.path, item.updates);
+      }
+      console.log(`[PhotoService] Wrote ${batch.length} EXIF records to DB`);
+    } catch (e) {
+      console.error("[PhotoService] Error writing EXIF batch to DB:", e);
+    }
+  }
+
+  /** 启动导入进度轮询 */
+  private startImportProgressPolling(): void {
+    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
+    this.importProgressTimer = setInterval(() => {
+      this.updateImportProgress();
+    }, SERVER_STATUS_INTERVAL);
+  }
+
+  /** 更新导入进度（从服务端获取缩略图进度，通知订阅者） */
+  private async updateImportProgress(): Promise<void> {
+    if (!this.importTask.isRunning) return;
+    try {
+      const response = await fetch(`${SERVER_BASE_URL}/status`);
+      if (response.ok) {
+        const data: ServerData = await response.json();
+        // 从 workers 中提取进度（假设 worker0 格式为 "缩略图: 50/100"）
+        const worker0 = data.workers?.[0] || "";
+        const match = worker0.match(/(\d+)\/(\d+)/);
+        if (match) {
+          const [, done, total] = match.map(Number);
+          this.importTask.thumbnailProgress =
+            total > 0 ? (done / total) * 100 : 0;
+        } else if (data.status === "空闲中") {
+          this.importTask.thumbnailProgress = 100; // 服务空闲说明缩略图已完成
+        }
+        this.notifyImportTaskSubscribers();
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /** 完成导入任务 */
+  private finishImportTask(taskId: number): void {
+    // 检查任务是否仍然有效
+    if (taskId !== this.currentImportTaskId) {
+      console.log(`[PhotoService] Import task ${taskId} superseded, skipping finish`);
+      return;
+    }
+
+    if (this.importProgressTimer) {
+      clearInterval(this.importProgressTimer);
+      this.importProgressTimer = null;
+    }
+    // 标记为完成，Toast 组件会自动 1s 后退出
+    this.importTask.isRunning = false;
+    this.importTask.isComplete = true;
+    this.notifyImportTaskSubscribers();
+    console.log(`[PhotoService] Import task ${taskId} completed`);
+  }
+
+  /** 获取导入任务是否正在运行 */
+  get isImportRunning(): boolean {
+    return this.importTask.isRunning;
   }
 
   // ========== 状态查询 ==========

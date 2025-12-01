@@ -181,6 +181,10 @@ const EyeStateBadge: React.FC<EyeStateBadgeProps> = React.memo(({ eyeStats }) =>
   );
 });
 
+// ========== 缩略图重试常量 ==========
+const THUMBNAIL_RETRY_INTERVAL = 1000; // 缩略图加载失败后重试间隔（ms）
+const THUMBNAIL_MAX_RETRIES = 30; // 最大重试次数（30秒后停止）
+
 // ========== 统一照片卡片组件（支持 filter/import/export + 分组/平铺） ==========
 interface PhotoCardProps {
   photo: Photo;
@@ -194,7 +198,39 @@ const PhotoCard: React.FC<PhotoCardProps> = React.memo(({
   photo, width, height, page, isHighlighted, isFocused, onClick, onDoubleClick, onContextMenu, onFocus, setRef,
 }) => {
   const [hasError, setHasError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0); // 重试计数
+  const [imgKey, setImgKey] = useState(0); // 用于强制刷新图片
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const eyeStats = usePhotoFilterStore((s) => s.lstPhotosEyeStats.get(photo.filePath) ?? null); // 获取眨眼统计
+
+  // 清理重试定时器
+  useEffect(() => {
+    return () => { if (retryTimerRef.current) clearTimeout(retryTimerRef.current); };
+  }, []);
+
+  // 当 photo.fileUrl 变化时重置重试状态
+  useEffect(() => {
+    setHasError(false);
+    setRetryCount(0);
+    setImgKey((k) => k + 1);
+    if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+  }, [photo.fileUrl]);
+
+  // 图片加载失败处理：启动自动重试
+  const handleImageError = useCallback(() => {
+    if (retryCount >= THUMBNAIL_MAX_RETRIES) { setHasError(true); return; } // 超过最大重试次数
+    retryTimerRef.current = setTimeout(() => {
+      setRetryCount((c) => c + 1);
+      setImgKey((k) => k + 1); // 强制刷新图片触发重新加载
+    }, THUMBNAIL_RETRY_INTERVAL);
+  }, [retryCount]);
+
+  // 图片加载成功处理：重置重试状态
+  const handleImageLoad = useCallback(() => {
+    setHasError(false);
+    setRetryCount(0);
+    if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+  }, []);
 
   const displayName = useMemo(() => {
     const name = photo.fileName;
@@ -241,11 +277,13 @@ const PhotoCard: React.FC<PhotoCardProps> = React.memo(({
       {/* 图片区域 */}
       <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-gray-100 dark:bg-slate-900">
         <img
+          key={imgKey}
           src={hasError ? missing_icon : photo.fileUrl || missing_icon}
           alt={photo.fileName}
           loading="lazy"
           className="h-[160px] max-w-full object-contain transition-transform group-hover:scale-105"
-          onError={() => setHasError(true)}
+          onError={handleImageError}
+          onLoad={handleImageLoad}
         />
         <div className="pointer-events-none absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/5" />
         {/* 眨眼统计指示器（仅 filter 页面显示） */}

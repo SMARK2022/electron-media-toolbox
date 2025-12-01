@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { PhotoGridEnhance } from "@/components/PhotoGrid";
+import { ImportProgressToast } from "@/components/ImportProgressToast";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,
@@ -15,13 +16,7 @@ import {
 } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  addPhotosExtend,
-  clearPhotos,
-  initializeDatabase,
-  PhotoExtend,
-  Photo,
-} from "@/helpers/ipc/database/db";
+import { initializeDatabase, clearPhotos } from "@/helpers/ipc/database/db";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { usePhotoFilterStore } from "@/helpers/store/usePhotoFilterStore";
@@ -39,10 +34,8 @@ interface DroppedFile {
 }
 
 interface FileImportDrawerProps {
-  /**
-   * 导入完成后，将新照片列表写入全局 store（而不是仅仅写入本地 state）。
-   */
-  onImported: (photos: Photo[]) => void;
+  /** 导入完成后触发的回调 */
+  onImported?: () => void;
 }
 
 // 允许的扩展名（用于拖拽和文件选择公用）
@@ -77,7 +70,6 @@ function tryGetFullPath(file: File): string {
 
 function FileImportDrawer({ onImported }: FileImportDrawerProps) {
   const { t } = useTranslation();
-  const fnGetPhotoMetadata = usePhotoFilterStore((s) => s.fnGetPhotoMetadata); // 获取 store 中的缓存元数据函数
 
   const [droppedFiles, setDroppedFiles] = React.useState<DroppedFile[]>([]);
   const [folderName, setFolderName] = React.useState("");
@@ -223,62 +215,18 @@ function FileImportDrawer({ onImported }: FileImportDrawerProps) {
     try {
       // 构造绝对路径列表
       const absoluteFilePaths = droppedFiles.map((file) => {
-        if (allHaveFullPaths && file.fullPath) {
-          return normalizePath(file.fullPath);
-        }
+        if (allHaveFullPaths && file.fullPath) return normalizePath(file.fullPath);
         return normalizePath(`${normalizedFolder}/${file.name}`);
       });
 
-      const sortedPaths = [...absoluteFilePaths].sort((a, b) =>
-        a.localeCompare(b, undefined, { numeric: true }),
-      );
-
-      // 使用 PhotoService 提交缩略图生成任务
-      await PhotoService.submitThumbnailTask({ filePaths: sortedPaths });
-
-      // 构造前端 PhotoExtend
-      const photoObjects: PhotoExtend[] = await Promise.all(
-        sortedPaths.map(async (absPath) => {
-          const normalized = normalizePath(absPath);
-          const fileName = normalized.split("/").pop() || "";
-
-          // 通过 store 缓存函数获取 EXIF 元数据（自动缓存，避免重复读取）
-          const metadata = await fnGetPhotoMetadata(normalized);
-          const exifData = metadata?.exif ?? null;
-
-          const captureTime = exifData?.captureTime // EXIF 中的 captureTime 为 Unix 时间戳
-            ? new Date(exifData.captureTime * 1000).toLocaleString()
-            : undefined;
-
-          return {
-            fileName,
-            fileUrl: `thumbnail-resource://${normalized}`,
-            filePath: normalized,
-            date: captureTime,
-            fileSize: exifData?.fileSize,
-            info: exifData?.ExposureTime && exifData?.LensModel
-              ? `1/${1 / exifData.ExposureTime} ${exifData.LensModel}`
-              : undefined,
-            isEnabled: true,
-          };
-        }),
-      );
-
-      // 清空旧数据并重新初始化相册表结构
-      clearPhotos();
-      initializeDatabase();
-      addPhotosExtend(photoObjects);
-
-      const photoObjectsForState: Photo[] = photoObjects.map((p) => ({
-        fileName: p.fileName,
-        fileUrl: p.fileUrl,
-        filePath: p.filePath,
-        info: p.date || "Unknown",
-        isEnabled: p.isEnabled ?? true,
-      }));
-
-      // 通过回调写入全局 store
-      onImported(photoObjectsForState);
+      // 提交导入任务到 PhotoService（后台处理缩略图 + EXIF，立即返回）
+      await PhotoService.submitImportTask({
+        filePaths: absoluteFilePaths,
+        onComplete: () => {
+          PhotoService.refreshPhotos(); // 导入完成后刷新照片列表
+          onImported?.();
+        },
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -471,7 +419,6 @@ function FileImportDrawer({ onImported }: FileImportDrawerProps) {
 export default function PhotoImportSubpage() {
   const { t } = useTranslation();
   const photos = usePhotoFilterStore((s) => s.lstAllPhotos); // 显示完整照片列表
-  const fnSetAllPhotos = usePhotoFilterStore((s) => s.fnSetAllPhotos);
   const fnSetCurrentPage = usePhotoFilterStore((s) => s.fnSetCurrentPage);
   const boolShowDisabledPhotos = usePhotoFilterStore((s) => s.boolShowDisabledPhotos);
   const fnSetShowDisabledPhotos = usePhotoFilterStore((s) => s.fnSetShowDisabledPhotos);
@@ -487,11 +434,7 @@ export default function PhotoImportSubpage() {
   return (
     <div className="flex min-h-screen flex-col bg-slate-50/60 p-4 px-4 py-2 dark:bg-gray-900">
       <div className="mb-2 flex justify-between">
-        <FileImportDrawer
-          onImported={(newPhotos) => {
-            fnSetAllPhotos(newPhotos); // 导入后更新完整列表
-          }}
-        />
+        <FileImportDrawer onImported={() => { /* 可选回调 */ }} />
         <div className="bg-muted inline-flex items-center rounded-full px-3 py-1 text-sm font-medium">
           <span className="text-muted-foreground">
             {t("labels.totalPhotos")}
@@ -503,8 +446,10 @@ export default function PhotoImportSubpage() {
       </div>
 
       {/* 虚拟化照片网格（自带滚动容器）*/}
-
       <PhotoGridEnhance photos={photos} page="import" containerHeight="calc(100vh - 160px)" />
+
+      {/* 导入进度 Toast（订阅 PhotoService 状态自动显示/隐藏）*/}
+      <ImportProgressToast />
     </div>
   );
 }

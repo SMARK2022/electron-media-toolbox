@@ -12,7 +12,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { toast } from "@/hooks/use-toast"; // Assuming toast is used for displaying alerts
+// import { toast } from "@/hooks/use-toast"; // Assuming toast is used for displaying alerts
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
@@ -58,15 +58,15 @@ export default function SettingsSubpage() {
       localStorage.setItem("settings", JSON.stringify(data));
     }
 
-    // Show success toast with submitted data
-    toast({
-      title: "设置已保存",
-      description: (
-        <pre className="mt-2 w-[340px] rounded-md bg-slate-950 p-4">
-          <code className="text-white">{JSON.stringify(data, null, 2)}</code>
-        </pre>
-      ),
-    });
+    // // Show success toast with submitted data
+    // toast({
+    //   title: "设置已保存",
+    //   description: (
+    //     <pre className="mt-2 w-[340px] rounded-md bg-slate-950 p-4">
+    //       <code className="text-white">{JSON.stringify(data, null, 2)}</code>
+    //     </pre>
+    //   ),
+    // });
 
     // Log the submitted data to the console
     console.log("Settings saved:", data);

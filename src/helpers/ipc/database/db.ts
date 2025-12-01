@@ -341,3 +341,30 @@ export function deletePhotoByPath(filePath: string) {
   const params = { filePath };
   return window.ElectronDB.run(sql, params);
 }
+
+// 根据 filePath 更新照片的扩展信息（date、fileSize、info）
+export function updatePhotoExtendByPath(
+  filePath: string,
+  updates: { date?: string; fileSize?: number; info?: string }
+) {
+  const setClauses: string[] = [];
+  const params: Record<string, any> = { filePath };
+
+  if (updates.date !== undefined) {
+    setClauses.push("date = @date");
+    params.date = updates.date;
+  }
+  if (updates.fileSize !== undefined) {
+    setClauses.push("fileSize = @fileSize");
+    params.fileSize = updates.fileSize;
+  }
+  if (updates.info !== undefined) {
+    setClauses.push("info = @info");
+    params.info = updates.info;
+  }
+
+  if (setClauses.length === 0) return; // 无需更新
+
+  const sql = `UPDATE present SET ${setClauses.join(", ")} WHERE filePath = @filePath`;
+  return window.ElectronDB.run(sql, params);
+}
