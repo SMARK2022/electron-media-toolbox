@@ -90,6 +90,8 @@ echo [*] 使用 Nuitka 编译 %MAIN_FILE% 为单文件 exe (--mode=onefile) ...
 
 "%PYTHON_EXE%" -m nuitka ^
   --mode=onefile ^
+  --onefile-tempdir-spec="{PROGRAM_DIR}/.web_api_cache" ^
+  --onefile-cache-mode=temporary ^
   --output-dir="%OUTPUT_DIR%" ^
   --jobs=%JOBS% ^
   --assume-yes-for-downloads ^
@@ -99,6 +101,12 @@ echo [*] 使用 Nuitka 编译 %MAIN_FILE% 为单文件 exe (--mode=onefile) ...
   --include-data-file="%MODEL_DIR%\2d106det_batch.onnx=%MODEL_DIR%\2d106det_batch.onnx" ^
   --include-data-file="%MODEL_DIR%\det_10g.onnx=%MODEL_DIR%\det_10g.onnx" ^
   --include-data-file="%MODEL_DIR%\ocec_l.onnx=%MODEL_DIR%\ocec_l.onnx" ^
+  --noinclude-dlls=opencv_videoio_ffmpeg*.dll ^
+  --nofollow-import-to=websockets ^
+  --nofollow-import-to=httptools ^
+  --nofollow-import-to=yaml ^
+  --noinclude-dlls=yaml.dll ^
+  --nofollow-import-to=numpy.tests ^
   "%MAIN_FILE%"
 
 echo.
