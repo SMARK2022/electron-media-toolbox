@@ -13,7 +13,14 @@
     "format:write": "prettier --write .",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "python:zip": "node scripts/zip-python.cjs",
-    "python:make": "node scripts/python-make.cjs"
+    "python:make": "node scripts/python-make.cjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui",
+    "test:e2e": "npx playwright test",
+    "test:e2e:headed": "npx playwright test --headed",
+    "test:all": "vitest run && npx playwright test"
   },
   "author": "SMARK <SMARK2019@outlook.com>",
   "license": "Apache License 2.0",

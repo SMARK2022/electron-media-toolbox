@@ -68,3 +68,7 @@ dev/
 
 # Build artifacts
 .vite/build/
+
+
+playwright-report/
+test-results/
