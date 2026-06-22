@@ -2,6 +2,7 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd"; // 键盘按键显示组件
 import { CustomSlider } from "@/components/CustomSlider";
 import PhotoDetailsTable from "./PhotoDetailsTable";
 import { AlertCircle, Image as ImageIcon, RotateCcw, Trash2 } from "lucide-react";
@@ -138,9 +139,18 @@ export const SidePanel: React.FC<SidePanelProps> = React.memo(({
           <div className="mt-3 rounded-md bg-blue-50 p-3 text-xs text-blue-800">
             <div className="flex items-start gap-2">
               <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-              <p className="leading-relaxed whitespace-pre-wrap">
-                {t("filterPage.filterHint")}
-              </p>
+              <div className="leading-relaxed space-y-2">
+                <p>{t("filterPage.filterHintPrefix")}</p>
+                <p className="flex flex-wrap items-center gap-1">
+                  {t("filterPage.filterHintLine1")}
+                  <Kbd>⏎</Kbd>
+                  {t("filterPage.filterHintLine1Suffix")}
+                  <span className="inline-flex gap-0.5">
+                    <Kbd>↑</Kbd><Kbd>↓</Kbd><Kbd>←</Kbd><Kbd>→</Kbd>
+                  </span>
+                  {t("filterPage.filterHintLine1End")}
+                </p>
+              </div>
             </div>
           </div>
         </div>

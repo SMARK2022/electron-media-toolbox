@@ -182,8 +182,13 @@ const resources = {
         noPhotosFoundTitle: "No photos found",
         noPhotosFoundDesc:
           "Try adjusting filters, importing more photos, or running a new detection task.",
-        filterHint:
-          "Adjust the similarity threshold before running detection. Use bulk actions to quickly organize your photo groups.\n\nDouble-click or press Enter on an image in the preview pane to quickly toggle its enabled status;\nclick to preview, use keyboard ↑↓←→ to select photos within the same group.",
+        filterHintPrefix:
+          "Adjust the similarity threshold before running detection. Use bulk actions to quickly organize your photo groups.",
+        filterHintLine1:
+          "Double-click or press ",
+        filterHintLine1Suffix:
+          " on an image in the preview pane to quickly toggle its enabled status; click to preview, use keyboard ",
+        filterHintLine1End: " to select photos within the same group.",
         trackingMode: "Face Tracking", // 人像追踪模式
         eyeState: {
           open: "Normal", // 睁眼
@@ -404,8 +409,13 @@ const resources = {
         groupLabel: "分组",
         noPhotosFoundTitle: "未找到照片",
         noPhotosFoundDesc: "尝试调整筛选条件、导入更多照片或运行新的检测任务。",
-        filterHint:
-          "在运行检测之前调整相似度阈值。使用批量操作可快速整理照片分组。\n\n在预览窗格中对图片左键双击或Enter键可快速切换启用状态；\n单击以预览，使用键盘↑↓←→选择同组内照片。",
+        filterHintPrefix:
+          "在运行检测之前调整相似度阈值。使用批量操作可快速整理照片分组。",
+        filterHintLine1:
+          "在预览窗格中对图片左键双击或",
+        filterHintLine1Suffix:
+          "可快速切换启用状态；单击以预览，使用键盘 ",
+        filterHintLine1End: " 选择同组内照片。",
         trackingMode: "人像追踪", // 人像追踪模式
         eyeState: {
           open: "正常", // 睁眼
