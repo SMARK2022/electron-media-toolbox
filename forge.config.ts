@@ -185,6 +185,8 @@ const config: ForgeConfig = {
       // 其它全部忽略
       return true;
     },
+    // Forge 插件类型不完整，用 any 兼容 webpack 忽略规则的复杂回调签名
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any,
 
   rebuildConfig: {},

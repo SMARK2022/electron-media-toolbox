@@ -1,15 +1,8 @@
 import { PhotoGridEnhance } from "@/components/PhotoGrid";
-import React from "react";
+
 import { Photo } from "@/helpers/ipc/database/db";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
-
-interface PhotoGridProps {
-  photos: Photo[];
-  aspectRatio?: "portrait" | "square";
-  width?: number;
-  height?: number;
-}
 
 import image from "@/assets/images/__mamehinata_vrchat_drawn_by_mashir_oxo__effe8b756f9078d5d6149d06c6bbe5d9.jpg";
 

@@ -692,8 +692,8 @@ export const PhotoGridEnhance = React.memo(
         setTimeout(() => {
           try {
             scrollViewportRef.current?.focus();
-          } catch (e) {
-            /* ignore */
+          } catch {
+            /* 忽略 focus 抛异常（元素已卸载等） */
           }
         }, 0);
       },
@@ -837,8 +837,8 @@ export const PhotoGridEnhance = React.memo(
           setTimeout(() => {
             try {
               scrollElement.focus();
-            } catch (e) {
-              /* ignore */
+            } catch {
+              /* 忽略 focus 抛异常（元素已卸载等） */
             }
           }, 120); // 确保键盘焦点在 scroll 容器
         }
@@ -860,12 +860,6 @@ export const PhotoGridEnhance = React.memo(
         setContextMenu({ visible: true, x: e.clientX, y: e.clientY, photo }); // 显示菜单
       },
       [selectByPath],
-    );
-
-    // 获取所有照片列表（平铺或分组合并）
-    const allPhotos = useMemo(
-      () => (isGroupMode ? groupedPhotos.flat() : photos),
-      [isGroupMode, groupedPhotos, photos],
     );
 
     return (
@@ -1006,7 +1000,7 @@ export const PhotoGridEnhance = React.memo(
             if (!open) fnCloseInfoDialog();
           }}
           photo={objInfoPhoto}
-          metadata={objInfoMetadata as any}
+          metadata={objInfoMetadata}
         />
       </>
     );

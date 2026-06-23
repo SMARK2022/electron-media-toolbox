@@ -1,14 +1,9 @@
 // preload/window-context.ts
-import * as fs from "fs";
-import * as path from "path";
 import {
   WIN_CLOSE_CHANNEL,
   WIN_MAXIMIZE_CHANNEL,
   WIN_MINIMIZE_CHANNEL,
 } from "./window-channels";
-
-// 获取当前工作目录，即项目根目录（可按需使用）
-const appRoot = process.cwd();
 
 /**
  * 在 preload 脚本中调用，用于通过 contextBridge 向渲染进程暴露：
@@ -67,14 +62,15 @@ export function exposeWindowContext() {
         }
       }
 
-      // 2) 兼容旧版 Electron：File.path 扩展属性
-      const anyFile = file as any;
+      // 2) 兼容旧版 Electron：File.path 扩展属性（非标准属性，TS 类型未声明）
+      // 用最小结构类型代替 any，仅访问 path 字段
+      const legacyFile = file as { path?: string };
       if (
-        anyFile &&
-        typeof anyFile.path === "string" &&
-        anyFile.path.length > 0
+        legacyFile &&
+        typeof legacyFile.path === "string" &&
+        legacyFile.path.length > 0
       ) {
-        return anyFile.path;
+        return legacyFile.path;
       }
 
       // 3) 全部失败：返回空字符串，由前端降级处理
@@ -116,12 +112,14 @@ export function exposeWindowContext() {
   /**
    * 提供安全的数据库操作 API（通过 IPC 与主进程通信）
    */
+  // IPC 跨进程参数天然是 unknown，渲染层调用方自行保证 SQL 参数合法性
+  // params 既可能是单个对象也可能是数组，用 unknown 兼容两种调用方式
   contextBridge.exposeInMainWorld("ElectronDB", {
-    run: (sql: string, params: any) =>
+    run: (sql: string, params: unknown) =>
       ipcRenderer.invoke("db-run", sql, params),
-    get: (sql: string, params: any) =>
+    get: (sql: string, params: unknown) =>
       ipcRenderer.invoke("db-get", sql, params),
-    all: (sql: string, params: any) =>
+    all: (sql: string, params: unknown) =>
       ipcRenderer.invoke("db-all", sql, params),
     exec: (sql: string) => ipcRenderer.invoke("db-exec", sql),
     getDbPath: () => ipcRenderer.invoke("db-get-path"),

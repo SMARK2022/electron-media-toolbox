@@ -9,6 +9,7 @@ import * as fs from "fs";
 import path from "path";
 import * as zlib from "zlib";
 import { initializeLogger, closeLogger } from "./lib/logger";
+import { toErrMsg } from "./lib/error-utils";
 import { spawn, type ChildProcess } from "child_process";
 import * as http from "http"; // 新增：用于调用后端 /shutdown
 import { LruBufferCache } from "./helpers/cache/lru-buffer-cache";
@@ -261,7 +262,7 @@ function stopPythonBackend() {
 
     if (process.platform === "win32") {
       // 3) Windows 兜底：不带 /F，只发送正常关闭信号，让系统尽量优雅结束进程
-      const { spawn } = require("child_process");
+      // spawn 已在文件顶部 import，无需惰性 require
       const child = spawn("taskkill", ["/IM", "web_api.exe", "/T"], {
         stdio: "ignore",
         windowsHide: true,
@@ -339,7 +340,8 @@ function createWindow() {
 
     const cached = localResourceCache.get(cacheKey);
     if (cached) {
-      return new Response(cached.data as any, {
+      // Buffer/Uint8Array 作为 Response body 需 BodyInit 类型断言
+      return new Response(cached.data as BodyInit, {
         headers: { "Content-Type": cached.mimeType },
       });
     }
@@ -356,12 +358,12 @@ function createWindow() {
         });
       }
 
-      // Buffer -> Response 的类型不总是能被 TS 精确推断，使用 as any 以兼容运行时 API
-      return new Response(data as any, {
+      // Buffer 是 Uint8Array 子类，可作为 BodyInit 传给 Response
+      return new Response(data as BodyInit, {
         headers: { "Content-Type": mimeType },
       });
-    } catch (error: any) {
-      console.error(`Failed to read file: ${error.message as string}`);
+    } catch (error: unknown) {
+      console.error(`Failed to read file: ${toErrMsg(error)}`);
       return new Response(null, { status: 500 });
     }
   });
@@ -378,7 +380,10 @@ function createWindow() {
     const normalizedPath = fullPath.replace(/\\/g, "/").toLowerCase();
 
     // 计算 CRC32 哈希值（用于缩略图缓存命名）
-    const crc32 = (zlib as any).crc32(Buffer.from(normalizedPath, "utf-8"));
+    // zlib.crc32 在 Node 18+ 存在但 @types/node 较旧版本可能未声明，用类型断言兼容
+    const crc32 = (zlib as { crc32: (buf: Buffer) => number }).crc32(
+      Buffer.from(normalizedPath, "utf-8"),
+    );
     const crc32Hex = crc32.toString(16).padStart(8, "0");
 
     const cacheFolderPath = path.join(appRoot, ".cache/.thumbs");
@@ -386,9 +391,9 @@ function createWindow() {
 
     try {
       const data = await fs.promises.readFile(thumbnailPath);
-      return new Response(data as any);
-    } catch (error) {
-      console.error(`Failed to read thumbnail: ${(error as Error).message}`);
+      return new Response(data as BodyInit);
+    } catch (error: unknown) {
+      console.error(`Failed to read thumbnail: ${toErrMsg(error)}`);
       return new Response(null, { status: 500 });
     }
   });

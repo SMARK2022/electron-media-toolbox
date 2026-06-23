@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import ImagePreview, { PreviewFocusRegion } from "@/components/ImagePreview";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Activity,
   Calendar,
@@ -179,8 +179,9 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(
       try {
         const parsed = JSON.parse(faceData);
         if (!Array.isArray(parsed?.faces)) return [];
+        // faceData 是 JSON 字符串，解析后 faces 数组的元素结构松散，用 Record 收纳
         return parsed.faces
-          .map((item: any) => ({
+          .map((item: Record<string, unknown>) => ({
             bbox: item?.bbox as [number, number, number, number],
             score: typeof item?.score === "number" ? item.score : undefined,
             eye_open:

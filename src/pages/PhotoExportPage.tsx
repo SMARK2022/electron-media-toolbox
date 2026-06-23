@@ -17,18 +17,11 @@ import { Input } from "@/components/ui/input";
 import {
   getPhotosExtendByCriteria,
   PhotoExtend,
-  Photo,
 } from "@/helpers/ipc/database/db";
 import { copyPhotos, folderExists } from "@/lib/system";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
-import {
-  Save,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Image as ImageIcon,
-} from "lucide-react";
+import { Save, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { usePhotoFilterStore } from "@/helpers/store/usePhotoFilterStore";
 
 export default function PhotoExportSubpage() {

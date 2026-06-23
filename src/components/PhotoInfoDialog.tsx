@@ -34,7 +34,8 @@ interface PhotoInfoDialogProps {
   /** 当前预览的照片基本信息（仅用于显示路径等） */
   photo: { filePath?: string } | null;
   /** 主进程返回的 metadata 对象 */
-  metadata: Record<string, any> | null;
+  // EXIF/文件元数据是异构键值对（数字/字符串/日期/null），用 unknown 收纳输入边界
+  metadata: Record<string, unknown> | null;
 }
 
 // 简单的字段名本地翻译映射（仅在中文环境下使用）
@@ -229,11 +230,14 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
   );
 
   // 扁平化 metadata，将 exif 展开到同一层
+  // 显示层数据异构（数字/字符串/日期/null），需 any 语义以兼容 .toFixed / Number / JSX 渲染
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const flatData: Record<string, any> = useMemo(() => {
     if (!metadata) return {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const base: Record<string, any> = { ...metadata };
     if (metadata.exif && typeof metadata.exif === "object") {
-      Object.assign(base, metadata.exif);
+      Object.assign(base, metadata.exif as Record<string, unknown>);
       delete base.exif;
     }
     return base;

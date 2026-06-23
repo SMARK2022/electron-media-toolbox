@@ -26,8 +26,11 @@ import LangToggle from "@/components/LangToggle";
 
 // 和 GithubVersionChecker 保持一致的版本获取逻辑
 import packageJson from "@/../package.json";
+import { toErrMsg } from "@/lib/error-utils";
 
-const CURRENT_VERSION: string = (packageJson as any).version ?? "0.0.0";
+// package.json 经 resolveJsonModule 导入，version 字段由项目保证存在
+const CURRENT_VERSION: string =
+  (packageJson as { version?: string }).version ?? "0.0.0";
 
 const REPO_OWNER = "SMARK2022";
 const REPO_NAME = "electron-media-toolbox";
@@ -168,7 +171,10 @@ export function GithubUpdateNotifier({ className }: { className?: string }) {
   const [dialogOpen, setDialogOpen] = React.useState(false);
 
   const openExternal = React.useCallback((url: string) => {
-    const anyWindow = window as any;
+    const anyWindow = window as {
+      ElectronAPI?: { openExternal?: (url: string) => Promise<void> };
+      electron?: { shell?: { openExternal?: (url: string) => Promise<void> } };
+    };
     try {
       if (anyWindow.ElectronAPI?.openExternal) {
         anyWindow.ElectronAPI.openExternal(url);
@@ -199,7 +205,15 @@ export function GithubUpdateNotifier({ className }: { className?: string }) {
           throw new Error(`GitHub API error: ${res.status}`);
         }
 
-        const data: any = await res.json();
+        // GitHub Releases API 返回的 JSON，取版本/正文/发布时间字段
+        const data: {
+          tag_name?: string;
+          name?: string;
+          id?: number;
+          body?: string;
+          published_at?: string;
+          created_at?: string;
+        } = await res.json();
         const remoteVersion: string =
           data.tag_name || data.name || data.id?.toString() || "";
         const releaseBody: string = data.body || "";
@@ -235,12 +249,13 @@ export function GithubUpdateNotifier({ className }: { className?: string }) {
 
         // 有新版本，且用户没忽略过 -> 弹窗提醒
         setDialogOpen(true);
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (cancelled) return;
         console.error("[GithubUpdateNotifier] check error:", err);
         setState({
           status: "error",
-          errorMessage: err?.message ?? "Unknown error",
+          // 面向用户的错误文案，兜底 Unknown error 避免 toErrMsg 返回 "null" 等
+          errorMessage: toErrMsg(err) || "Unknown error",
         });
       }
     }

@@ -9,7 +9,7 @@ import {
   RefreshCw,
   Server,
 } from "lucide-react";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 const MAX_ATTEMPTS = 10; // 最多尝试 10 次（约 10 秒）

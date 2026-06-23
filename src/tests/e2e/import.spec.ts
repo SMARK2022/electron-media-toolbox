@@ -4,7 +4,7 @@
  * 验证：Drawer 交互、文件选择、导入进度、并发处理
  */
 
-import { test, expect, Page, ElectronApplication } from "@playwright/test";
+import { test, expect, Page } from "@playwright/test";
 import {
   launchApp,
   closeApp,
@@ -20,11 +20,10 @@ import {
   assertPageHealthy,
 } from "./helpers/electronApp";
 
-let app: ElectronApplication;
 let page: Page;
 
 test.beforeAll(async () => {
-  ({ app, page } = await launchApp());
+  ({ page } = await launchApp());
 });
 test.afterAll(async () => {
   await closeApp();

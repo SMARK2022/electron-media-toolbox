@@ -6,7 +6,6 @@ import {
 } from "@/components/ui/hover-card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import * as React from "react";
 
 interface CustomSliderProps {
   label: string;

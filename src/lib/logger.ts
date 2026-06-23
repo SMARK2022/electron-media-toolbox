@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { app } from "electron";
+import { toErrMsg } from "@/lib/error-utils";
 
 let logFilePath: string = "";
 let logStream: fs.WriteStream | null = null;
@@ -33,13 +34,13 @@ export const initializeLogger = () => {
     const startMsg = `\n${"=".repeat(50)}\nApplication started at ${new Date().toISOString()}\n${"=".repeat(50)}\n`;
     logStream.write(startMsg);
 
-    // 重定向 console 方法
+    // 重定向 console 方法：参数类型收敛为 unknown，内部统一转字符串
     const originalLog = console.log;
     const originalError = console.error;
     const originalWarn = console.warn;
     const originalInfo = console.info;
 
-    console.log = (...args: any[]) => {
+    console.log = (...args: unknown[]) => {
       const message = args
         .map((arg) => {
           if (typeof arg === "object") {
@@ -54,7 +55,7 @@ export const initializeLogger = () => {
       originalLog(...args);
     };
 
-    console.error = (...args: any[]) => {
+    console.error = (...args: unknown[]) => {
       const message = args
         .map((arg) => {
           if (typeof arg === "object") {
@@ -69,7 +70,7 @@ export const initializeLogger = () => {
       originalError(...args);
     };
 
-    console.warn = (...args: any[]) => {
+    console.warn = (...args: unknown[]) => {
       const message = args
         .map((arg) => {
           if (typeof arg === "object") {
@@ -84,7 +85,7 @@ export const initializeLogger = () => {
       originalWarn(...args);
     };
 
-    console.info = (...args: any[]) => {
+    console.info = (...args: unknown[]) => {
       const message = args
         .map((arg) => {
           if (typeof arg === "object") {
@@ -101,8 +102,9 @@ export const initializeLogger = () => {
 
     console.log(`✓ Logger initialized, log file: ${logFilePath}`);
     return logFilePath;
-  } catch (error: any) {
-    console.error(`✗ Failed to initialize logger: ${error.message}`);
+  } catch (error: unknown) {
+    // logger 初始化失败时不能再依赖重定向后的 console，直接用原始 error 信息
+    console.error(`✗ Failed to initialize logger: ${toErrMsg(error)}`);
     return null;
   }
 };

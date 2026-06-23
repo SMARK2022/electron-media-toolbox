@@ -227,8 +227,9 @@ export default function PhotoFilterSubpage() {
   );
 
   // ========== PhotoFilterEffects 逻辑直接嵌入 ==========
-  const fnSetCurrentPage = usePhotoFilterStore((s: any) => s.fnSetCurrentPage);
-  const modeGalleryView = usePhotoFilterStore((s: any) => s.modeGalleryView);
+  // store selector 的 s 类型由 zustand 推断，无需显式 any
+  const fnSetCurrentPage = usePhotoFilterStore((s) => s.fnSetCurrentPage);
+  const modeGalleryView = usePhotoFilterStore((s) => s.modeGalleryView);
 
   // 进入页面时设置标识并刷新完整照片列表（恢复导出页面可能改变的状态）
   React.useEffect(() => {
@@ -294,7 +295,11 @@ export default function PhotoFilterSubpage() {
   // 通用清理函数：移除已绑定的事件监听器
   const cleanupDragHandlers = React.useCallback(
     (
+      // 事件处理函数引用：mouse/touch 的 handler 签名不同（MouseEvent/TouchEvent/无参），
+      // removeEventListener 运行时接受任意函数，这里用最小断言类型兼容
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       moveRef: React.MutableRefObject<any>,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       endRef: React.MutableRefObject<any>,
       eventType: "mouse" | "touch",
     ) => {

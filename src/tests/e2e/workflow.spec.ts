@@ -5,7 +5,7 @@
  */
 
 import fs from "node:fs";
-import { test, expect, Page, ElectronApplication } from "@playwright/test";
+import { test, expect, Page } from "@playwright/test";
 import {
   launchApp,
   closeApp,
@@ -26,11 +26,10 @@ import {
   EXPORT_TEST_DIR,
 } from "./helpers/electronApp";
 
-let app: ElectronApplication;
 let page: Page;
 
 test.beforeAll(async () => {
-  ({ app, page } = await launchApp());
+  ({ page } = await launchApp());
 });
 test.afterAll(async () => {
   await closeApp();

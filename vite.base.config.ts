@@ -8,6 +8,9 @@ interface VitePluginRuntimeKeys {
   VITE_NAME: string;
 }
 
+// declare global 扩展 NodeJS.Process 是 Vite 插件注入运行时键的必要手段，
+// no-namespace 规则对 declare global 中的 namespace 扩展不适用，用块级豁免
+/* eslint-disable @typescript-eslint/no-namespace */
 declare global {
   namespace NodeJS {
     interface Process {
@@ -15,6 +18,7 @@ declare global {
     }
   }
 }
+/* eslint-enable @typescript-eslint/no-namespace */
 
 export const builtins = [
   "electron",
@@ -72,8 +76,15 @@ export function getDefineKeys(
   }, define);
 }
 
-export function getBuildDefine(env: ConfigEnv): Record<string, any> {
-  const { command, forgeConfig } = env as any;
+// Vite define 值为字符串化结果（JSON.stringify），用 Record<string, string | undefined> 代替 any
+export function getBuildDefine(
+  env: ConfigEnv,
+): Record<string, string | undefined> {
+  // ConfigEnv 的 forgeConfig 字段类型不完整，用最小结构断言代替 any
+  const { command, forgeConfig } = env as {
+    command: string;
+    forgeConfig: { renderer: { name: string | null }[] };
+  };
   const names: string[] = forgeConfig.renderer
     .filter(({ name }: { name: string | null }) => name != null)
     .map(({ name }: { name: string }) => name);
@@ -90,7 +101,7 @@ export function getBuildDefine(env: ConfigEnv): Record<string, any> {
       };
       return { ...acc, ...def };
     },
-    {} as Record<string, any>,
+    {} as Record<string, string | undefined>,
   );
 
   return define;

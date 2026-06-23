@@ -95,7 +95,7 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = React.memo(
             if (!open) fnCloseInfoDialog();
           }}
           photo={objInfoPhoto}
-          metadata={objInfoMetadata as any}
+          metadata={objInfoMetadata}
         />
       </Tabs>
     );

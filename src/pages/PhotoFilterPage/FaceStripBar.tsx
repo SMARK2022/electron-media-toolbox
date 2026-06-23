@@ -88,9 +88,11 @@ const FaceThumbnail: React.FC<FaceThumbnailProps> = ({
 
     const draw = async () => {
       try {
-        // @ts-ignore
+        // img.decode() 异步解码图片，失败时回退到直接绘制
         if (img.decode) await img.decode();
-      } catch {}
+      } catch {
+        // decode 失败（图片损坏等）忽略，后续 naturalWidth 检查会兜底
+      }
       if (cancelled) return;
 
       const imgW = img.naturalWidth || img.width;
@@ -239,10 +241,11 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
   helperLabel,
   isTrackingMode,
 }) => {
-  // 条件返回必须在所有 hooks 之前
-  if (!faces.length || !imageSrc) return null;
-
+  // Hooks 必须无条件调用（Rules of Hooks），条件返回移到 hooks 之后
   const { t } = useTranslation();
+
+  // 空数据标记：faces 为空或无图片源时不渲染，但 hooks 已执行完毕
+  const isReady = faces.length > 0 && !!imageSrc;
 
   const {
     closed: closedCount,
@@ -296,6 +299,9 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
       }
     }
   }, [activeIndex]);
+
+  // 所有 hooks 调用完毕后才做条件返回，确保 Rules of Hooks 合规
+  if (!isReady) return null;
 
   return (
     <div

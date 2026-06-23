@@ -1,5 +1,5 @@
 // src/renderer/pages/AboutPage.tsx
-import React from "react";
+
 import { Github, Mail, User, ExternalLink, MessageCircle } from "lucide-react";
 
 import {
@@ -19,7 +19,9 @@ import { GithubVersionChecker } from "@/components/GithubVersionChecker";
 // ---- 否则回退到浏览器的 window.open
 const openExternal = (url: string) => {
   try {
-    const anyWindow = window as any;
+    const anyWindow = window as {
+      ElectronAPI?: { openExternal?: (url: string) => void };
+    };
     if (
       anyWindow.ElectronAPI &&
       typeof anyWindow.ElectronAPI.openExternal === "function"

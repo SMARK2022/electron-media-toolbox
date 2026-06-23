@@ -11,8 +11,11 @@ import { useTranslation } from "react-i18next";
 // 在 Electron 中可在 preload 中设置 window.__APP_VERSION__ = app.getVersion()
 // 在 Next.js 或其他构建工具中可通过环境变量 NEXT_PUBLIC_APP_VERSION 注入
 import packageJson from "@/../package.json";
+import { toErrMsg } from "@/lib/error-utils";
 
-const CURRENT_VERSION: string = (packageJson as any).version ?? "0.0.0";
+// package.json 经 resolveJsonModule 导入，version 字段由项目保证存在
+const CURRENT_VERSION: string =
+  (packageJson as { version?: string }).version ?? "0.0.0";
 
 const REPO_OWNER = "SMARK2022";
 const REPO_NAME = "electron-media-toolbox";
@@ -51,7 +54,10 @@ export function GithubVersionChecker({ className }: { className?: string }) {
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   const openExternal = React.useCallback((url: string) => {
-    const anyWindow = window as any;
+    const anyWindow = window as {
+      ElectronAPI?: { openExternal?: (url: string) => Promise<void> };
+      electron?: { shell?: { openExternal?: (url: string) => Promise<void> } };
+    };
     try {
       if (anyWindow.ElectronAPI?.openExternal) {
         anyWindow.ElectronAPI.openExternal(url);
@@ -83,7 +89,9 @@ export function GithubVersionChecker({ className }: { className?: string }) {
           throw new Error(`GitHub API error: ${res.status}`);
         }
 
-        const data: any = await res.json();
+        // GitHub Releases API 返回的 JSON，仅需 tag_name / name / id 字段
+        const data: { tag_name?: string; name?: string; id?: number } =
+          await res.json();
         const remoteVersion: string =
           data.tag_name || data.name || data.id?.toString() || "";
 
@@ -97,10 +105,11 @@ export function GithubVersionChecker({ className }: { className?: string }) {
         } else {
           setStatus("update-available");
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (cancelled) return;
         console.error("Failed to check GitHub releases:", err);
-        setErrorMessage(err?.message ?? "Unknown error");
+        // 面向用户的错误文案，兜底 Unknown error 避免 toErrMsg 返回 "null" 等
+        setErrorMessage(toErrMsg(err) || "Unknown error");
         setStatus("error");
       }
     }

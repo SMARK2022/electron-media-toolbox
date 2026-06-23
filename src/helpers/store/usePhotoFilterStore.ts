@@ -2,9 +2,7 @@
 import {
   Photo,
   PhotoExtend,
-  getPhotosExtendByCriteria,
   getPhotosExtendByPhotos,
-  initializeDatabase,
   updatePhotoEnabledStatus,
   deletePhotoByPath,
 } from "@/helpers/ipc/database/db";
@@ -98,10 +96,10 @@ interface PhotoFilterState {
   // 弹窗元数据详情弹窗状态
   boolShowInfoDialog: boolean;
   objInfoPhoto: Photo | null;
-  objInfoMetadata: Record<string, any> | null;
+  objInfoMetadata: Record<string, unknown> | null;
 
   // 弹窗EXIF 元数据缓存（filePath -> metadata）
-  mapExifMetadataCache: Map<string, Record<string, any>>;
+  mapExifMetadataCache: Map<string, Record<string, unknown>>;
 
   // 弹窗右键菜单配置与行为?
   contextMenuGroups: {
@@ -143,11 +141,13 @@ interface PhotoFilterState {
   fnCloseDeleteConfirm: () => void;
   fnSetSkipDeleteConfirm: (skip: boolean) => void;
   fnExecuteDeleteFile: (photo: Photo) => Promise<boolean>; // 弹窗实际执行删除（不弹窗确认）
-  fnOpenInfoDialog: (photo: Photo, metadata: Record<string, any>) => void;
+  fnOpenInfoDialog: (photo: Photo, metadata: Record<string, unknown>) => void;
   fnCloseInfoDialog: () => void;
 
   // 弹窗EXIF 元数据获取（带缓存）
-  fnGetPhotoMetadata: (filePath: string) => Promise<Record<string, any> | null>;
+  fnGetPhotoMetadata: (
+    filePath: string,
+  ) => Promise<Record<string, unknown> | null>;
   fnClearMetadataCache: () => void;
 
   // 弹窗业务操作
@@ -390,7 +390,14 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
   fnExecuteDeleteFile: async (photo) => {
     const filePath = photo.filePath.replace(/\\/g, "/"); // 弹窗统一斜杠格式
     try {
-      const res = await (window as any)?.ElectronAPI?.deleteFile?.(filePath);
+      // 弹窗通过 ElectronAPI.deleteFile 删除磁盘文件
+      const res = await (
+        window as {
+          ElectronAPI?: {
+            deleteFile?: (p: string) => Promise<{ success: boolean }>;
+          };
+        }
+      )?.ElectronAPI?.deleteFile?.(filePath);
       if (res?.success) {
         await deletePhotoByPath(filePath).catch(() => {}); // 弹窗静默删除数据库记录
         set((s) => ({
@@ -438,18 +445,23 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     if (cached) return cached;
 
     try {
-      const api = (window as any)?.ElectronAPI;
-      if (!api?.getPhotoMetadata) return null; // 弹窗API 不可用
+      const api = window as {
+        ElectronAPI?: { getPhotoMetadata?: (p: string) => Promise<unknown> };
+      };
+      if (!api.ElectronAPI?.getPhotoMetadata) return null; // 弹窗API 不可用
 
-      const res = await api.getPhotoMetadata(filePath);
+      const res = (await api.ElectronAPI?.getPhotoMetadata(filePath)) as
+        | { success?: boolean; data?: Record<string, unknown> }
+        | undefined;
       if (res?.success && res.data) {
+        const data = res.data; // 提取到闭包外，确保 set 回调内类型不丢失
         // 弹窗使用 set 的状态更新函数确保原子化操作，避免并发竞态条件
         set((state) => {
           const newCache = new Map(state.mapExifMetadataCache);
-          newCache.set(filePath, res.data);
+          newCache.set(filePath, data);
           return { mapExifMetadataCache: newCache };
         });
-        return res.data;
+        return data;
       }
       return null;
     } catch (err) {
@@ -593,7 +605,13 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
           const rawPath = photo.filePath;
           if (!rawPath) return;
 
-          const anyWindow = window as any;
+          // 弹窗通过 ElectronAPI 打开本地文件或外部 URL
+          const anyWindow = window as {
+            ElectronAPI?: {
+              openPath?: (p: string) => Promise<void>;
+              openExternal?: (url: string) => Promise<void>;
+            };
+          };
 
           // 弹窗1. 如果 preload 暴露了专门的 openPath，则优先直接使用 ElectronAPI.openPath 打开本地文件
           if (anyWindow?.ElectronAPI?.openPath) {
@@ -612,7 +630,11 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
       }
       case "reveal-in-folder": {
         try {
-          await (window as any)?.ElectronAPI?.revealInFolder?.(photo.filePath);
+          await (
+            window as {
+              ElectronAPI?: { revealInFolder?: (p: string) => Promise<void> };
+            }
+          )?.ElectronAPI?.revealInFolder?.(photo.filePath);
         } catch (error) {
           console.error("[contextMenu] reveal-in-folder failed:", error);
         }

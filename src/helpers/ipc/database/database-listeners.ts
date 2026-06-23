@@ -2,9 +2,11 @@ import { ipcMain } from "electron";
 import * as fs from "fs";
 import * as path from "path";
 import Database from "better-sqlite3";
+import { toErrMsg } from "@/lib/error-utils";
 
-// 数据库相关变量
-let db: any = null;
+// better-sqlite3 的 Database 实例；用 unknown 收窄前先持有原始引用，
+// 避免 db: any 散落到各 handler 内部
+let db: Database.Database | null = null;
 let cacheDir = "";
 let dbPath = "";
 let thumbsDir = "";
@@ -49,17 +51,18 @@ export const initializeDatabase = () => {
       for (const col of columns) {
         try {
           db.exec(`ALTER TABLE ${table} ADD COLUMN ${col};`);
-        } catch (e: any) {
-          if (!String(e?.message ?? "").includes("duplicate column name")) {
-            console.warn(`alter ${table} add ${col} failed:`, e?.message ?? e);
+        } catch (e: unknown) {
+          // 首次建表后再次 ADD COLUMN 会报 duplicate column name，属预期可忽略
+          if (!toErrMsg(e).includes("duplicate column name")) {
+            console.warn(`alter ${table} add ${col} failed:`, toErrMsg(e));
           }
         }
       }
     }
 
     console.info(`Database initialized: ${dbPath}`);
-  } catch (error: any) {
-    console.error(`Failed to initialize database: ${error?.message ?? error}`);
+  } catch (error: unknown) {
+    console.error(`Failed to initialize database: ${toErrMsg(error)}`);
   }
 };
 
@@ -72,32 +75,33 @@ export const addDatabaseEventListeners = () => {
       console.warn("Database not available; IPC handlers will return null");
     }
 
-    ipcMain.handle("db-run", (_event, sql: string, params: any) => {
+    // IPC 跨进程参数天然是 unknown，SQLite 绑定参数接受 unknown[]（better-sqlite3 BindParameters）
+    ipcMain.handle("db-run", (_event, sql: string, params: unknown) => {
       try {
         if (!db) return null;
         return db.prepare(sql).run(params);
-      } catch (error: any) {
-        console.error(`db-run error: ${error?.message ?? error}`);
+      } catch (error: unknown) {
+        console.error(`db-run error: ${toErrMsg(error)}`);
         throw error;
       }
     });
 
-    ipcMain.handle("db-get", (_event, sql: string, params: any) => {
+    ipcMain.handle("db-get", (_event, sql: string, params: unknown) => {
       try {
         if (!db) return null;
         return db.prepare(sql).get(params);
-      } catch (error: any) {
-        console.error(`db-get error: ${error?.message ?? error}`);
+      } catch (error: unknown) {
+        console.error(`db-get error: ${toErrMsg(error)}`);
         throw error;
       }
     });
 
-    ipcMain.handle("db-all", (_event, sql: string, params: any) => {
+    ipcMain.handle("db-all", (_event, sql: string, params: unknown) => {
       try {
         if (!db) return null;
         return db.prepare(sql).all(params);
-      } catch (error: any) {
-        console.error(`db-all error: ${error?.message ?? error}`);
+      } catch (error: unknown) {
+        console.error(`db-all error: ${toErrMsg(error)}`);
         throw error;
       }
     });
@@ -106,8 +110,8 @@ export const addDatabaseEventListeners = () => {
       try {
         if (!db) return null;
         return db.exec(sql);
-      } catch (error: any) {
-        console.error(`db-exec error: ${error?.message ?? error}`);
+      } catch (error: unknown) {
+        console.error(`db-exec error: ${toErrMsg(error)}`);
         throw error;
       }
     });
@@ -116,9 +120,9 @@ export const addDatabaseEventListeners = () => {
     ipcMain.handle("db-get-thumbs-cache-dir", () => thumbsDir);
 
     console.info("Database IPC handlers registered");
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(
-      `Failed to register database IPC handlers: ${error?.message ?? error}`,
+      `Failed to register database IPC handlers: ${toErrMsg(error)}`,
     );
   }
 };
@@ -131,7 +135,7 @@ export const closeDatabase = () => {
       db = null;
       console.info("Database closed");
     }
-  } catch (error: any) {
-    console.error(`Failed to close database: ${error?.message ?? error}`);
+  } catch (error: unknown) {
+    console.error(`Failed to close database: ${toErrMsg(error)}`);
   }
 };

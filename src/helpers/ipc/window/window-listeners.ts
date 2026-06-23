@@ -4,6 +4,7 @@ import { BrowserWindow, clipboard, ipcMain, protocol, shell } from "electron";
 import { exec } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { toErrMsg } from "@/lib/error-utils";
 import {
   WIN_CLOSE_CHANNEL,
   WIN_MAXIMIZE_CHANNEL,
@@ -11,6 +12,8 @@ import {
 } from "./window-channels";
 
 // 引入 exif-parser 用于解析 EXIF 元数据
+// exif-parser 无 ESM 默认导出且类型声明为 declare module，保留 require 语义避免运行时回归
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const exifParser = require("exif-parser");
 
 // 注册自定义协议的 scheme，使其具备安全特性并支持 fetch 等
@@ -72,8 +75,8 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
     try {
       const content = fs.readFileSync(filePath, "utf-8");
       return { success: true, content };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      return { success: false, error: toErrMsg(error) };
     }
   });
 
@@ -126,9 +129,9 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
     try {
       await shell.openExternal(url);
       return { success: true };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("[open-external] Error:", error);
-      return { success: false, error: error.message };
+      return { success: false, error: toErrMsg(error) };
     }
   });
 
@@ -151,9 +154,9 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
       }
 
       return { success: true };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("[open-path] Exception:", error);
-      return { success: false, error: error.message };
+      return { success: false, error: toErrMsg(error) };
     }
   });
 
@@ -165,9 +168,9 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
       // shell.showItemInFolder 会在系统文件管理器中打开并选中文件
       shell.showItemInFolder(filePath);
       return { success: true };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("[reveal-in-folder] Error:", error);
-      return { success: false, error: error.message };
+      return { success: false, error: toErrMsg(error) };
     }
   });
 
@@ -181,9 +184,9 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
         fs.unlinkSync(filePath);
       }
       return { success: true };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("[delete-file] Error:", error);
-      return { success: false, error: error.message };
+      return { success: false, error: toErrMsg(error) };
     }
   });
 
@@ -234,7 +237,8 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
         ctimeMs: stat.ctimeMs,
         mtime: stat.mtime,
         ctime: stat.ctime,
-      } as any;
+        // exif-parser 返回的 tags 为松散键值对，用 Record 收纳避免 any
+      } as Record<string, unknown>;
 
       try {
         const buffer = fs.readFileSync(filePath);
@@ -264,18 +268,23 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
           "Interop",
         ]);
 
+        // exif-parser 的 tags 缺乏精确类型声明，统一按 Record<string, unknown> 访问
+        const exifTags = tags as Record<string, unknown>;
+
         // 衍生出一些更易读的字段
+        // 用 || 而非 ??：EXIF 时间戳为 0（epoch）时视为无效，回退到 CreateDate
         const captureTime =
-          (tags as any).DateTimeOriginal || (tags as any).CreateDate || null;
-        const cameraModel = (tags as any).Model || "Unknown Camera";
+          exifTags.DateTimeOriginal || exifTags.CreateDate || null;
+        const cameraModel =
+          (exifTags.Model as string | undefined) || "Unknown Camera";
 
         // 清理和过滤 EXIF 数据
-        const cleanedExifData: Record<string, any> = {};
+        const cleanedExifData: Record<string, unknown> = {};
         let fieldCount = 0;
         const MAX_FIELDS = 200;
         const MAX_STRING_LENGTH = 500;
 
-        for (const [key, value] of Object.entries(tags as any)) {
+        for (const [key, value] of Object.entries(exifTags)) {
           // 如果字段数已达上限，停止添加
           if (fieldCount >= MAX_FIELDS) break;
 
@@ -330,14 +339,14 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
         };
 
         return { success: true, data };
-      } catch (exifError: any) {
+      } catch (exifError: unknown) {
         console.error("[get-photo-metadata] EXIF parse error:", exifError);
         // EXIF 解析失败时，仍然返回基础信息
         return { success: true, data: basic };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("[get-photo-metadata] Error:", error);
-      return { success: false, error: error.message };
+      return { success: false, error: toErrMsg(error) };
     }
   });
 

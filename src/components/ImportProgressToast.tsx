@@ -7,7 +7,7 @@
  * - 订阅 PhotoService 状态变化自动更新
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Loader2,
   CheckCircle2,

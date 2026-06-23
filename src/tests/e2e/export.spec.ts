@@ -5,7 +5,7 @@
  */
 
 import fs from "node:fs";
-import { test, expect, Page, ElectronApplication } from "@playwright/test";
+import { test, expect, Page } from "@playwright/test";
 import {
   launchApp,
   closeApp,
@@ -13,20 +13,19 @@ import {
   SELECTORS,
   setExportPath,
   getExportPathStatus,
-  executeExport,
   closeExportDialog,
   assertPageHealthy,
-  rapidClick,
   waitForExportComplete,
   TEST_IMAGE_COUNT,
   EXPORT_TEST_DIR,
 } from "./helpers/electronApp";
 
-let app: ElectronApplication;
 let page: Page;
 
 test.beforeAll(async () => {
-  ({ app, page } = await launchApp());
+  // launchApp 返回 { app, page }，app 仅持有 ElectronApplication 引用以便
+  // 进程随 afterAll 关闭，这里只需 page 做页面交互
+  ({ page } = await launchApp());
 });
 test.afterAll(async () => {
   await closeApp();

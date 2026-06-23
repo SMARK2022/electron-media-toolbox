@@ -348,7 +348,7 @@ export function updatePhotoExtendByPath(
   updates: { date?: string; fileSize?: number; info?: string },
 ) {
   const setClauses: string[] = [];
-  const params: Record<string, any> = { filePath };
+  const params: Record<string, unknown> = { filePath };
 
   if (updates.date !== undefined) {
     setClauses.push("date = @date");

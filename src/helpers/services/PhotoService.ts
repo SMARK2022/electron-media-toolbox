@@ -395,7 +395,9 @@ class PhotoServiceImpl {
     showDisabledPhotos: boolean;
   }): Promise<boolean> {
     try {
-      const dbPath = await (window as any).ElectronDB?.getDbPath?.();
+      const dbPath = await (
+        window as { ElectronDB?: { getDbPath?: () => Promise<string> } }
+      ).ElectronDB?.getDbPath?.();
       if (!dbPath) {
         console.error("[PhotoService] Failed to get DB path");
         return false;
@@ -544,11 +546,13 @@ class PhotoServiceImpl {
 
       let thumbsPath = "../.cache/.thumbs";
       try {
-        const electronAPI = (window as any)?.ElectronAPI;
-        if (electronAPI?.getThumbsCacheDir)
-          thumbsPath = await electronAPI.getThumbsCacheDir();
-      } catch (e) {
-        /* ignore */
+        const electronAPI = window as {
+          ElectronAPI?: { getThumbsCacheDir?: () => Promise<string> };
+        };
+        if (electronAPI.ElectronAPI?.getThumbsCacheDir)
+          thumbsPath = await electronAPI.ElectronAPI.getThumbsCacheDir();
+      } catch {
+        /* 忽略：getThumbsCacheDir 不可用时走默认路径 */
       }
 
       await fetch(`${SERVER_BASE_URL}/generate_thumbnails`, {
@@ -610,16 +614,23 @@ class PhotoServiceImpl {
             // 异步操作后再次检查任务是否仍然有效
             if (taskId !== this.currentImportTaskId) return;
 
-            const exifData = metadata?.exif ?? null;
+            // metadata.exif 是异构键值对，用最小结构断言访问 EXIF 字段
+            const exifData = (metadata?.exif ?? null) as Record<
+              string,
+              unknown
+            > | null;
 
-            // 解析 EXIF 数据
+            // 解析 EXIF 数据（exifData 字段类型松散，按需 Number 转换）
             const captureTime = exifData?.captureTime
-              ? new Date(exifData.captureTime * 1000).toLocaleString()
+              ? new Date(Number(exifData.captureTime) * 1000).toLocaleString()
               : undefined;
-            const fileSize = exifData?.fileSize ?? undefined;
+            const fileSize =
+              exifData?.fileSize != null
+                ? Number(exifData.fileSize)
+                : undefined;
             const infoStr =
               exifData?.ExposureTime && exifData?.LensModel
-                ? `1/${Math.round(1 / exifData.ExposureTime)} ${exifData.LensModel}`
+                ? `1/${Math.round(1 / Number(exifData.ExposureTime))} ${exifData.LensModel}`
                 : undefined;
 
             // 收集 EXIF 数据到缓存，而不是立即写入

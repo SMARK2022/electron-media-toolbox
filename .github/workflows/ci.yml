@@ -42,9 +42,8 @@ jobs:
           rebuild-native: "false"
 
       - name: Lint (eslint)
-        # eslint 配置此前因缺失 eslint-plugin-react-compiler 无法加载，存量代码累计 ~680 个违规
-        # 暂设为非阻塞（黄牌告警），待批量清理 no-explicit-any / config 文件后改为阻塞门禁
-        continue-on-error: true
+        # 存量违规已全量清理（jsx-runtime 预设 + TS 关闭 prop-types/display-name
+        # + CommonJS 配置补 globals + 源码 any/unused 逐项修复），恢复为阻塞门禁
         run: npm run lint
 
       - name: Typecheck (tsc --noEmit)

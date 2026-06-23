@@ -4,7 +4,7 @@
  * 验证：视图切换、相似度调节、任务提交、照片启用/禁用、分组稳定性
  */
 
-import { test, expect, Page, ElectronApplication } from "@playwright/test";
+import { test, expect, Page } from "@playwright/test";
 import {
   launchApp,
   closeApp,
@@ -12,7 +12,6 @@ import {
   SELECTORS,
   submitDetectionTask,
   waitForTaskIdle,
-  toggleShowDisabled,
   assertPageHealthy,
   rapidClick,
   togglePhotoEnabled,
@@ -21,11 +20,10 @@ import {
   LONG_TIMEOUT,
 } from "./helpers/electronApp";
 
-let app: ElectronApplication;
 let page: Page;
 
 test.beforeAll(async () => {
-  ({ app, page } = await launchApp());
+  ({ page } = await launchApp());
 });
 test.afterAll(async () => {
   await closeApp();

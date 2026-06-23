@@ -65,8 +65,8 @@ async function copyPhotos(
             rawFilePath,
             path.join(targetFolder, path.basename(rawFilePath)),
           );
-        } catch (error) {
-          // Ignore errors for missing RAW files
+        } catch {
+          // 忽略 RAW 副本缺失，主文件已复制即可
         }
       });
       await Promise.all(rawCopyPromises);

@@ -3,7 +3,7 @@ import {
   maximizeWindow,
   minimizeWindow,
 } from "@/helpers/window_helpers";
-import React, { type ReactNode } from "react";
+import { type ReactNode } from "react";
 
 interface DragWindowRegionProps {
   title?: ReactNode;

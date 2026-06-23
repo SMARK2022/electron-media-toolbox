@@ -50,15 +50,19 @@ function isValidImageFile(file: File): boolean {
 /** 尝试从 ElectronAPI / 旧版 file.path 获取绝对路径，失败返回空字符串 */
 function tryGetFullPath(file: File): string {
   try {
-    const electronAPI = (window as any)?.ElectronAPI;
-    if (electronAPI?.getPathForFile) {
-      const p = electronAPI.getPathForFile(file);
+    // Electron 32+ 推荐方式：webUtils.getPathForFile
+    const electronAPI = window as {
+      ElectronAPI?: { getPathForFile?: (file: File) => string };
+    };
+    if (electronAPI.ElectronAPI?.getPathForFile) {
+      const p = electronAPI.ElectronAPI.getPathForFile(file);
       if (typeof p === "string" && p.length > 0) return p;
     }
 
-    const anyFile = file as any;
-    if (anyFile?.path && typeof anyFile.path === "string") {
-      return anyFile.path;
+    // 兼容旧版 Electron：File.path 扩展属性（非标准，用最小结构类型断言）
+    const legacyFile = file as { path?: string };
+    if (legacyFile?.path && typeof legacyFile.path === "string") {
+      return legacyFile.path;
     }
   } catch (error) {
     console.warn("[tryGetFullPath] error:", error);
@@ -194,7 +198,7 @@ function FileImportDrawer({ onImported }: FileImportDrawerProps) {
   const handleSubmit = async () => {
     if (!droppedFiles.length || isProcessing) return;
 
-    let normalizedFolder = normalizePath(folderName).trim();
+    const normalizedFolder = normalizePath(folderName).trim();
 
     // 仅在需要输入文件夹路径的模式下校验
     if (showFolderInput && !normalizedFolder) {

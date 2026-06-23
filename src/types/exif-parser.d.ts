@@ -1,6 +1,7 @@
 declare module "exif-parser" {
   interface ExifTags {
-    [key: string]: any;
+    // EXIF tag 值类型多样（数字/字符串/Date/Buffer），用 unknown 代替 any
+    [key: string]: unknown;
   }
 
   interface ExifResult {
