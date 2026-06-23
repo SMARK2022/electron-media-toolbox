@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+# pre-commit：提交前执行轻量检查，阻止 lint 违规或格式不规范的代码进入 commit 历史
+# 紧急跳过：git commit --no-verify
+
+echo "pre-commit: lint + format 检查..."
+
+npm run lint
+echo "  ✓ lint 通过"
+
+npm run format
+echo "  ✓ format 通过"

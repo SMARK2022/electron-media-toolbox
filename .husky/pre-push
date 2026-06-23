@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+# pre-push：推送前执行完整质量门禁，避免把类型错误 / lint 违规 / 测试回归推到远程
+# 紧急跳过：git push --no-verify
+
+echo "pre-push: typecheck + lint + test 完整门禁..."
+
+npx tsc --noEmit
+echo "  ✓ typecheck 通过"
+
+npm run lint
+echo "  ✓ lint 通过"
+
+npm run test
+echo "  ✓ test 通过"
