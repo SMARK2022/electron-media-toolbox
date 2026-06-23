@@ -133,10 +133,13 @@ jobs:
 
       # package 产出未签名应用 out/Electron Media Toolbox-win32-x64/
       # E2E 的 findLatestBuild() 会自动定位该目录
-      # 用 bash 而非 pwsh 执行：Forge 的打包子进程在 pwsh 下可能被截断导致
-      # out/ 为空但 exit code 仍为 0（❯ Finalizing package 后无 ✔ 即未完成）
+      # NODE_OPTIONS 确保异步打包的 unhandled rejection 不会终止进程
+      # （Forge 7 的 packagerPromise 在某些情况下产生未捕获 rejection，
+      #  Node 24 默认 throw 会导致进程提前退出、out/ 为空）
       - name: Package app (no makers)
         shell: bash
+        env:
+          NODE_OPTIONS: "--unhandled-rejections=warn"
         run: npm run package
 
       # 验证打包产物确实存在，避免上传空目录导致 e2e 下载失败
@@ -242,8 +245,11 @@ jobs:
           }
 
       # --platform=win32 让 forge 跳过 forge.config.ts 里的 darwin / rpm / deb makers
+      # NODE_OPTIONS 同 build job：防止 unhandled rejection 终止进程
       - name: Build installers with Electron Forge (Windows)
-        shell: pwsh
+        shell: bash
+        env:
+          NODE_OPTIONS: "--unhandled-rejections=warn"
         run: npm run make -- --platform=win32
 
       - name: Collect release assets

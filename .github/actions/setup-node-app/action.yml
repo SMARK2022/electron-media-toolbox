@@ -13,9 +13,11 @@ runs:
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
-        # Node 20 已被 GitHub Actions 弃用（2026-06 强制迁移 Node 24）；
-        # @icons-pack/react-simple-icons 也要求 node>=24，统一用 24
-        node-version: "24"
+        # Node 20 已被 GitHub Actions 弃用；Node 24 的 unhandled-rejections 默认为 throw
+        # 会导致 Forge package 进程在异步打包未完成时提前退出（out/ 为空）。
+        # Node 22 是最后一个默认 warn 的 LTS，兼容 Forge 7 的异步打包行为。
+        # @icons-pack/react-simple-icons 的 engines node>=24 仅为 warn 不阻塞安装。
+        node-version: "22"
         cache: "npm"
 
     # node-gyp 需要 Python 编译 better-sqlite3；必须在 npm ci 之前就位
