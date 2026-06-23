@@ -4,6 +4,7 @@
  * 验证：导入→筛选→导出流程、数据一致性、页面切换稳定性
  */
 
+import fs from "node:fs";
 import { test, expect, Page, ElectronApplication } from "@playwright/test";
 import {
   launchApp,
@@ -17,7 +18,11 @@ import {
   setExportPath,
   getDisplayedPhotoCount,
   assertPageHealthy,
-  TEST_IMAGES_DIR,
+  togglePhotoEnabled,
+  waitForExportComplete,
+  closeExportDialog,
+  PHOTO_CARD_SELECTOR,
+  TEST_IMAGE_COUNT,
   EXPORT_TEST_DIR,
 } from "./helpers/electronApp";
 
@@ -35,52 +40,79 @@ test.afterAll(async () => {
 // 完整工作流程测试
 // ============================================================================
 test.describe("完整工作流程", () => {
-  test("导入→筛选→导出完整流程", async () => {
-    // Step 1: 导入照片
+  test("导入→筛选→点选→导出完整流程", async () => {
+    // 无测试图片时跳过（CI fixture 缺失场景），不阻塞流水线
+    if (TEST_IMAGE_COUNT === 0) {
+      console.log("[Workflow] No test images, skipping");
+      return;
+    }
+
+    // Step 1: 导入照片——验证数量实际增加
     await test.step("导入照片", async () => {
       await navigateTo(page, "import");
       await page.waitForTimeout(500);
 
       const beforeCount = await getDisplayedPhotoCount(page);
       const imported = await importTestFiles(page, 5);
-
-      if (imported > 0) {
-        await waitForImportComplete(page, 30000);
-        await page.waitForTimeout(2000);
-
-        const afterCount = await getDisplayedPhotoCount(page);
-        console.log(`[Workflow] Import: ${beforeCount} → ${afterCount}`);
-      }
+      // 有图片时应成功导入
+      expect(imported).toBeGreaterThan(0);
+      // 等待导入完成：照片数达到预期值后稳定
+      await waitForImportComplete(page, beforeCount + imported);
+      const afterCount = await getDisplayedPhotoCount(page);
+      // 行为级断言：导入后照片数必须增加
+      expect(afterCount).toBeGreaterThanOrEqual(beforeCount + imported);
     });
 
-    // Step 2: 筛选照片
+    // Step 2: 筛选照片——验证照片网格出现
     await test.step("筛选照片", async () => {
       await navigateTo(page, "filter");
       await page.waitForTimeout(1000);
 
-      // 提交检测任务
       await submitDetectionTask(page);
-      await page.waitForTimeout(2000);
-
-      // 等待任务完成
-      await waitForTaskIdle(page, 30000);
+      // 等待后端检测任务完成（分组+评分）
+      await waitForTaskIdle(page, 60000);
       await page.waitForTimeout(1000);
 
-      await assertPageHealthy(page);
+      // 行为级断言：照片卡片应出现在网格中
+      await expect(page.locator(PHOTO_CARD_SELECTOR).first()).toBeVisible({
+        timeout: 10000,
+      });
     });
 
-    // Step 3: 导出照片
+    // Step 3: 点选照片——双击切换启用/禁用
+    await test.step("点选照片", async () => {
+      // 双击第一张照片切换为禁用（PhotoGrid 双击 → toggleEnabled）
+      const disabled = await togglePhotoEnabled(page, 0);
+      expect(disabled).toBe(true); // 首次双击应变为禁用态
+      await page.waitForTimeout(500);
+    });
+
+    // Step 4: 导出照片——验证文件实际产出
     await test.step("导出照片", async () => {
       await navigateTo(page, "export");
       await page.waitForTimeout(1000);
 
-      const count = await getDisplayedPhotoCount(page);
-      console.log(`[Workflow] Export photo count: ${count}`);
+      // 清空导出目录，避免残留文件干扰计数断言
+      fs.rmSync(EXPORT_TEST_DIR, { recursive: true, force: true });
+      fs.mkdirSync(EXPORT_TEST_DIR, { recursive: true });
 
       await setExportPath(page, EXPORT_TEST_DIR);
       await page.waitForTimeout(500);
 
-      await assertPageHealthy(page);
+      const btn = page.locator(SELECTORS.export.exportBtn).first();
+      // 导出按钮应启用（有启用的照片 + 有效路径）
+      await expect(btn).toBeEnabled({ timeout: 5000 });
+      await btn.click({ force: true });
+
+      // 等待导出完成对话框（copyPhotos await 完成后才显示）
+      const completed = await waitForExportComplete(page, 60000);
+      expect(completed).toBe(true);
+
+      // 行为级断言：导出目录中应有文件产出
+      const exportedFiles = fs.readdirSync(EXPORT_TEST_DIR);
+      expect(exportedFiles.length).toBeGreaterThan(0);
+
+      await closeExportDialog(page);
     });
   });
 });

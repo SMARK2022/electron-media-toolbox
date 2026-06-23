@@ -7,6 +7,7 @@
  * - 超时和重试机制
  */
 
+import fs from "node:fs";
 import path from "path";
 import {
   _electron as electron,
@@ -25,29 +26,20 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..", "..");
 export const TEST_IMAGES_DIR = process.env.E2E_TEST_IMAGES_DIR
   ? path.resolve(process.env.E2E_TEST_IMAGES_DIR)
   : path.join(REPO_ROOT, "dev", "imgs_to test"); // 测试图片目录
-// 实际存在的测试图片文件名列表（非连续编号）
-export const TEST_IMAGE_FILES = [
-  "Z30_3044.JPG",
-  "Z30_3045.JPG",
-  "Z30_3046.JPG",
-  "Z30_3047.JPG",
-  "Z30_3049.JPG",
-  "Z30_3050.JPG",
-  "Z30_3051.JPG",
-  "Z30_3052.JPG",
-  "Z30_3053.JPG",
-  "Z30_3054.JPG",
-  "Z30_3055.JPG",
-  "Z30_3056.JPG",
-  "Z30_3057.JPG",
-  "Z30_3058.JPG",
-  "Z30_3059.JPG",
-  "Z30_3060.JPG",
-  "Z30_3061.JPG",
-  "Z30_3062.JPG",
-  "Z30_3065.JPG",
-  "Z30_3067.JPG",
-];
+// 动态扫描测试图片目录——CI fixture 文件名不固定，不能硬编码
+// 目录不存在或为空时返回空数组，依赖图片的测试通过 TEST_IMAGE_COUNT === 0 守卫降级
+const _scannedFiles = (() => {
+  try {
+    return fs
+      .readdirSync(TEST_IMAGES_DIR)
+      .filter((f) => /\.(jpe?g|png|webp|bmp|tiff?)$/i.test(f))
+      .sort();
+  } catch {
+    // 目录不存在时返回空数组，避免 readdirSync 抛异常阻断测试
+    return [] as string[];
+  }
+})();
+export const TEST_IMAGE_FILES = _scannedFiles;
 export const TEST_IMAGE_COUNT = TEST_IMAGE_FILES.length; // 测试图片总数
 export const EXPORT_TEST_DIR = process.env.E2E_EXPORT_DIR
   ? path.resolve(process.env.E2E_EXPORT_DIR)
@@ -55,6 +47,27 @@ export const EXPORT_TEST_DIR = process.env.E2E_EXPORT_DIR
 export const SERVER_URL = "http://localhost:8000"; // 后端地址
 export const WAIT_TIMEOUT = 30000; // 默认等待超时
 export const LONG_TIMEOUT = 60000; // 长操作超时
+
+/**
+ * 轮询后端 /status 直到就绪。
+ * 必须在 Node 端 fetch（非 page.evaluate），因为后端 CORS 仅允许 localhost:5173，
+ * 渲染进程发起的请求会被拦截。超时则 throw——fast-fail 比让所有依赖后端的测试空转更高效。
+ */
+export async function waitForBackend(timeout = 30000): Promise<void> {
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeout) {
+    try {
+      const resp = await fetch(`${SERVER_URL}/status`, {
+        signal: AbortSignal.timeout(2000),
+      });
+      if (resp.ok) return; // 后端已就绪
+    } catch {
+      // 后端尚未就绪（Nuitka onefile 解压需数秒），继续轮询
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(`Backend at ${SERVER_URL} not ready after ${timeout}ms`);
+}
 
 // ============================================================================
 // 双语选择器 - 支持中文(默认)和英文 UI
@@ -161,6 +174,8 @@ export async function launchApp(): Promise<{
 
   await pageInstance.waitForLoadState("domcontentloaded");
   await pageInstance.waitForTimeout(2000); // 等待应用初始化
+  // 等待 Python 后端就绪；未就绪时 fast-fail 避免后续测试空转超时
+  await waitForBackend(30000);
   return { app: appInstance, page: pageInstance };
 }
 
@@ -289,8 +304,19 @@ export async function importTestFiles(
     0,
     Math.min(fileCount, TEST_IMAGE_FILES.length),
   );
+  // 无可用测试图片时优雅降级，不阻塞后续测试
+  if (filesToUse.length === 0) {
+    await closeImportDrawer(page);
+    return 0;
+  }
   const files = filesToUse.map((name) => `${TEST_IMAGES_DIR}/${name}`);
-  await fileInput.setInputFiles(files);
+  // setInputFiles 对不存在的路径会抛异常，需 try/catch 降级
+  try {
+    await fileInput.setInputFiles(files);
+  } catch {
+    await closeImportDrawer(page);
+    return 0;
+  }
   await page.waitForTimeout(500);
 
   const submitBtn = page.locator(SELECTORS.import.submitBtn).first();
@@ -301,23 +327,40 @@ export async function importTestFiles(
   return files.length;
 }
 
-/** 等待导入完成 */
+/**
+ * 等待导入完成：照片数量达到预期值后稳定。
+ * 旧实现用 [class*="ImportProgressToast"] 选择器，但实际组件无此 class → 永不匹配 → 立即返回。
+ * 改为确定性计数目标：先等数量 >= expectedMin，再 2s 稳定确认防异步抖动。
+ * @param expectedMin 预期最小照片数（导入前数量 + 本次导入数）
+ */
 export async function waitForImportComplete(
   page: Page,
+  expectedMin: number,
   timeout = LONG_TIMEOUT,
 ): Promise<void> {
   const startTime = Date.now();
+  // 阶段 1：等照片数量达到预期值
   while (Date.now() - startTime < timeout) {
-    const toast = page.locator('[class*="ImportProgressToast"]');
-    if (!(await toast.isVisible().catch(() => false))) return;
-    const text = await toast.textContent().catch(() => "");
-    if (text?.includes("100%") || text?.includes("完成")) {
-      await page.waitForTimeout(500);
-      return;
-    }
+    const count = await getDisplayedPhotoCount(page);
+    if (count >= expectedMin) break;
     await page.waitForTimeout(500);
   }
-  console.log("[E2E] Import timeout, continuing...");
+  // 阶段 2：2s 稳定性确认（防异步更新抖动导致误判）
+  let stableStart = 0;
+  let lastCount = -1;
+  while (Date.now() - startTime < timeout) {
+    const count = await getDisplayedPhotoCount(page);
+    if (count === lastCount) {
+      if (stableStart === 0) stableStart = Date.now();
+      // 连续 2s 数量不变视为导入完成
+      if (Date.now() - stableStart >= 2000) return;
+    } else {
+      stableStart = 0; // 数量仍在变化，重置稳定计时
+    }
+    lastCount = count;
+    await page.waitForTimeout(500);
+  }
+  console.log("[E2E] Import stable timeout, continuing...");
 }
 
 // ============================================================================
@@ -414,6 +457,54 @@ export async function closeExportDialog(page: Page): Promise<void> {
   }
 }
 
+/**
+ * 等待导出对话框显示"完成"文本。
+ * PhotoExportPage 的 copyPhotos await 完成后才置 copyInProgress=false 并显示完成文案，
+ * 因此对话框出现"完成"时文件已物理写入，无需额外等待文件系统。
+ */
+export async function waitForExportComplete(
+  page: Page,
+  timeout = LONG_TIMEOUT,
+): Promise<boolean> {
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeout) {
+    const dialog = page.locator(SELECTORS.export.exportDialog);
+    if (await dialog.isVisible().catch(() => false)) {
+      const text = await dialog.textContent().catch(() => "");
+      // 后端返回完成后对话框文案含"完成"/"Complete"
+      if (text?.includes("完成") || text?.includes("Complete")) return true;
+    }
+    await page.waitForTimeout(500);
+  }
+  return false;
+}
+
+// ============================================================================
+// 照片卡片操作辅助
+// ============================================================================
+// PhotoCard 渲染为 div.group.relative[tabindex="0"]，依赖 Tailwind class 名（无 data-test）
+// 禁用态额外有 opacity-40 grayscale class（PhotoGrid.tsx:446）
+// 注意：react-virtual 虚拟化，仅 index 0 保证已渲染
+export const PHOTO_CARD_SELECTOR = '.group.relative[tabindex="0"]';
+
+/**
+ * 双击第 N 张照片切换启用/禁用状态。
+ * PhotoGrid.tsx:940 定义双击 → triggerClick(photo, "Change") → 切换 isEnabled。
+ * @returns 切换后是否为禁用态（true=禁用，false=启用）
+ */
+export async function togglePhotoEnabled(
+  page: Page,
+  index = 0,
+): Promise<boolean> {
+  const card = page.locator(PHOTO_CARD_SELECTOR).nth(index);
+  if (!(await card.isVisible().catch(() => false))) return false;
+  await card.dblclick();
+  await page.waitForTimeout(500); // 等状态更新 + 重渲染
+  // 检查禁用态 class 是否出现
+  const cls = (await card.getAttribute("class")) ?? "";
+  return cls.includes("opacity-40");
+}
+
 // ============================================================================
 // 并发测试辅助
 // ============================================================================
@@ -451,9 +542,13 @@ export async function rapidToggleDrawer(
 // ============================================================================
 // 断言辅助
 // ============================================================================
-/** 断言页面正常 */
+/** 断言页面正常：body 可见 + 导航栏存在（排除白屏/崩溃态） */
 export async function assertPageHealthy(page: Page): Promise<void> {
   await expect(page.locator("body")).toBeVisible();
+  // 导航栏链接应始终可见——若不可见说明页面白屏或崩溃
+  await expect(page.locator(SELECTORS.nav.import).first()).toBeVisible({
+    timeout: 5000,
+  });
 }
 
 /** 断言照片数量在范围内 */

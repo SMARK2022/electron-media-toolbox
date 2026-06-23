@@ -8,10 +8,6 @@
 
 ## CI 环境
 
-CI 通过环境变量 `E2E_TEST_IMAGES_DIR` 指向本目录下的 `images/` 子目录。如需让 CI E2E 真正运行完整流程，请在该子目录放置若干测试图片：
+CI 通过环境变量 `E2E_TEST_IMAGES_DIR` 指向本目录下的 `images/` 子目录。测试代码会**动态扫描**该目录下所有图片文件（.jpg/.png/.webp/.bmp/.tiff），文件名任意，无需匹配特定列表。
 
-- 建议 3-5 张 JPG
-- 单张 1-5MB
-- 文件名可任意（`importTestFiles` 按 `TEST_IMAGE_FILES` 列表切片，CI 下未提供列表时会 fallback 到目录扫描）
-
-未放置图片时，依赖照片导入的 E2E 用例会自动降级（`importTestFiles` 返回 0），不会阻塞 publish/release 流水线——release 流水线独立于 E2E。
+放置 3-5 张 JPG（单张 1-5MB）即可启用完整 E2E 流程。未放置图片时，依赖照片的用例自动跳过（`TEST_IMAGE_COUNT === 0` 守卫），不阻塞 release 流水线。

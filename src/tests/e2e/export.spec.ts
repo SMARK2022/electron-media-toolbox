@@ -4,6 +4,7 @@
  * 验证：导出页面加载、路径验证、导出操作、并发处理
  */
 
+import fs from "node:fs";
 import { test, expect, Page, ElectronApplication } from "@playwright/test";
 import {
   launchApp,
@@ -16,6 +17,8 @@ import {
   closeExportDialog,
   assertPageHealthy,
   rapidClick,
+  waitForExportComplete,
+  TEST_IMAGE_COUNT,
   EXPORT_TEST_DIR,
 } from "./helpers/electronApp";
 
@@ -150,6 +153,33 @@ test.describe("导出操作", () => {
     }
 
     await assertPageHealthy(page);
+  });
+
+  test("实际导出并验证文件产出", async () => {
+    // 无测试图片时跳过（导出依赖已导入的照片）
+    if (TEST_IMAGE_COUNT === 0) return;
+
+    // 清空导出目录，避免残留文件干扰计数断言
+    fs.rmSync(EXPORT_TEST_DIR, { recursive: true, force: true });
+    fs.mkdirSync(EXPORT_TEST_DIR, { recursive: true });
+
+    await setExportPath(page, EXPORT_TEST_DIR);
+    await page.waitForTimeout(500);
+
+    const btn = page.locator(SELECTORS.export.exportBtn).first();
+    // 无启用照片时按钮禁用，跳过
+    if (!(await btn.isEnabled().catch(() => false))) return;
+
+    await btn.click({ force: true });
+    // 等待导出完成对话框（copyPhotos await 完成后才显示"完成"）
+    const completed = await waitForExportComplete(page, 60000);
+    expect(completed).toBe(true);
+
+    // 行为级断言：导出目录中应有文件产出
+    const files = fs.readdirSync(EXPORT_TEST_DIR);
+    expect(files.length).toBeGreaterThan(0);
+
+    await closeExportDialog(page);
   });
 });
 

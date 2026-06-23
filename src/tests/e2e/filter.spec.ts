@@ -15,6 +15,9 @@ import {
   toggleShowDisabled,
   assertPageHealthy,
   rapidClick,
+  togglePhotoEnabled,
+  TEST_IMAGE_COUNT,
+  PHOTO_CARD_SELECTOR,
   LONG_TIMEOUT,
 } from "./helpers/electronApp";
 
@@ -216,6 +219,29 @@ test.describe("照片启用/禁用操作", () => {
     }
 
     await assertPageHealthy(page);
+  });
+
+  test("双击照片切换启用/禁用状态", async () => {
+    // 无测试图片时跳过
+    if (TEST_IMAGE_COUNT === 0) return;
+
+    // 筛选页需先提交检测任务才有照片出现在网格中
+    await submitDetectionTask(page);
+    await waitForTaskIdle(page, LONG_TIMEOUT);
+    await page.waitForTimeout(1000);
+
+    // 运行时守卫：spec 按字母序执行（export→filter→import→workflow），
+    // filter 可能在 import 之前运行导致 DB 无照片，此时卡片不可见应跳过而非失败
+    const card = page.locator(PHOTO_CARD_SELECTOR).first();
+    if (!(await card.isVisible().catch(() => false))) return;
+
+    // 双击第一张照片切换为禁用（PhotoGrid 双击 → toggleEnabled）
+    const disabled = await togglePhotoEnabled(page, 0);
+    expect(disabled).toBe(true); // 首次双击应变为禁用态
+
+    // 再次双击恢复为启用
+    const reEnabled = await togglePhotoEnabled(page, 0);
+    expect(reEnabled).toBe(false);
   });
 });
 
