@@ -7,6 +7,7 @@
  * - 超时和重试机制
  */
 
+import path from "path";
 import {
   _electron as electron,
   ElectronApplication,
@@ -18,8 +19,12 @@ import { findLatestBuild, parseElectronApp } from "electron-playwright-helpers";
 // ============================================================================
 // 测试常量
 // ============================================================================
-export const TEST_IMAGES_DIR =
-  "F:/ML/PythonAIProject/SMARKMediaTools_web/electron-media-toolbox/dev/imgs_to test"; // 测试图片目录
+// 仓库根目录：src/tests/e2e/helpers → 上 4 层到仓库根
+// 本地默认指向 dev/，CI 通过环境变量 E2E_TEST_IMAGES_DIR / E2E_EXPORT_DIR 覆盖
+const REPO_ROOT = path.resolve(__dirname, "..", "..", "..", "..");
+export const TEST_IMAGES_DIR = process.env.E2E_TEST_IMAGES_DIR
+  ? path.resolve(process.env.E2E_TEST_IMAGES_DIR)
+  : path.join(REPO_ROOT, "dev", "imgs_to test"); // 测试图片目录
 // 实际存在的测试图片文件名列表（非连续编号）
 export const TEST_IMAGE_FILES = [
   "Z30_3044.JPG",
@@ -44,8 +49,9 @@ export const TEST_IMAGE_FILES = [
   "Z30_3067.JPG",
 ];
 export const TEST_IMAGE_COUNT = TEST_IMAGE_FILES.length; // 测试图片总数
-export const EXPORT_TEST_DIR =
-  "F:/ML/PythonAIProject/SMARKMediaTools_web/electron-media-toolbox/dev/test_export"; // 导出目录
+export const EXPORT_TEST_DIR = process.env.E2E_EXPORT_DIR
+  ? path.resolve(process.env.E2E_EXPORT_DIR)
+  : path.join(REPO_ROOT, "dev", "test_export"); // 导出目录
 export const SERVER_URL = "http://localhost:8000"; // 后端地址
 export const WAIT_TIMEOUT = 30000; // 默认等待超时
 export const LONG_TIMEOUT = 60000; // 长操作超时
