@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   e2e-windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
         # 不在此处 lfs: true；ONNX 模型由 build-python-win 的 cache 负责还原

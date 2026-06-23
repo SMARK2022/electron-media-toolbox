@@ -1,5 +1,5 @@
 name: "Build Python Backend (Windows)"
-description: "Setup Miniconda env, install Nuitka + Python deps, compile python/out/web_api.exe"
+description: "Cache web_api.exe; on miss, setup Miniconda + Nuitka + compile. Skips ~20min compile when unchanged."
 
 inputs:
   conda-env:
@@ -14,14 +14,27 @@ inputs:
 runs:
   using: "composite"
   steps:
-    # Nuitka 需要 MSVC 作为 C 编译后端（Windows 上优先 cl.exe，其次自动下载的 MinGW64）
+    # web_api.exe 缓存：Python 源码/依赖/模型不变时直接复用，跳过 ~20min Nuitka 编译
+    - name: Cache web_api.exe
+      id: exe-cache
+      uses: actions/cache@v4
+      with:
+        path: python/out/web_api.exe
+        key: web-api-exe-${{ runner.os }}-${{ hashFiles('python/requirements.txt', 'python/web_api.py', 'python/utils/**/*.py', 'python/checkpoint/*.onnx') }}
+
+    - name: Skip Nuitka compile (cache hit)
+      if: steps.exe-cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: echo "✓ web_api.exe cache hit, skipping Nuitka compile (~20min saved)"
+
+    # ==================== 以下步骤仅在缓存未命中时执行 ====================
     - name: Setup MSBuild / MSVC toolchain
+      if: steps.exe-cache.outputs.cache-hit != 'true'
       uses: microsoft/setup-msbuild@v2
 
     # ONNX 模型(~105MB)走 Git LFS；用 cache 避免每次 CI checkout 都消耗 LFS 带宽
-    # key 基于 LFS 指针文件的 hash —— 模型不变则命中缓存，仅 cache miss 时才 git lfs pull
-    # checkout 不带 lfs:true（只拿指针），由本步骤把真实 onnx 还原到 python/checkpoint
     - name: Restore ONNX models (cache)
+      if: steps.exe-cache.outputs.cache-hit != 'true'
       id: onnx-cache
       uses: actions/cache@v4
       with:
@@ -29,14 +42,14 @@ runs:
         key: onnx-models-${{ hashFiles('python/checkpoint/*.onnx') }}
 
     - name: Pull ONNX models via LFS (cache miss only)
-      if: steps.onnx-cache.outputs.cache-hit != 'true'
+      if: steps.exe-cache.outputs.cache-hit != 'true' && steps.onnx-cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
         git lfs install
         git lfs pull
 
-    # 用 Miniconda 提供隔离的 Python 环境，与本地 scripts/python-make.bat 期望的 conda env 对齐
     - name: Setup Miniconda
+      if: steps.exe-cache.outputs.cache-hit != 'true'
       uses: conda-incubator/setup-miniconda@v3
       with:
         activate-environment: ${{ inputs.conda-env }}
@@ -44,8 +57,9 @@ runs:
         channels: conda-forge,defaults
         auto-activate-base: false
 
-    # Nuitka onefile 编译耗时较长，缓存 .nuitka-cache + ccache 可显著加速增量构建
+    # Nuitka onefile 编译耗时较长，缓存 .nuitka-cache 加速增量构建（源码变更时的 fallback）
     - name: Cache Nuitka build artifacts
+      if: steps.exe-cache.outputs.cache-hit != 'true'
       uses: actions/cache@v4
       with:
         path: python/.nuitka-cache
@@ -54,6 +68,7 @@ runs:
           ${{ runner.os }}-nuitka-
 
     - name: Install Nuitka and Python dependencies
+      if: steps.exe-cache.outputs.cache-hit != 'true'
       shell: cmd
       run: |
         set "CONDA_BAT=%CONDA%\condabin\conda.bat"
@@ -66,7 +81,17 @@ runs:
     # python-make.cjs 会调用 python-make.bat，bat 内部再次 `conda activate nuitka`（幂等）
     # CI 子进程里 conda 可能不在 PATH，通过 CONDA_BAT 显式指向 conda.bat 让 bat 能激活环境
     - name: Compile web_api.exe via Nuitka
+      if: steps.exe-cache.outputs.cache-hit != 'true'
       shell: cmd
       run: |
         if defined CONDA set "CONDA_BAT=%CONDA%\condabin\conda.bat"
         node scripts/python-make.cjs
+
+    - name: Verify web_api.exe exists
+      shell: pwsh
+      run: |
+        if (-not (Test-Path "python/out/web_api.exe")) {
+          throw "python/out/web_api.exe not found, Nuitka build failed"
+        }
+        $sizeMB = [math]::Round((Get-Item python/out/web_api.exe).Length / 1MB, 1)
+        Write-Host "web_api.exe size: $sizeMB MB"

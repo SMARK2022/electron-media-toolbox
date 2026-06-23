@@ -8,7 +8,7 @@
   </p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-2.1.1-blue" alt="Version">
+    <img src="https://img.shields.io/badge/version-2.1.2-blue" alt="Version">
     <img src="https://img.shields.io/badge/platform-Windows-0078D6" alt="Platform">
     <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="License">
     <img src="https://img.shields.io/badge/backend-FastAPI%20%7C%20Nuitka-yellow" alt="Backend">

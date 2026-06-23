@@ -28,7 +28,7 @@ jobs:
           - os: linux
             runner: ubuntu-latest
           - os: windows
-            runner: windows-latest
+            runner: windows-2022
     defaults:
       run:
         shell: bash
