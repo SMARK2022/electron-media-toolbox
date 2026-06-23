@@ -20,7 +20,21 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        npm ci --no-audit --no-fund
+        # --ignore-scripts 跳过 better-sqlite3 的 node-gyp 编译
+        # （CI 的 node 运行时无对应 prebuild，回退源码编译又缺 Python 导致 npm ci 失败）
+        # 同时跳过 electron 二进制下载，按需在后续步骤补回
+        npm ci --ignore-scripts --no-audit --no-fund
+
+    - name: Setup Python (for node-gyp)
+      if: inputs.rebuild-native == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Download Electron binary
+      if: inputs.rebuild-native == 'true'
+      shell: bash
+      run: node node_modules/electron/install.js
 
     - name: Rebuild native modules (better-sqlite3)
       if: inputs.rebuild-native == 'true'
