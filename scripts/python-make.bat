@@ -111,7 +111,7 @@ echo [*] 使用 Nuitka 编译 %MAIN_FILE% 为单文件 exe (--mode=onefile) ...
 
 if errorlevel 1 (
   echo [!] Nuitka 编译失败，终止。
-  goto :end
+  exit /b 1
 )
 
 echo.

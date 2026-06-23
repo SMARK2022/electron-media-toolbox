@@ -58,6 +58,7 @@ runs:
       run: |
         set "CONDA_BAT=%CONDA%\condabin\conda.bat"
         call "%CONDA_BAT%" activate nuitka
+        python -m ensurepip --upgrade
         python -m pip install --upgrade pip
         pip install nuitka
         pip install -r python/requirements.txt
