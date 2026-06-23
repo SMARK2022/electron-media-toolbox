@@ -137,12 +137,24 @@ jobs:
         shell: pwsh
         run: npm run package
 
+      # 验证打包产物确实存在，避免上传空目录导致 e2e 下载失败
+      - name: Verify packaged app exists
+        shell: pwsh
+        run: |
+          $buildDir = Get-ChildItem -Path "out" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "win32-x64" } | Select-Object -First 1
+          if (-not $buildDir) {
+            throw "Packaged app not found in out/ (expected out/Electron Media Toolbox-win32-x64/)"
+          }
+          Write-Host "Packaged app: $($buildDir.FullName)"
+
       # 上传打包产物供 e2e job 下载使用
+      # if-no-files-found: error 确保 out/ 为空时 build job 直接失败，e2e 被跳过
       - name: Upload packaged app
         uses: actions/upload-artifact@v4
         with:
           name: packaged-app
           path: out/
+          if-no-files-found: error
           retention-days: 1
 
   # ==========================================================================
@@ -152,6 +164,8 @@ jobs:
   e2e:
     name: E2E (Windows)
     needs: [quality, build]
+    # 显式要求 needs 的 job 全部成功才执行，避免 build 失败后 e2e 仍尝试下载不存在的 artifact
+    if: success()
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
