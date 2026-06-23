@@ -18,6 +18,7 @@ import {
   waitForExportComplete,
   TEST_IMAGE_COUNT,
   EXPORT_TEST_DIR,
+  ensurePhotosImported,
 } from "./helpers/electronApp";
 
 let page: Page;
@@ -26,6 +27,8 @@ test.beforeAll(async () => {
   // launchApp 返回 { app, page }，app 仅持有 ElectronApplication 引用以便
   // 进程随 afterAll 关闭，这里只需 page 做页面交互
   ({ page } = await launchApp());
+  // 确保导出页有照片可操作——字母序执行时 export 最先运行，DB 可能为空
+  await ensurePhotosImported(page, 5);
 });
 test.afterAll(async () => {
   await closeApp();

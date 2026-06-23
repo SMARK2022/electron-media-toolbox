@@ -18,12 +18,15 @@ import {
   TEST_IMAGE_COUNT,
   PHOTO_CARD_SELECTOR,
   LONG_TIMEOUT,
+  ensurePhotosImported,
 } from "./helpers/electronApp";
 
 let page: Page;
 
 test.beforeAll(async () => {
   ({ page } = await launchApp());
+  // 确保筛选页有照片可操作——字母序执行时 filter 可能在 import 之前
+  await ensurePhotosImported(page, 5);
 });
 test.afterAll(async () => {
   await closeApp();

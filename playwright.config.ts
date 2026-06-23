@@ -10,6 +10,8 @@ import { defineConfig } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./src/tests/e2e", // E2E 测试目录
+  // 清理上一次运行残留的 .cache/（photos.db + 缩略图），确保 DB 初始状态干净
+  globalSetup: "./src/tests/e2e/global-setup.ts",
   fullyParallel: false, // Electron 测试需串行执行
   forbidOnly: !!process.env.CI, // CI 环境禁止 .only
   retries: process.env.CI ? 2 : 1, // CI 重试 2 次，本地重试 1 次

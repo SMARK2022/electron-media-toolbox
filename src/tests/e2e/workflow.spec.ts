@@ -51,15 +51,14 @@ test.describe("完整工作流程", () => {
       await navigateTo(page, "import");
       await page.waitForTimeout(500);
 
-      const beforeCount = await getDisplayedPhotoCount(page);
       const imported = await importTestFiles(page, 5);
       // 有图片时应成功导入
       expect(imported).toBeGreaterThan(0);
-      // 等待导入完成：照片数达到预期值后稳定
-      await waitForImportComplete(page, beforeCount + imported);
+      // clearPhotos 先清空 DB 再写入，期望数 = imported 而非 beforeCount + imported
+      await waitForImportComplete(page, imported);
       const afterCount = await getDisplayedPhotoCount(page);
-      // 行为级断言：导入后照片数必须增加
-      expect(afterCount).toBeGreaterThanOrEqual(beforeCount + imported);
+      // 导入后 DB 恰好有 imported 张（clearPhotos 清空后重新添加）
+      expect(afterCount).toBeGreaterThanOrEqual(imported);
     });
 
     // Step 2: 筛选照片——验证照片网格出现

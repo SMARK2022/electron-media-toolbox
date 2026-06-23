@@ -17,6 +17,7 @@ import {
   getDisplayedPhotoCount,
   rapidToggleDrawer,
   TEST_IMAGES_DIR,
+  TEST_IMAGE_FILES,
   assertPageHealthy,
 } from "./helpers/electronApp";
 
@@ -77,10 +78,14 @@ test.describe("文件选择与导入", () => {
     const fileInput = page.locator(SELECTORS.import.fileInput);
 
     if ((await fileInput.count()) > 0) {
-      const testFiles = [
-        `${TEST_IMAGES_DIR}/Z30_3044.JPG`,
-        `${TEST_IMAGES_DIR}/Z30_3045.JPG`,
-      ];
+      // 使用动态扫描的文件名，CI fixture 文件名不固定
+      const testFiles = TEST_IMAGE_FILES.slice(0, 2).map(
+        (name) => `${TEST_IMAGES_DIR}/${name}`,
+      );
+      if (testFiles.length < 2) {
+        await closeImportDrawer(page);
+        return;
+      }
       // setInputFiles 对不存在的文件路径会抛异常，需 try/catch 降级
       try {
         await fileInput.setInputFiles(testFiles);
@@ -89,25 +94,25 @@ test.describe("文件选择与导入", () => {
         return;
       }
       await page.waitForTimeout(500);
-      // 应显示文件列表项
-      const fileItems = page.locator("text=/Z30_304/");
+      // 应显示文件列表项——用实际文件名前缀匹配，不硬编码
+      const firstName = TEST_IMAGE_FILES[0]?.split(".")[0] ?? "";
+      const fileItems = page.locator(`text=/${firstName}/`);
       await expect(fileItems.first()).toBeVisible({ timeout: 3000 });
     }
     await closeImportDrawer(page);
   });
 
   test("提交导入后照片数量更新", async () => {
-    const beforeCount = await getDisplayedPhotoCount(page);
     const imported = await importTestFiles(page, 3); // 导入 3 张
 
     if (imported > 0) {
-      // 等待导入完成：照片数达到预期值后稳定（旧签名仅传 timeout，新签名需传 expectedMin）
-      await waitForImportComplete(page, beforeCount + imported, 30000);
+      // clearPhotos 先清空 DB 再写入，导入后照片数 = imported 而非 beforeCount + imported
+      await waitForImportComplete(page, imported, 30000);
       await page.waitForTimeout(2000); // 等待 UI 更新
 
       const afterCount = await getDisplayedPhotoCount(page);
-      // 照片数应增加（或至少不减少）
-      expect(afterCount).toBeGreaterThanOrEqual(beforeCount);
+      // 导入后 DB 恰好有 imported 张（clearPhotos 清空后重新添加）
+      expect(afterCount).toBeGreaterThanOrEqual(imported);
     }
   });
 });
@@ -148,15 +153,19 @@ test.describe("并发导入处理", () => {
   });
 
   test("并发导入取消不损坏数据", async () => {
-    const initialCount = await getDisplayedPhotoCount(page);
-
     // 首次导入
     await openImportDrawer(page);
     const fileInput = page.locator(SELECTORS.import.fileInput);
     if ((await fileInput.count()) > 0) {
-      // 硬编码文件名在 CI 上可能不存在，try/catch 降级
+      // 使用动态扫描的文件名，CI fixture 文件名不固定
+      if (TEST_IMAGE_FILES.length < 1) {
+        await closeImportDrawer(page);
+        return;
+      }
       try {
-        await fileInput.setInputFiles([`${TEST_IMAGES_DIR}/Z30_3044.JPG`]);
+        await fileInput.setInputFiles([
+          `${TEST_IMAGES_DIR}/${TEST_IMAGE_FILES[0]}`,
+        ]);
       } catch {
         await closeImportDrawer(page);
         return;
@@ -175,8 +184,15 @@ test.describe("并发导入处理", () => {
     // 再次导入不同文件
     await openImportDrawer(page);
     if ((await fileInput.count()) > 0) {
+      // 第二次导入使用不同的文件，需确保至少有 2 张可用
+      if (TEST_IMAGE_FILES.length < 2) {
+        await closeImportDrawer(page);
+        return;
+      }
       try {
-        await fileInput.setInputFiles([`${TEST_IMAGES_DIR}/Z30_3050.JPG`]);
+        await fileInput.setInputFiles([
+          `${TEST_IMAGES_DIR}/${TEST_IMAGE_FILES[1]}`,
+        ]);
       } catch {
         await closeImportDrawer(page);
         return;
@@ -192,9 +208,9 @@ test.describe("并发导入处理", () => {
     await page.waitForTimeout(2000);
     await assertPageHealthy(page);
 
-    // 照片数不应减少
+    // clearPhotos 每次导入都重置 DB，验证 DB 未损坏而非数量不减
     const finalCount = await getDisplayedPhotoCount(page);
-    expect(finalCount).toBeGreaterThanOrEqual(initialCount);
+    expect(finalCount).toBeGreaterThan(0);
   });
 });
 

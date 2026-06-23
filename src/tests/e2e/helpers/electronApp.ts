@@ -323,8 +323,13 @@ export async function importTestFiles(
   if ((await submitBtn.isVisible()) && (await submitBtn.isEnabled())) {
     await submitBtn.click();
     await page.waitForTimeout(1000);
+    // 仅在成功点击提交后返回正数，让调用方知道导入已触发；
+    // 否则后续 waitForImportComplete 会以错误的 expectedMin 空等超时
+    return files.length;
   }
-  return files.length;
+  // submit 按钮不可用——导入未发生，返回 0 避免 caller 误判
+  await closeImportDrawer(page);
+  return 0;
 }
 
 /**
@@ -350,6 +355,14 @@ export async function waitForImportComplete(
   let lastCount = -1;
   while (Date.now() - startTime < timeout) {
     const count = await getDisplayedPhotoCount(page);
+    // 计数回落到 expectedMin 以下时重置稳定计时——防止 UI 因 clearPhotos
+    // 先清空后填充的抖动导致阶段 1 break 后在低于 expectedMin 的值上稳定
+    if (count < expectedMin) {
+      stableStart = 0;
+      lastCount = count;
+      await page.waitForTimeout(500);
+      continue;
+    }
     if (count === lastCount) {
       if (stableStart === 0) stableStart = Date.now();
       // 连续 2s 数量不变视为导入完成
@@ -360,7 +373,36 @@ export async function waitForImportComplete(
     lastCount = count;
     await page.waitForTimeout(500);
   }
-  console.log("[E2E] Import stable timeout, continuing...");
+  // 超时说明导入未完成（后端未响应、文件路径无效或 submit 未触发），
+  // 必须 fast-fail 避免后续测试基于空 DB 产生误判
+  throw new Error(
+    `Import did not complete after ${timeout}ms (expected >= ${expectedMin} photos)`,
+  );
+}
+
+/**
+ * 确保数据库中有测试照片。每次调用都重新导入——submitImportTask 内部
+ * clearPhotos() 会先清空 DB 再写入，保证各 spec 起始状态确定，
+ * 不依赖前序 spec 残留或 Playwright 字母序执行顺序。
+ * 导入失败时直接 throw（fast-fail），避免后续筛选/导出测试空转。
+ */
+export async function ensurePhotosImported(
+  page: Page,
+  count = 5,
+): Promise<void> {
+  // 无测试图片时不 throw——保留 TEST_IMAGE_COUNT === 0 的优雅降级能力，
+  // 让各 spec 中不依赖照片的测试（页面加载、按钮可见性等）仍能运行
+  if (TEST_IMAGE_COUNT === 0) return;
+  await navigateTo(page, "import");
+  const imported = await importTestFiles(page, count);
+  // importTestFiles 返回 0 说明 submit 未被点击（选择器未命中或文件不可读）
+  if (imported === 0) {
+    throw new Error(
+      `ensurePhotosImported: 导入失败 (TEST_IMAGE_COUNT=${TEST_IMAGE_COUNT})`,
+    );
+  }
+  // expectedMin = imported：clearPhotos 先清空 DB，导入后恰好有 imported 张
+  await waitForImportComplete(page, imported);
 }
 
 // ============================================================================
@@ -387,7 +429,9 @@ export async function waitForTaskIdle(
     if (text?.includes("空闲") || text?.includes("idle")) return;
     await page.waitForTimeout(1000);
   }
-  console.log("[E2E] Task idle timeout, continuing...");
+  // 检测任务超时未回到空闲态——后端可能卡死或 ONNX 推理异常缓慢，
+  // fast-fail 让测试立即失败而非继续空转
+  throw new Error(`Detection task did not become idle after ${timeout}ms`);
 }
 
 /** 切换显示弃用照片开关 */
