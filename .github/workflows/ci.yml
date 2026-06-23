@@ -185,6 +185,14 @@ jobs:
         with:
           rebuild-native: "false"
 
+      # --ignore-scripts 跳过了 Electron postinstall，但 Playwright 的
+      # _electron.launch() 需要 node_modules/electron/dist/electron.exe 才能启动应用。
+      # 直接运行 install.js 会走 GitHub Releases 默认源（不读 .npmrc 的中国镜像），
+      # 在 GitHub Actions 美国机房上更可靠
+      - name: Install Electron binary
+        shell: bash
+        run: node node_modules/electron/install.js
+
       # 下载 build job 产出的打包应用，放到 out/ 目录供 findLatestBuild() 定位
       - name: Download packaged app
         uses: actions/download-artifact@v4
