@@ -146,7 +146,7 @@ jobs:
           name: release-assets-windows
           path: release-assets
 
-      # 从上一个版本 tag 到 HEAD 的全部 commit 首行作为 release notes
+      # 从上一个版本 tag 到 HEAD 的 commit 按版本 bump 分节展示
       - name: Generate release notes from commit log
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -158,18 +158,48 @@ jobs:
             | grep -E "^(v)?[0-9]+\.[0-9]+\.[0-9]+$" \
             | grep -vE "^(v)?${VERSION}$" \
             | head -1)
+
           {
             echo "## 更新内容"
             echo ""
+
             if [ -z "$PREV_TAG" ]; then
               echo "（首次发布）"
               git log --format="%h %s" --reverse | head -50
             else
-              echo "自 \`${PREV_TAG}\` 以来的变更："
-              echo ""
-              git log "${PREV_TAG}..HEAD" --format="%h %s" --reverse
+              # 查找版本 bump commit：首个在 package.json diff 中引入当前版本号的 commit
+              # -S 搜索 diff 中新增了 "version": "X.Y.Z" 字符串的 commit
+              BUMPCOMMIT=$(git log "${PREV_TAG}..HEAD" --reverse --format="%H" \
+                -S "\"version\": \"${VERSION}\"" -- package.json | head -1)
+
+              if [ -n "$BUMPCOMMIT" ]; then
+                # 有版本 bump：分两节，避免上个版本期间积累的 commit 与本版本新增混在一起
+                # 第二节：bump 之后的 commit（当前版本的新增变更）
+                POST_BUMP=$(git log "${BUMPCOMMIT}..HEAD" --format="%h %s" --reverse)
+                if [ -n "$POST_BUMP" ]; then
+                  echo "### v${VERSION} 新增"
+                  echo ""
+                  echo "$POST_BUMP"
+                  echo ""
+                fi
+
+                # 第一节：bump commit 及之前积累的 commit（上个版本期间未发版的变更）
+                ACCUMULATED=$(git log "${PREV_TAG}..${BUMPCOMMIT}" --format="%h %s" --reverse)
+                if [ -n "$ACCUMULATED" ]; then
+                  echo "### 自 \`${PREV_TAG}\` 积累"
+                  echo ""
+                  echo "$ACCUMULATED"
+                  echo ""
+                fi
+              else
+                # 无版本 bump（同版本重新 push）：单节展示全部增量
+                echo "自 \`${PREV_TAG}\` 以来的变更："
+                echo ""
+                git log "${PREV_TAG}..HEAD" --format="%h %s" --reverse
+                echo ""
+              fi
             fi
-            echo ""
+
             echo "---"
             echo "自动构建 from ${{ github.sha }}"
           } > release-notes.md
