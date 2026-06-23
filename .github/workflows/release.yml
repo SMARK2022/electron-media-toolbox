@@ -137,6 +137,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download release assets
         uses: actions/download-artifact@v4
@@ -144,23 +146,53 @@ jobs:
           name: release-assets-windows
           path: release-assets
 
-      # 同一版本多次 push：tag 已存在则只更新 assets（--clobber 覆盖），避免重建 tag
-      - name: Create or update GitHub Release
+      # 从上一个版本 tag 到 HEAD 的全部 commit 首行作为 release notes
+      - name: Generate release notes from commit log
         env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.version.outputs.tag }}
           VERSION: ${{ needs.version.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
+          # 查找上一个版本 tag（仅匹配 x.y.z 格式，排除 backup/Alpha 等非版本 tag）
+          PREV_TAG=$(git tag --sort=-creatordate \
+            | grep -E "^(v)?[0-9]+\.[0-9]+\.[0-9]+$" \
+            | grep -vE "^(v)?${VERSION}$" \
+            | head -1)
+          {
+            echo "## 更新内容"
+            echo ""
+            if [ -z "$PREV_TAG" ]; then
+              echo "（首次发布）"
+              git log --format="%h %s" --reverse | head -50
+            else
+              echo "自 \`${PREV_TAG}\` 以来的变更："
+              echo ""
+              git log "${PREV_TAG}..HEAD" --format="%h %s" --reverse
+            fi
+            echo ""
+            echo "---"
+            echo "自动构建 from ${{ github.sha }}"
+          } > release-notes.md
+          echo "==== release-notes.md ===="
+          cat release-notes.md
+
+      # 同一版本多次 push：tag 已存在则更新 notes + assets（--clobber 覆盖）
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; assets will be updated (--clobber)."
+            echo "Release $TAG already exists; updating notes and assets."
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
           else
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "$TAG" \
-              --notes "SMARK Media Tools $VERSION (auto-built from ${{ github.sha }})"
+              --notes-file release-notes.md
           fi
 
           cd release-assets
