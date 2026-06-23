@@ -1,9 +1,9 @@
 name: "Setup Node App"
-description: "Setup Node.js + npm ci (cached) + rebuild better-sqlite3 native module for Electron"
+description: "Setup Node.js + npm ci + optionally rebuild better-sqlite3 for Electron"
 
 inputs:
   rebuild-native:
-    description: "Whether to run `npm run rebuild` for better-sqlite3 (skippable for pure lint/unit jobs)"
+    description: "Whether to setup Python, run full npm ci (with install scripts) and electron-rebuild. Set false for pure lint/unit jobs."
     required: false
     default: "true"
 
@@ -16,27 +16,28 @@ runs:
         node-version: "20"
         cache: "npm"
 
-    - name: Install npm dependencies
-      shell: bash
-      run: |
-        set -euo pipefail
-        # --ignore-scripts 跳过 better-sqlite3 的 node-gyp 编译
-        # （CI 的 node 运行时无对应 prebuild，回退源码编译又缺 Python 导致 npm ci 失败）
-        # 同时跳过 electron 二进制下载，按需在后续步骤补回
-        npm ci --ignore-scripts --no-audit --no-fund
-
+    # node-gyp 需要 Python 编译 better-sqlite3；必须在 npm ci 之前就位
     - name: Setup Python (for node-gyp)
       if: inputs.rebuild-native == 'true'
       uses: actions/setup-python@v5
       with:
         python-version: "3.12"
 
-    - name: Download Electron binary
-      if: inputs.rebuild-native == 'true'
+    - name: Install npm dependencies
       shell: bash
-      run: node node_modules/electron/install.js
+      run: |
+        set -euo pipefail
+        if [ "${{ inputs.rebuild-native }}" = "true" ]; then
+          # 完整安装：让 electron 下载、better-sqlite3 编译（setup-python 提供 Python）、
+          # electron-winstaller 提取 Squirrel 工具等 install 脚本正常执行
+          npm ci --no-audit --no-fund
+        else
+          # CI 质量门禁：跳过 install 脚本（better-sqlite3 编译、electron 下载等），
+          # lint/typecheck/vitest 不需要 native 模块与 electron 二进制
+          npm ci --ignore-scripts --no-audit --no-fund
+        fi
 
-    - name: Rebuild native modules (better-sqlite3)
+    - name: Rebuild native modules (better-sqlite3 → Electron ABI)
       if: inputs.rebuild-native == 'true'
       shell: bash
       run: npm run rebuild
