@@ -27,7 +27,7 @@
   "author": "SMARK <SMARK2019@outlook.com>",
   "license": "Apache License 2.0",
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=24.0.0"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.10.2",
