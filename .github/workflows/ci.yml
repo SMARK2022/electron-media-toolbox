@@ -138,9 +138,12 @@ jobs:
         run: npm run package
 
       # 验证打包产物确实存在，避免上传空目录导致 e2e 下载失败
+      # Forge package 用 productName 作为输出目录名（含空格），格式为 out/{productName}-{platform}-{arch}/
       - name: Verify packaged app exists
         shell: pwsh
         run: |
+          Write-Host "Contents of out/:"
+          Get-ChildItem -Path "out" -Directory -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.Name)" }
           $buildDir = Get-ChildItem -Path "out" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "win32-x64" } | Select-Object -First 1
           if (-not $buildDir) {
             throw "Packaged app not found in out/ (expected out/Electron Media Toolbox-win32-x64/)"
