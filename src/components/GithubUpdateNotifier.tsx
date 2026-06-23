@@ -343,7 +343,9 @@ export function GithubUpdateNotifier({ className }: { className?: string }) {
                   <Sparkles className="h-5 w-5 text-indigo-500" />
                   {title}
                 </div>
-                <p className="text-muted-foreground text-sm max-w-[55vw]">{subtitle}</p>
+                <p className="text-muted-foreground max-w-[55vw] text-sm">
+                  {subtitle}
+                </p>
                 <p className="text-muted-foreground/80 text-xs">{desc}</p>
               </div>
 

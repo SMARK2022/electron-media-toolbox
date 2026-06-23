@@ -12,7 +12,7 @@ function main() {
 
   // 在 Windows 上使用 cmd.exe 执行 bat 文件
   const process = spawn("cmd.exe", ["/c", batFile], {
-      cwd: scriptsDir,
+    cwd: scriptsDir,
     stdio: "inherit",
     shell: true,
   });

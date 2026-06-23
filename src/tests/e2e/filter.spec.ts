@@ -6,22 +6,35 @@
 
 import { test, expect, Page, ElectronApplication } from "@playwright/test";
 import {
-  launchApp, closeApp, navigateTo, SELECTORS,
-  submitDetectionTask, waitForTaskIdle, toggleShowDisabled,
-  assertPageHealthy, rapidClick, LONG_TIMEOUT
+  launchApp,
+  closeApp,
+  navigateTo,
+  SELECTORS,
+  submitDetectionTask,
+  waitForTaskIdle,
+  toggleShowDisabled,
+  assertPageHealthy,
+  rapidClick,
+  LONG_TIMEOUT,
 } from "./helpers/electronApp";
 
 let app: ElectronApplication;
 let page: Page;
 
-test.beforeAll(async () => { ({ app, page } = await launchApp()); });
-test.afterAll(async () => { await closeApp(); });
+test.beforeAll(async () => {
+  ({ app, page } = await launchApp());
+});
+test.afterAll(async () => {
+  await closeApp();
+});
 
 // ============================================================================
 // 筛选页面基础测试
 // ============================================================================
 test.describe("筛选页面基础功能", () => {
-  test.beforeEach(async () => { await navigateTo(page, "filter"); });
+  test.beforeEach(async () => {
+    await navigateTo(page, "filter");
+  });
 
   test("页面加载并显示提交任务按钮", async () => {
     const btn = page.locator(SELECTORS.filter.submitBtn).first();
@@ -57,7 +70,9 @@ test.describe("筛选页面基础功能", () => {
 // 视图模式切换测试
 // ============================================================================
 test.describe("视图模式切换", () => {
-  test.beforeEach(async () => { await navigateTo(page, "filter"); });
+  test.beforeEach(async () => {
+    await navigateTo(page, "filter");
+  });
 
   test("切换分组/整体模式", async () => {
     const groupTab = page.locator(SELECTORS.filter.groupModeTab).first();
@@ -81,7 +96,9 @@ test.describe("视图模式切换", () => {
 // 相似度阈值测试
 // ============================================================================
 test.describe("相似度阈值控制", () => {
-  test.beforeEach(async () => { await navigateTo(page, "filter"); });
+  test.beforeEach(async () => {
+    await navigateTo(page, "filter");
+  });
 
   test("显示相似度滑块", async () => {
     const slider = page.locator(SELECTORS.filter.similaritySlider).first();
@@ -101,7 +118,9 @@ test.describe("相似度阈值控制", () => {
         // 拖动到右侧
         await page.mouse.move(box.x + box.width * 0.3, box.y + box.height / 2);
         await page.mouse.down();
-        await page.mouse.move(box.x + box.width * 0.7, box.y + box.height / 2, { steps: 5 });
+        await page.mouse.move(box.x + box.width * 0.7, box.y + box.height / 2, {
+          steps: 5,
+        });
         await page.mouse.up();
         await page.waitForTimeout(300);
       }
@@ -132,7 +151,9 @@ test.describe("相似度阈值控制", () => {
 // 任务提交测试
 // ============================================================================
 test.describe("检测任务提交", () => {
-  test.beforeEach(async () => { await navigateTo(page, "filter"); });
+  test.beforeEach(async () => {
+    await navigateTo(page, "filter");
+  });
 
   test("点击提交任务按钮", async () => {
     await submitDetectionTask(page);
@@ -160,7 +181,9 @@ test.describe("检测任务提交", () => {
 // 照片启用/禁用操作测试
 // ============================================================================
 test.describe("照片启用/禁用操作", () => {
-  test.beforeEach(async () => { await navigateTo(page, "filter"); });
+  test.beforeEach(async () => {
+    await navigateTo(page, "filter");
+  });
 
   test("切换显示禁用照片开关", async () => {
     const sw = page.locator(SELECTORS.filter.showDisabledSwitch).first();
@@ -200,7 +223,9 @@ test.describe("照片启用/禁用操作", () => {
 // 分组结果稳定性测试
 // ============================================================================
 test.describe("分组结果稳定性", () => {
-  test.beforeEach(async () => { await navigateTo(page, "filter"); });
+  test.beforeEach(async () => {
+    await navigateTo(page, "filter");
+  });
 
   test("重复提交任务后分组一致", async () => {
     // 首次提交
@@ -208,14 +233,20 @@ test.describe("分组结果稳定性", () => {
     await page.waitForTimeout(5000);
 
     // 记录当前状态
-    const text1 = await page.locator("body").textContent().catch(() => "");
+    const text1 = await page
+      .locator("body")
+      .textContent()
+      .catch(() => "");
     const hasGroups1 = text1?.includes("分组") || text1?.includes("Group");
 
     // 再次提交
     await submitDetectionTask(page);
     await page.waitForTimeout(5000);
 
-    const text2 = await page.locator("body").textContent().catch(() => "");
+    const text2 = await page
+      .locator("body")
+      .textContent()
+      .catch(() => "");
     const hasGroups2 = text2?.includes("分组") || text2?.includes("Group");
 
     // 分组状态应一致
@@ -227,7 +258,9 @@ test.describe("分组结果稳定性", () => {
 // 左右分栏拖动测试
 // ============================================================================
 test.describe("分栏拖动", () => {
-  test.beforeEach(async () => { await navigateTo(page, "filter"); });
+  test.beforeEach(async () => {
+    await navigateTo(page, "filter");
+  });
 
   test("拖动分栏调整宽度", async () => {
     const dragHandle = page.locator('[class*="cursor-ew-resize"]').first();
@@ -237,7 +270,9 @@ test.describe("分栏拖动", () => {
       if (box) {
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         await page.mouse.down();
-        await page.mouse.move(box.x + 100, box.y + box.height / 2, { steps: 5 });
+        await page.mouse.move(box.x + 100, box.y + box.height / 2, {
+          steps: 5,
+        });
         await page.mouse.up();
         await page.waitForTimeout(300);
       }

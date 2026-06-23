@@ -44,13 +44,13 @@ const Progress = ({
   <div
     className={cn(
       "h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800",
-      className
+      className,
     )}
   >
     <div
       className={cn(
         "h-full w-full flex-1 bg-blue-600 transition-all duration-300 ease-in-out",
-        indicatorClassName
+        indicatorClassName,
       )}
       style={{ transform: `translateX(-${100 - (value || 0)}%)` }}
     />
@@ -83,7 +83,8 @@ export const ImportProgressToast = () => {
   // 完成后 1s 自动退出
   useEffect(() => {
     if (state.isComplete) {
-      if (completeTimeoutRef.current !== null) clearTimeout(completeTimeoutRef.current);
+      if (completeTimeoutRef.current !== null)
+        clearTimeout(completeTimeoutRef.current);
       completeTimeoutRef.current = window.setTimeout(() => {
         PhotoService.dismissImportToast();
         completeTimeoutRef.current = null;
@@ -101,7 +102,7 @@ export const ImportProgressToast = () => {
 
   // 计算总体进度（两个进度的平均值）
   const overallProgress = Math.round(
-    (state.thumbnailProgress + state.exifProgress) / 2
+    (state.thumbnailProgress + state.exifProgress) / 2,
   );
 
   // 处理 Toast 关闭（仅在完成状态下可见）
@@ -117,22 +118,22 @@ export const ImportProgressToast = () => {
   return (
     <div
       className={cn(
-        "fixed bottom-6 right-6 z-50 w-80 rounded-xl border border-slate-200",
+        "fixed right-6 bottom-6 z-50 w-80 rounded-xl border border-slate-200",
         "bg-white/95 p-4 shadow-2xl backdrop-blur-md transition-all duration-500 ease-out",
         "dark:border-slate-800 dark:bg-slate-900/95",
-        "animate-in slide-in-from-bottom-5 fade-in duration-300"
+        "animate-in slide-in-from-bottom-5 fade-in duration-300",
       )}
     >
       {/* Header：标题 + 状态图标 + 关闭按钮 */}
-      <div className="flex items-start justify-between mb-3">
+      <div className="mb-3 flex items-start justify-between">
         <div className="flex items-center gap-3">
           {/* 状态图标：运行时显示旋转动画，完成时显示对勾 */}
           <div
             className={cn(
               "flex h-10 w-10 items-center justify-center rounded-full border shadow-sm transition-colors",
               state.isComplete
-                ? "bg-emerald-100 border-emerald-200 text-emerald-600 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400"
-                : "bg-blue-50 border-blue-100 text-blue-600 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
+                ? "border-emerald-200 bg-emerald-100 text-emerald-600 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+                : "border-blue-100 bg-blue-50 text-blue-600 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400",
             )}
           >
             {state.isComplete ? (
@@ -146,7 +147,7 @@ export const ImportProgressToast = () => {
             <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
               {state.isComplete ? "导入完成" : "正在导入照片..."}
             </h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
+            <p className="mt-0.5 font-mono text-xs text-slate-500 dark:text-slate-400">
               {state.isComplete
                 ? `共成功导入 ${state.totalFiles} 张照片`
                 : `${state.processedFiles} / ${state.totalFiles} 张`}
@@ -158,7 +159,7 @@ export const ImportProgressToast = () => {
         {state.isComplete && (
           <button
             onClick={handleDismiss}
-            className="text-slate-400 hover:text-slate-600 dark:text-slate-600 dark:hover:text-slate-300 transition-colors shrink-0"
+            className="shrink-0 text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-600 dark:hover:text-slate-300"
           >
             <X className="h-4 w-4" />
           </button>
@@ -170,7 +171,7 @@ export const ImportProgressToast = () => {
         <div className="space-y-3">
           {/* 总体进度条 */}
           <div className="space-y-1">
-            <div className="flex justify-between text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+            <div className="flex justify-between text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
               <span>总体进度</span>
               <span>{overallProgress}%</span>
             </div>
@@ -210,8 +211,8 @@ export const ImportProgressToast = () => {
           </div>
 
           {/* 当前处理文件信息 */}
-          <div className="bg-slate-50 dark:bg-slate-900/50 rounded px-2 py-1.5 mt-2 border border-slate-100 dark:border-slate-800">
-            <p className="text-[10px] text-slate-400 truncate flex items-center gap-2">
+          <div className="mt-2 rounded border border-slate-100 bg-slate-50 px-2 py-1.5 dark:border-slate-800 dark:bg-slate-900/50">
+            <p className="flex items-center gap-2 truncate text-[10px] text-slate-400">
               <HardDrive className="h-3 w-3 shrink-0" />
               <span className="truncate">
                 {state.currentFile || "处理中..."}
@@ -223,12 +224,12 @@ export const ImportProgressToast = () => {
           <button
             onClick={handleCancel}
             className={cn(
-              "w-full mt-3 h-8 px-3 py-2 rounded-lg text-xs font-medium",
+              "mt-3 h-8 w-full rounded-lg px-3 py-2 text-xs font-medium",
               "flex items-center justify-center gap-2",
-              "bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700",
+              "bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700",
               "border border-red-200 hover:border-red-300",
-              "dark:bg-red-900/20 dark:hover:bg-red-900/30 dark:text-red-400 dark:border-red-800",
-              "transition-colors"
+              "dark:border-red-800 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30",
+              "transition-colors",
             )}
           >
             <Square className="h-3.5 w-3.5" />

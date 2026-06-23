@@ -6,17 +6,30 @@
 
 import { test, expect, Page, ElectronApplication } from "@playwright/test";
 import {
-  launchApp, closeApp, navigateTo, SELECTORS,
-  importTestFiles, waitForImportComplete, submitDetectionTask, waitForTaskIdle,
-  setExportPath, getDisplayedPhotoCount, assertPageHealthy,
-  TEST_IMAGES_DIR, EXPORT_TEST_DIR
+  launchApp,
+  closeApp,
+  navigateTo,
+  SELECTORS,
+  importTestFiles,
+  waitForImportComplete,
+  submitDetectionTask,
+  waitForTaskIdle,
+  setExportPath,
+  getDisplayedPhotoCount,
+  assertPageHealthy,
+  TEST_IMAGES_DIR,
+  EXPORT_TEST_DIR,
 } from "./helpers/electronApp";
 
 let app: ElectronApplication;
 let page: Page;
 
-test.beforeAll(async () => { ({ app, page } = await launchApp()); });
-test.afterAll(async () => { await closeApp(); });
+test.beforeAll(async () => {
+  ({ app, page } = await launchApp());
+});
+test.afterAll(async () => {
+  await closeApp();
+});
 
 // ============================================================================
 // 完整工作流程测试
@@ -94,7 +107,9 @@ test.describe("数据一致性", () => {
     await page.waitForTimeout(500);
     counts.export = await getDisplayedPhotoCount(page);
 
-    console.log(`[Consistency] Import=${counts.import}, Filter=${counts.filter}, Export=${counts.export}`);
+    console.log(
+      `[Consistency] Import=${counts.import}, Filter=${counts.filter}, Export=${counts.export}`,
+    );
 
     // 导出数 <= 导入数（仅导出启用照片）
     expect(counts.export).toBeLessThanOrEqual(counts.import);
@@ -126,7 +141,11 @@ test.describe("数据一致性", () => {
 // ============================================================================
 test.describe("页面切换稳定性", () => {
   test("快速切换页面 15 次不崩溃", async () => {
-    const pages: ("import" | "filter" | "export")[] = ["import", "filter", "export"];
+    const pages: ("import" | "filter" | "export")[] = [
+      "import",
+      "filter",
+      "export",
+    ];
 
     for (let i = 0; i < 15; i++) {
       await navigateTo(page, pages[i % 3]);
@@ -164,10 +183,18 @@ test.describe("页面切换稳定性", () => {
 test.describe("并发操作稳定性", () => {
   test("混合操作不崩溃", async () => {
     const operations = [
-      async () => { await navigateTo(page, "import"); },
-      async () => { await navigateTo(page, "filter"); },
-      async () => { await navigateTo(page, "export"); },
-      async () => { await page.keyboard.press("Escape"); },
+      async () => {
+        await navigateTo(page, "import");
+      },
+      async () => {
+        await navigateTo(page, "filter");
+      },
+      async () => {
+        await navigateTo(page, "export");
+      },
+      async () => {
+        await page.keyboard.press("Escape");
+      },
     ];
 
     for (let i = 0; i < 20; i++) {
@@ -212,7 +239,9 @@ test.describe("错误恢复", () => {
     await assertPageHealthy(page);
 
     // 服务状态应显示
-    await expect(page.locator(SELECTORS.filter.serverStatusBtn).first()).toBeVisible();
+    await expect(
+      page.locator(SELECTORS.filter.serverStatusBtn).first(),
+    ).toBeVisible();
   });
 
   test("异常路径输入不崩溃", async () => {

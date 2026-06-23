@@ -84,9 +84,7 @@ const localResourceCache = new LruBufferCache(localResourceCacheLimit);
 console.log(
   `[LocalResourceCache] Free memory: ${freeMemGB.toFixed(
     2,
-  )} GB -> Cache capacity: ${(localResourceCacheLimit / ONE_GB).toFixed(
-    2,
-  )} GB`,
+  )} GB -> Cache capacity: ${(localResourceCacheLimit / ONE_GB).toFixed(2)} GB`,
 );
 
 /* -------------------------------------------------------------------------- */
@@ -238,7 +236,9 @@ function stopPythonBackend() {
     return;
   }
 
-  console.log("[PythonBackend] Waiting for backend process to exit by itself...");
+  console.log(
+    "[PythonBackend] Waiting for backend process to exit by itself...",
+  );
 
   // 2) 等待一段时间（例如 5 秒），如果仍未退出，再尝试软兜底
   const backend = pythonBackend;
@@ -249,11 +249,15 @@ function stopPythonBackend() {
   setTimeout(() => {
     // 如果进程已经退出，就什么都不做
     if (backend.killed) {
-      console.log("[PythonBackend] Backend already killed/exit, no further action.");
+      console.log(
+        "[PythonBackend] Backend already killed/exit, no further action.",
+      );
       return;
     }
 
-    console.warn("[PythonBackend] Backend still alive after shutdown request, trying soft kill...");
+    console.warn(
+      "[PythonBackend] Backend still alive after shutdown request, trying soft kill...",
+    );
 
     if (process.platform === "win32") {
       // 3) Windows 兜底：不带 /F，只发送正常关闭信号，让系统尽量优雅结束进程
@@ -275,7 +279,6 @@ function stopPythonBackend() {
     }
   }, timeoutMs);
 }
-
 
 /* -------------------------------------------------------------------------- */
 /*                                 主窗口创建                                   */

@@ -345,7 +345,7 @@ export function deletePhotoByPath(filePath: string) {
 // 根据 filePath 更新照片的扩展信息（date、fileSize、info）
 export function updatePhotoExtendByPath(
   filePath: string,
-  updates: { date?: string; fileSize?: number; info?: string }
+  updates: { date?: string; fileSize?: number; info?: string },
 ) {
   const setClauses: string[] = [];
   const params: Record<string, any> = { filePath };

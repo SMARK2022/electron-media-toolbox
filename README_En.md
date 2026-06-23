@@ -79,53 +79,53 @@ python web_api.py  # Start the API server
 cd ..
 npm install
 npm run start
-````
+```
 
 > **Note**: In dev mode, Electron connects directly to your local Python source code. When building the production version, the system compiles the backend to an EXE using Nuitka and packages it together.
 
------
+---
 
 ## 🛠️ Tech Stack
 
-| Component        | Tech Choice                          | Description                                                                     |
-| :--------------- | :----------------------------------- | :------------------------------------------------------------------------------ |
-| **UI / Desktop** | Electron, Vite, React, TypeScript   | Frontend built with Shadcn UI & Tailwind CSS                                    |
-| **Backend**      | FastAPI, Uvicorn                    | Core business logic and File I/O                                                |
-| **Compiler**     | **Nuitka**                          | Compiles Python to standalone EXE (`onefile`)                                   |
-| **AI Inference** | **ONNX Runtime (DirectML)**         | Runs LAR-IQA model with unified support for NVIDIA/AMD/Integrated GPU and CPU   |
-| **Packaging**    | Electron Forge, Wix Toolset         | Windows MSI installer generation                                                |
+| Component        | Tech Choice                       | Description                                                                   |
+| :--------------- | :-------------------------------- | :---------------------------------------------------------------------------- |
+| **UI / Desktop** | Electron, Vite, React, TypeScript | Frontend built with Shadcn UI & Tailwind CSS                                  |
+| **Backend**      | FastAPI, Uvicorn                  | Core business logic and File I/O                                              |
+| **Compiler**     | **Nuitka**                        | Compiles Python to standalone EXE (`onefile`)                                 |
+| **AI Inference** | **ONNX Runtime (DirectML)**       | Runs LAR-IQA model with unified support for NVIDIA/AMD/Integrated GPU and CPU |
+| **Packaging**    | Electron Forge, Wix Toolset       | Windows MSI installer generation                                              |
 
------
+---
 
 ## 🗓️ Roadmap
 
-  - [x] **Photo Grouping** (HSV Histogram)
-  - [x] **Aesthetic Scoring** (LAR-IQA via ONNX)
-  - [x] **Backend Compilation & Lifecycle Management** (Nuitka)
-  - [x] **Windows MSI Packaging**
-  - [ ] Multi-criteria sorting (Face focus, file size, etc.)
-  - [ ] Video import and slicing support
+- [x] **Photo Grouping** (HSV Histogram)
+- [x] **Aesthetic Scoring** (LAR-IQA via ONNX)
+- [x] **Backend Compilation & Lifecycle Management** (Nuitka)
+- [x] **Windows MSI Packaging**
+- [ ] Multi-criteria sorting (Face focus, file size, etc.)
+- [ ] Video import and slicing support
 
------
+---
 
 ## 📝 Changelog
 
 ### v2.1.1 (2025-11-23)
 
-  * **Inference Backend Migration**: Switched from `onnxruntime-gpu` to `onnxruntime-directml`, providing unified support for NVIDIA/AMD/CPU on Windows platform without requiring separate CUDA/cuDNN installation.
-  * **Compatibility Improvements**: Enhanced Nuitka onefile exit process and signal handling to prevent orphaned temporary directories from incomplete cleanup during force termination.
+- **Inference Backend Migration**: Switched from `onnxruntime-gpu` to `onnxruntime-directml`, providing unified support for NVIDIA/AMD/CPU on Windows platform without requiring separate CUDA/cuDNN installation.
+- **Compatibility Improvements**: Enhanced Nuitka onefile exit process and signal handling to prevent orphaned temporary directories from incomplete cleanup during force termination.
 
 ### v2.1.0 (2025-11-22)
 
-  * **Architecture Upgrade**: Migrated inference to ONNX Runtime, removing PyTorch dependencies and significantly reducing package size.
-  * **Compilation Optimization**: Implemented Nuitka compilation for the backend, dramatically improving startup speed and stability.
-  * **UX Enhancements**: Added backend health probing and latency display, improved About page and version checker.
+- **Architecture Upgrade**: Migrated inference to ONNX Runtime, removing PyTorch dependencies and significantly reducing package size.
+- **Compilation Optimization**: Implemented Nuitka compilation for the backend, dramatically improving startup speed and stability.
+- **UX Enhancements**: Added backend health probing and latency display, improved About page and version checker.
 
 ### v2.0.0 (2025-11-19)
 
-  * **Official Release**: Launched `.msi` installer, restructured Import/Export workflows, and completely redesigned the UI.
+- **Official Release**: Launched `.msi` installer, restructured Import/Export workflows, and completely redesigned the UI.
 
------
+---
 
 ## 📂 Project Structure
 
@@ -143,13 +143,13 @@ SMARKMediaTools
 └── package.json
 ```
 
------
+---
 
 ## 📄 License & Credits
 
 This project is licensed under the **Apache License 2.0**.
 
-  * **LAR-IQA**: [https://github.com/nasimjamshidi/LAR-IQA](https://github.com/nasimjamshidi/LAR-IQA)
-  * **UI Template**: [electron-shadcn](https://github.com/LuanRoger/electron-shadcn)
+- **LAR-IQA**: [https://github.com/nasimjamshidi/LAR-IQA](https://github.com/nasimjamshidi/LAR-IQA)
+- **UI Template**: [electron-shadcn](https://github.com/LuanRoger/electron-shadcn)
 
 **Author**: [SMARK](https://github.com/SMARK2022) | 📧 [SMARK2019@outlook.com](mailto:SMARK2019@outlook.com)

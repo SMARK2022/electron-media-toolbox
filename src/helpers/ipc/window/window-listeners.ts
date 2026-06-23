@@ -17,14 +17,26 @@ const exifParser = require("exif-parser");
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "local-resource",
-    privileges: { secure: true, supportFetchAPI: true, standard: true, bypassCSP: true, stream: true },
+    privileges: {
+      secure: true,
+      supportFetchAPI: true,
+      standard: true,
+      bypassCSP: true,
+      stream: true,
+    },
   },
 ]);
 
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "thumbnail-resource",
-    privileges: { secure: true, supportFetchAPI: true, standard: true, bypassCSP: true, stream: true },
+    privileges: {
+      secure: true,
+      supportFetchAPI: true,
+      standard: true,
+      bypassCSP: true,
+      stream: true,
+    },
   },
 ]);
 // 注意：photo-info:// 协议已移除，EXIF 元数据通过 IPC (get-photo-metadata) 获取
@@ -272,7 +284,8 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
 
           // 过滤过长的字符串和大型对象
           if (typeof value === "string" && value.length > MAX_STRING_LENGTH) {
-            cleanedExifData[key] = `[String truncated, original length: ${value.length}]`;
+            cleanedExifData[key] =
+              `[String truncated, original length: ${value.length}]`;
             fieldCount++;
           } else if (
             value !== null &&

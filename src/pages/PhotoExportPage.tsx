@@ -22,7 +22,13 @@ import {
 import { copyPhotos, folderExists } from "@/lib/system";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
-import { Save, CheckCircle2, XCircle, Loader2, Image as ImageIcon } from "lucide-react";
+import {
+  Save,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Image as ImageIcon,
+} from "lucide-react";
 import { usePhotoFilterStore } from "@/helpers/store/usePhotoFilterStore";
 
 export default function PhotoExportSubpage() {
@@ -33,12 +39,18 @@ export default function PhotoExportSubpage() {
   const [folderName, setFolderName] = useState<string>("");
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
   const [copyInProgress, setCopyInProgress] = useState<boolean>(false);
-  const [folderExistsStatus, setFolderExistsStatus] = useState<boolean | null>(null);
+  const [folderExistsStatus, setFolderExistsStatus] = useState<boolean | null>(
+    null,
+  );
 
-  const handleFolderChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFolderChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const normalizedPath = event.target.value.replace(/\\/g, "/").trim(); // 正斜杠路径
     setFolderName(normalizedPath);
-    setFolderExistsStatus(normalizedPath ? await folderExists(normalizedPath) : null); // 实时检查文件夹存在性
+    setFolderExistsStatus(
+      normalizedPath ? await folderExists(normalizedPath) : null,
+    ); // 实时检查文件夹存在性
   };
 
   const submitPhotosCopy = async () => {
@@ -56,7 +68,8 @@ export default function PhotoExportSubpage() {
   const fetchEnabledPhotos = async () => {
     try {
       const photos = await getPhotosExtendByCriteria(-2, "IQA", true); // 获取启用照片（条件 true）
-      fnSetExportPhotos( // 设置到导出专用状态，不污染 lstAllPhotos
+      fnSetExportPhotos(
+        // 设置到导出专用状态，不污染 lstAllPhotos
         photos.map((p: PhotoExtend) => ({
           fileName: p.fileName,
           fileUrl: p.fileUrl,
@@ -189,7 +202,11 @@ export default function PhotoExportSubpage() {
 
       {/* 虚拟化照片网格（自带滚动容器）*/}
 
-      <PhotoGridEnhance photos={photos} page="export" containerHeight="calc(100vh - 180px)" />
+      <PhotoGridEnhance
+        photos={photos}
+        page="export"
+        containerHeight="calc(100vh - 180px)"
+      />
     </div>
   );
 }

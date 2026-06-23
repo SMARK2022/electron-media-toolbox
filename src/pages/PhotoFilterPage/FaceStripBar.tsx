@@ -3,7 +3,11 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { ScanFace, Eye, EyeOff, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
-import { getEyeState, countEyeStates, type EyeState } from "@/helpers/store/usePhotoFilterStore";
+import {
+  getEyeState,
+  countEyeStates,
+  type EyeState,
+} from "@/helpers/store/usePhotoFilterStore";
 
 export type FaceInfo = {
   bbox: [number, number, number, number];
@@ -12,23 +16,21 @@ export type FaceInfo = {
 };
 
 // 眼睛状态样式映射（仅样式相关，阈值逻辑由 store 统一管理）
-const EYE_STATE_CONFIG: Record<
-  EyeState,
-  { icon: typeof Eye; color: string }
-> = {
-  open: {
-    icon: Eye,
-    color: "text-emerald-600 bg-emerald-50 border-emerald-200",
-  },
-  suspicious: {
-    icon: AlertTriangle,
-    color: "text-amber-600 bg-amber-50 border-amber-200",
-  },
-  closed: {
-    icon: EyeOff,
-    color: "text-red-600 bg-red-50 border-red-200",
-  },
-};
+const EYE_STATE_CONFIG: Record<EyeState, { icon: typeof Eye; color: string }> =
+  {
+    open: {
+      icon: Eye,
+      color: "text-emerald-600 bg-emerald-50 border-emerald-200",
+    },
+    suspicious: {
+      icon: AlertTriangle,
+      color: "text-amber-600 bg-amber-50 border-amber-200",
+    },
+    closed: {
+      icon: EyeOff,
+      color: "text-red-600 bg-red-50 border-red-200",
+    },
+  };
 
 interface FaceThumbnailProps {
   imageSrc: string;
@@ -56,7 +58,8 @@ const FaceThumbnail: React.FC<FaceThumbnailProps> = ({
 
   // 使用统一的眼睛状态判断
   const eyeState = getEyeState(face.eye_open);
-  const { icon: EyeStatusIcon, color: eyeStatusColor } = EYE_STATE_CONFIG[eyeState];
+  const { icon: EyeStatusIcon, color: eyeStatusColor } =
+    EYE_STATE_CONFIG[eyeState];
   const eyeStatusText = t(`filterPage.eyeState.${eyeState}`); // i18n key 动态获取
 
   useEffect(() => {
@@ -158,7 +161,7 @@ const FaceThumbnail: React.FC<FaceThumbnailProps> = ({
     >
       <div
         className={cn(
-          "relative size-14 overflow-hidden rounded-lg border-2 bg-slate-100 shadow-sm transition-all max-w-[100%] max-h-[100%]",
+          "relative size-14 max-h-[100%] max-w-[100%] overflow-hidden rounded-lg border-2 bg-slate-100 shadow-sm transition-all",
           scoreColor,
           isActive ? "ring-2 ring-blue-400" : "group-hover:border-blue-300",
         )}
@@ -166,7 +169,7 @@ const FaceThumbnail: React.FC<FaceThumbnailProps> = ({
         <canvas
           ref={canvasRef}
           className={cn(
-            "size-full transition-opacity duration-300 w-full h-full object-cover",
+            "size-full h-full w-full object-cover transition-opacity duration-300",
             isLoaded ? "opacity-100" : "opacity-0",
           )}
         />
@@ -181,12 +184,12 @@ const FaceThumbnail: React.FC<FaceThumbnailProps> = ({
         {face.eye_open !== undefined && (
           <div
             className={cn(
-              "absolute top-0.5 right-0.5 p-[2px] rounded-full border shadow-sm backdrop-blur-sm transition-transform hover:scale-110 z-10",
-              eyeStatusColor
+              "absolute top-0.5 right-0.5 z-10 rounded-full border p-[2px] shadow-sm backdrop-blur-sm transition-transform hover:scale-110",
+              eyeStatusColor,
             )}
             title={`${eyeStatusText} (睁眼度: ${(face.eye_open ?? 0).toFixed(3)})`}
           >
-            <EyeStatusIcon className="w-2.5 h-2.5" />
+            <EyeStatusIcon className="h-2.5 w-2.5" />
           </div>
         )}
       </div>
@@ -206,7 +209,10 @@ export interface FaceStripBarProps {
 }
 
 /** 查找指定眼睛状态的人脸索引列表 */
-const findFacesByEyeState = (faces: FaceInfo[], targetState: EyeState): number[] => {
+const findFacesByEyeState = (
+  faces: FaceInfo[],
+  targetState: EyeState,
+): number[] => {
   return faces
     .map((face, idx) => ({ idx, state: getEyeState(face.eye_open) }))
     .filter(({ state }) => state === targetState)
@@ -214,7 +220,10 @@ const findFacesByEyeState = (faces: FaceInfo[], targetState: EyeState): number[]
 };
 
 /** 轮播到下一个人脸 */
-const getNextFaceIndex = (indices: number[], currentIndex: number | null): number | null => {
+const getNextFaceIndex = (
+  indices: number[],
+  currentIndex: number | null,
+): number | null => {
   if (indices.length === 0) return null;
   if (currentIndex === null) return indices[0]; // 首次点击时返回第一个
   const pos = indices.indexOf(currentIndex);
@@ -235,13 +244,34 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
 
   const { t } = useTranslation();
 
-  const { closed: closedCount, suspicious: suspCount, open: openCount } = countEyeStates(faces);
+  const {
+    closed: closedCount,
+    suspicious: suspCount,
+    open: openCount,
+  } = countEyeStates(faces);
 
   // 眼睛状态统计数据
   const stats = [
-    { state: "closed" as const, count: closedCount, icon: EyeOff, color: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300" },
-    { state: "suspicious" as const, count: suspCount, icon: AlertTriangle, color: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300" },
-    { state: "open" as const, count: openCount, icon: Eye, color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300" },
+    {
+      state: "closed" as const,
+      count: closedCount,
+      icon: EyeOff,
+      color: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
+    },
+    {
+      state: "suspicious" as const,
+      count: suspCount,
+      icon: AlertTriangle,
+      color:
+        "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+    },
+    {
+      state: "open" as const,
+      count: openCount,
+      icon: Eye,
+      color:
+        "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300",
+    },
   ];
 
   // 处理眼睛状态 badge 点击事件（轮播到下一个同类人脸）
@@ -271,16 +301,24 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
     <div
       className={cn(
         "w-full border-b border-slate-200/70 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/20",
-        isTrackingMode && "border-emerald-300/70 bg-emerald-50/70 dark:border-emerald-600/70 dark:bg-emerald-950/40",
+        isTrackingMode &&
+          "border-emerald-300/70 bg-emerald-50/70 dark:border-emerald-600/70 dark:bg-emerald-950/40",
       )}
     >
       <div className="flex items-center justify-between px-3.5 py-1.5 text-[11px] text-slate-600 dark:text-slate-300">
         <div className="flex items-center gap-2 font-semibold">
-          <ScanFace className={cn("h-3.5 w-3.5", isTrackingMode ? "text-emerald-600 dark:text-emerald-400" : "text-indigo-500")} />
+          <ScanFace
+            className={cn(
+              "h-3.5 w-3.5",
+              isTrackingMode
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-indigo-500",
+            )}
+          />
           <span>{label}</span>
 
           {/* 眼睛状态统计 Badge（可点击轮播）*/}
-          {stats.some(s => s.count > 0) && (
+          {stats.some((s) => s.count > 0) && (
             <div className="ml-1 flex gap-1">
               {stats.map(
                 ({ state, count, icon: IconComp, color }) =>
@@ -290,7 +328,10 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
                       type="button"
                       onClick={() => handleEyeStateBadgeClick(state)}
                       title={t(`filterPage.eyeState.${state}`)}
-                      className={cn("flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-medium transition-transform hover:scale-110 cursor-pointer", color)}
+                      className={cn(
+                        "flex cursor-pointer items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-medium transition-transform hover:scale-110",
+                        color,
+                      )}
                     >
                       <IconComp className="h-2.5 w-2.5" /> {count}
                     </button>
@@ -304,7 +345,14 @@ export const FaceStripBar: React.FC<FaceStripBarProps> = ({
             </span>
           )}
         </div>
-        <span className={cn("text-[10px]", isTrackingMode ? "text-emerald-700 dark:text-emerald-300" : "text-muted-foreground")}>
+        <span
+          className={cn(
+            "text-[10px]",
+            isTrackingMode
+              ? "text-emerald-700 dark:text-emerald-300"
+              : "text-muted-foreground",
+          )}
+        >
           {helperLabel}
         </span>
       </div>

@@ -171,15 +171,15 @@ const InfoItem: React.FC<{
 }> = ({ label, value, icon: Icon, className }) => (
   <div
     className={cn(
-      "flex flex-col rounded-md bg-muted/40 p-2 text-xs",
+      "bg-muted/40 flex flex-col rounded-md p-2 text-xs",
       className,
     )}
   >
-    <span className="mb-1 flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+    <span className="text-muted-foreground mb-1 flex items-center gap-1.5 text-[10px] font-medium tracking-wider uppercase">
       {Icon && <Icon className="h-3 w-3" />}
       {label}
     </span>
-    <span className="select-text truncate font-medium text-foreground">
+    <span className="text-foreground truncate font-medium select-text">
       {value}
     </span>
   </div>
@@ -203,13 +203,13 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
     <button
       type="button"
       onClick={handleCopy}
-      className="ml-2 inline-flex items-center justify-center rounded p-1 transition-colors hover:bg-muted"
+      className="hover:bg-muted ml-2 inline-flex items-center justify-center rounded p-1 transition-colors"
       title="复制路径"
     >
       {copied ? (
         <Check className="h-3 w-3 text-green-500" />
       ) : (
-        <Copy className="h-3 w-3 text-muted-foreground" />
+        <Copy className="text-muted-foreground h-3 w-3" />
       )}
     </button>
   );
@@ -240,9 +240,7 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
   }, [metadata]);
 
   // 相机与曝光相关信息
-  const cameraModel = [flatData.Make, flatData.Model]
-    .filter(Boolean)
-    .join(" ");
+  const cameraModel = [flatData.Make, flatData.Model].filter(Boolean).join(" ");
 
   const lensInfo =
     flatData.LensModel ||
@@ -323,7 +321,9 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
         .map(([k, v]) => [
           k,
           // 对时间字段进行格式化
-          typeof v === "number" && timeFieldKeywords.test(k) ? formatDate(v) : v,
+          typeof v === "number" && timeFieldKeywords.test(k)
+            ? formatDate(v)
+            : v,
         ])
         .sort((a, b) => a[0].localeCompare(b[0])),
     [flatData, prominentKeys],
@@ -340,15 +340,15 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden p-0">
         {/* 头部 + 高亮信息区 */}
-        <div className="border-b bg-muted/30 p-6 pb-4">
+        <div className="bg-muted/30 border-b p-6 pb-4">
           <AlertDialogHeader className="mb-4">
             <AlertDialogTitle className="flex items-center gap-2">
               <Settings2 className="h-5 w-5" />
               {t("photoContext.infoTitle", "Photo details")}
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
-              <div className="space-y-1 text-xs text-muted-foreground">
-                <div className="flex items-center justify-between text-[11px] font-mono">
+              <div className="text-muted-foreground space-y-1 text-xs">
+                <div className="flex items-center justify-between font-mono text-[11px]">
                   <span className="break-all">
                     {photo?.filePath || flatData.filePath || ""}
                   </span>
@@ -370,34 +370,36 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
 
           {/* 相机/曝光高亮区 */}
           <div className="mb-2 grid grid-cols-4 gap-2">
-            <div className="col-span-2 flex flex-col justify-center rounded-md border bg-background p-3">
-              <span className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+            <div className="bg-background col-span-2 flex flex-col justify-center rounded-md border p-3">
+              <span className="text-muted-foreground mb-1 flex items-center gap-1.5 text-[10px] tracking-wider uppercase">
                 <Camera className="h-3 w-3" />
                 {isChinese ? "相机" : "Camera"}
               </span>
               <span
                 className="truncate text-sm font-semibold"
-                title={cameraModel || (isChinese ? "未知相机" : "Unknown camera")}
+                title={
+                  cameraModel || (isChinese ? "未知相机" : "Unknown camera")
+                }
               >
                 {cameraModel || (isChinese ? "未知相机" : "Unknown camera")}
               </span>
               {lensInfo && (
-                <span className="truncate text-xs text-muted-foreground">
+                <span className="text-muted-foreground truncate text-xs">
                   {lensInfo}
                 </span>
               )}
             </div>
 
-            <div className="flex flex-col items-center justify-center rounded-md border bg-background p-3 text-center">
-              <Aperture className="mb-1 h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-mono font-medium">
+            <div className="bg-background flex flex-col items-center justify-center rounded-md border p-3 text-center">
+              <Aperture className="text-muted-foreground mb-1 h-4 w-4" />
+              <span className="font-mono text-sm font-medium">
                 {fNumber || "--"}
               </span>
             </div>
 
-            <div className="flex flex-col items-center justify-center rounded-md border bg-background p-3 text-center">
-              <Timer className="mb-1 h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-mono font-medium">
+            <div className="bg-background flex flex-col items-center justify-center rounded-md border p-3 text-center">
+              <Timer className="text-muted-foreground mb-1 h-4 w-4" />
+              <span className="font-mono text-sm font-medium">
                 {shutter || "--"}
               </span>
             </div>
@@ -408,7 +410,7 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
               icon={FileImage}
               label={isChinese ? "ISO" : "ISO"}
               value={iso || "--"}
-              className="border bg-background"
+              className="bg-background border"
             />
             <InfoItem
               icon={Maximize}
@@ -418,13 +420,13 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
                   ? `${flatData.ImageWidth} x ${flatData.ImageHeight}`
                   : "--"
               }
-              className="col-span-2 border bg-background"
+              className="bg-background col-span-2 border"
             />
             <InfoItem
               icon={Calendar}
               label={isChinese ? "拍摄日期" : "Captured"}
               value={captureDateShort}
-              className="border bg-background"
+              className="bg-background border"
             />
           </div>
         </div>
@@ -433,13 +435,13 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
         <div className="flex-1 space-y-6 overflow-y-auto p-6 pt-4 text-xs">
           {/* 文件信息 */}
           <section>
-            <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground/80">
+            <h4 className="text-foreground/80 mb-3 flex items-center gap-2 text-sm font-semibold">
               <HardDrive className="h-4 w-4" />
               {isChinese ? "文件信息" : "File info"}
             </h4>
-            <div className="space-y-3 rounded-lg border bg-card p-3">
+            <div className="bg-card space-y-3 rounded-lg border p-3">
               <div className="space-y-1">
-                <div className="flex items-center justify-between text-[10px] font-semibold uppercase text-muted-foreground">
+                <div className="text-muted-foreground flex items-center justify-between text-[10px] font-semibold uppercase">
                   {isChinese ? "文件路径" : "File path"}
                   {(photo?.filePath || flatData.filePath) && (
                     <CopyButton
@@ -447,13 +449,13 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
                     />
                   )}
                 </div>
-                <div className="break-all font-mono text-xs leading-relaxed text-foreground">
+                <div className="text-foreground font-mono text-xs leading-relaxed break-all">
                   {photo?.filePath || flatData.filePath || "N/A"}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4 border-t pt-2">
                 <div>
-                  <div className="mb-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                  <div className="text-muted-foreground mb-0.5 text-[10px] font-semibold uppercase">
                     {isChinese ? "文件大小" : "File size"}
                   </div>
                   <div className="text-xs">
@@ -463,7 +465,7 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
                   </div>
                 </div>
                 <div>
-                  <div className="mb-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                  <div className="text-muted-foreground mb-0.5 text-[10px] font-semibold uppercase">
                     {isChinese ? "修改时间" : "Modified"}
                   </div>
                   <div className="text-xs">
@@ -477,22 +479,21 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
           {/* GPS 区块（使用必应地图） */}
           {hasGPS && (
             <section>
-              <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground/80">
+              <h4 className="text-foreground/80 mb-3 flex items-center gap-2 text-sm font-semibold">
                 <MapPin className="h-4 w-4" />
                 {isChinese ? "地理位置" : "Location"}
               </h4>
-              <div className="flex items-center justify-between rounded-lg border bg-card p-3">
+              <div className="bg-card flex items-center justify-between rounded-lg border p-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
                     <Globe className="h-4 w-4" />
                   </div>
                   <div>
                     <div className="text-xs font-medium">
-                      {flatData.GPSLatitude?.toFixed(6)},
-                      {" "}
+                      {flatData.GPSLatitude?.toFixed(6)},{" "}
                       {flatData.GPSLongitude?.toFixed(6)}
                     </div>
-                    <div className="text-[10px] text-muted-foreground">
+                    <div className="text-muted-foreground text-[10px]">
                       {isChinese ? "海拔" : "Altitude"}
                       {": "}
                       {flatData.GPSAltitude !== undefined &&
@@ -508,7 +509,7 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
                   href={bingMapLink}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-colors hover:bg-primary/90"
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-3 py-1.5 text-xs transition-colors"
                 >
                   {isChinese ? "在必应地图查看" : "View in Bing Maps"}
                 </a>
@@ -519,7 +520,7 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
           {/* 其他参数 */}
           {hasMetadata && otherEntries.length > 0 && (
             <section>
-              <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground/80">
+              <h4 className="text-foreground/80 mb-3 flex items-center gap-2 text-sm font-semibold">
                 <Settings2 className="h-4 w-4" />
                 {isChinese ? "其他参数" : "Other details"}
               </h4>
@@ -527,9 +528,9 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
                 {otherEntries.map(([key, value]) => (
                   <div
                     key={key}
-                    className="rounded border px-2 py-1.5 transition-colors hover:bg-muted/50"
+                    className="hover:bg-muted/50 rounded border px-2 py-1.5 transition-colors"
                   >
-                    <dt className="mb-0.5 truncate text-[11px] text-muted-foreground">
+                    <dt className="text-muted-foreground mb-0.5 truncate text-[11px]">
                       {getFieldLabel(key, isChinese)}
                     </dt>
                     <dd
@@ -545,16 +546,13 @@ export const PhotoInfoDialog: React.FC<PhotoInfoDialogProps> = ({
           )}
 
           {!hasMetadata && (
-            <p className="text-[11px] text-muted-foreground">
-              {t(
-                "photoContext.infoEmpty",
-                "No extra metadata available.",
-              )}
+            <p className="text-muted-foreground text-[11px]">
+              {t("photoContext.infoEmpty", "No extra metadata available.")}
             </p>
           )}
         </div>
 
-        <AlertDialogFooter className="border-t bg-muted/10 p-4 pt-2">
+        <AlertDialogFooter className="bg-muted/10 border-t p-4 pt-2">
           <AlertDialogAction className="w-full sm:w-auto">
             {t("common.close", isChinese ? "关闭" : "Close")}
           </AlertDialogAction>

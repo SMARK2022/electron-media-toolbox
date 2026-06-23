@@ -1,12 +1,6 @@
 // src/renderer/pages/AboutPage.tsx
 import React from "react";
-import {
-  Github,
-  Mail,
-  User,
-  ExternalLink,
-  MessageCircle,
-} from "lucide-react";
+import { Github, Mail, User, ExternalLink, MessageCircle } from "lucide-react";
 
 import {
   Card,
@@ -68,7 +62,7 @@ export default function AboutPage() {
       <Card className="w-full max-w-4xl overflow-hidden shadow-xl">
         <div className="grid grid-cols-1 md:grid-cols-[280px_1fr]">
           {/* 左侧：个人信息侧栏 */}
-          <div className="flex flex-col items-center justify-center border-b bg-slate-50/80 p-8 md:border-b-0 md:border-r dark:bg-slate-900/50">
+          <div className="flex flex-col items-center justify-center border-b bg-slate-50/80 p-8 md:border-r md:border-b-0 dark:bg-slate-900/50">
             {/* 头像 */}
             <div className="mb-6 h-24 w-24 overflow-hidden rounded-full border-4 border-white bg-white shadow-md dark:border-slate-800">
               <img
@@ -120,7 +114,9 @@ export default function AboutPage() {
           <div className="flex flex-col bg-white dark:bg-slate-950">
             <CardHeader className="pb-2">
               <div>
-                <CardTitle className="text-2xl">{t("about.pageTitle")}</CardTitle>
+                <CardTitle className="text-2xl">
+                  {t("about.pageTitle")}
+                </CardTitle>
                 <CardDescription className="text-base">
                   {t("about.toolboxDescription")}
                 </CardDescription>
@@ -130,7 +126,7 @@ export default function AboutPage() {
             <CardContent className="flex flex-1 flex-col gap-6 pt-3">
               {/* 描述 + GitHub 链接 + 反馈入口 */}
               <div className="space-y-4">
-                <p className="leading-relaxed text-sm text-slate-600 dark:text-slate-300">
+                <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
                   {t("about.contactInfo")}
                 </p>
 
@@ -148,10 +144,12 @@ export default function AboutPage() {
                     <button
                       type="button"
                       onClick={() => openExternal(feedbackUrl)}
-                      className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 dark:ring-offset-slate-950"
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:outline-none dark:ring-offset-slate-950"
                     >
                       <MessageCircle className="h-4 w-4" />
-                      <span>{t("about.feedbackLink") || "提交反馈 / Feedback"}</span>
+                      <span>
+                        {t("about.feedbackLink") || "提交反馈 / Feedback"}
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -159,7 +157,9 @@ export default function AboutPage() {
                 {/* GitHub 文本链接条 */}
                 <div className="flex items-center gap-2 rounded-md border bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
                   <Github className="h-4 w-4 text-slate-500" />
-                  <span className="font-semibold">{t("about.projectRepo")}</span>
+                  <span className="font-semibold">
+                    {t("about.projectRepo")}
+                  </span>
                   <button
                     type="button"
                     onClick={() => openExternal(projectRepoUrl)}

@@ -184,8 +184,7 @@ const resources = {
           "Try adjusting filters, importing more photos, or running a new detection task.",
         filterHintPrefix:
           "Adjust the similarity threshold before running detection. Use bulk actions to quickly organize your photo groups.",
-        filterHintLine1:
-          "Double-click or press ",
+        filterHintLine1: "Double-click or press ",
         filterHintLine1Suffix:
           " on an image in the preview pane to quickly toggle its enabled status; click to preview, use keyboard ",
         filterHintLine1End: " to select photos within the same group.",
@@ -411,10 +410,8 @@ const resources = {
         noPhotosFoundDesc: "尝试调整筛选条件、导入更多照片或运行新的检测任务。",
         filterHintPrefix:
           "在运行检测之前调整相似度阈值。使用批量操作可快速整理照片分组。",
-        filterHintLine1:
-          "在预览窗格中对图片左键双击或",
-        filterHintLine1Suffix:
-          "可快速切换启用状态；单击以预览，使用键盘 ",
+        filterHintLine1: "在预览窗格中对图片左键双击或",
+        filterHintLine1Suffix: "可快速切换启用状态；单击以预览，使用键盘 ",
         filterHintLine1End: " 选择同组内照片。",
         trackingMode: "人像追踪", // 人像追踪模式
         eyeState: {

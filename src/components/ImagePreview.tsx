@@ -195,7 +195,8 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
       const [x1, y1, x2, y2] = region.bbox;
       if (x2 <= x1 || y2 <= y1) return false;
 
-      const targetZoom = region.zoomFactor && region.zoomFactor > 1 ? region.zoomFactor : 1.2;
+      const targetZoom =
+        region.zoomFactor && region.zoomFactor > 1 ? region.zoomFactor : 1.2;
       const width = x2 - x1;
       const height = y2 - y1;
       const padRatio = (targetZoom - 1) / 2;
@@ -215,14 +216,22 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
         containerSize.height / regionHeight,
       );
       const targetScale = absoluteScale / baseScale;
-      const clampedScale = Math.min(Math.max(targetScale, MIN_SCALE), MAX_SCALE);
+      const clampedScale = Math.min(
+        Math.max(targetScale, MIN_SCALE),
+        MAX_SCALE,
+      );
 
       const centerX = px1 + regionWidth / 2;
       const centerY = py1 + regionHeight / 2;
 
-      const desiredX = containerSize.width / 2 - centerX * baseScale * clampedScale;
-      const desiredY = containerSize.height / 2 - centerY * baseScale * clampedScale;
-      const clampedPos = getClampedPosition({ x: desiredX, y: desiredY }, clampedScale);
+      const desiredX =
+        containerSize.width / 2 - centerX * baseScale * clampedScale;
+      const desiredY =
+        containerSize.height / 2 - centerY * baseScale * clampedScale;
+      const clampedPos = getClampedPosition(
+        { x: desiredX, y: desiredY },
+        clampedScale,
+      );
 
       setScale(clampedScale);
       setPosition(clampedPos);
@@ -295,7 +304,13 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   useEffect(() => {
     if (!focusRegionRef.current) return; // 无聚焦区域时不处理，依赖 fitToContainer 自适应
     focusOnRegion(focusRegionRef.current, disableFocusAnimation); // 重新聚焦以适应新尺寸
-  }, [focusOnRegion, imageSize, containerSize, baseScale, disableFocusAnimation]);
+  }, [
+    focusOnRegion,
+    imageSize,
+    containerSize,
+    baseScale,
+    disableFocusAnimation,
+  ]);
 
   // 重置图片源时清空交互标志（允许新图片首次交互触发回调）
   useEffect(() => {
@@ -343,7 +358,17 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
     // 添加非被动事件监听器（{ passive: false } 允许调用 preventDefault）
     container.addEventListener("wheel", handleWheel, { passive: false });
     return () => container.removeEventListener("wheel", handleWheel);
-  }, [scale, position, isDragging, MIN_SCALE, MAX_SCALE, ZOOM_SPEED, getClampedPosition, triggerZoomBadge, triggerUserInteraction]);
+  }, [
+    scale,
+    position,
+    isDragging,
+    MIN_SCALE,
+    MAX_SCALE,
+    ZOOM_SPEED,
+    getClampedPosition,
+    triggerZoomBadge,
+    triggerUserInteraction,
+  ]);
 
   // 鼠标拖拽
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -506,7 +531,8 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
           color: "rgba(255, 255, 255, 0.95)",
           fontSize: "13px",
           fontWeight: 500,
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontFamily:
+            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           fontVariantNumeric: "tabular-nums", // 关键：等宽数字，防止抖动
           // 边框和阴影
           padding: "6px 14px",

@@ -11,8 +11,20 @@
  * 服务在 App 级别初始化，所有页面共享同一实例
  */
 
-import { initializeDatabase, getPhotos, getPhotosExtendByCriteria, addPhotosExtend, clearPhotos, updatePhotoExtendByPath, Photo, PhotoExtend } from "@/helpers/ipc/database/db";
-import { usePhotoFilterStore, type ServerData } from "@/helpers/store/usePhotoFilterStore";
+import {
+  initializeDatabase,
+  getPhotos,
+  getPhotosExtendByCriteria,
+  addPhotosExtend,
+  clearPhotos,
+  updatePhotoExtendByPath,
+  Photo,
+  PhotoExtend,
+} from "@/helpers/ipc/database/db";
+import {
+  usePhotoFilterStore,
+  type ServerData,
+} from "@/helpers/store/usePhotoFilterStore";
 
 // ============================================================================
 // 服务配置常量
@@ -127,7 +139,7 @@ class PhotoServiceImpl {
     listener({ ...this.importTask }); // 立即回调当前状态
     return () => {
       this.importTaskSubscribers = this.importTaskSubscribers.filter(
-        (l) => l !== listener
+        (l) => l !== listener,
       );
     };
   }
@@ -141,7 +153,10 @@ class PhotoServiceImpl {
   /** 取消导入任务 */
   cancelImportTask(): void {
     if (!this.importTask.isRunning) return;
-    console.log("[PhotoService] Cancelling import task, invalidating taskId:", this.currentImportTaskId);
+    console.log(
+      "[PhotoService] Cancelling import task, invalidating taskId:",
+      this.currentImportTaskId,
+    );
     // 递增任务 ID，使所有旧任务的更新操作失效
     this.currentImportTaskId++;
     this.importTask = {
@@ -182,7 +197,9 @@ class PhotoServiceImpl {
 
       if (Array.isArray(savedPhotos) && savedPhotos.length > 0) {
         store.fnSetAllPhotos(savedPhotos);
-        console.log(`[PhotoService] Loaded ${savedPhotos.length} photos from DB`);
+        console.log(
+          `[PhotoService] Loaded ${savedPhotos.length} photos from DB`,
+        );
       } else {
         store.fnSetAllPhotos([]);
       }
@@ -195,7 +212,8 @@ class PhotoServiceImpl {
   /** 刷新照片数据（支持分组/全部模式） */
   async refreshPhotos(): Promise<void> {
     const store = usePhotoFilterStore.getState();
-    const { modeGalleryView, strSortedColumnKey, boolShowDisabledPhotos } = store;
+    const { modeGalleryView, strSortedColumnKey, boolShowDisabledPhotos } =
+      store;
 
     try {
       await this.loadPhotos(); // 先加载最新照片列表
@@ -365,7 +383,7 @@ class PhotoServiceImpl {
   private updateStatusText(data: ServerData | null): void {
     const text = this.formatStatusFn
       ? this.formatStatusFn(data)
-      : data?.status ?? "Unknown";
+      : (data?.status ?? "Unknown");
     usePhotoFilterStore.getState().fnSetServerStatusText(text);
   }
 
@@ -431,8 +449,8 @@ class PhotoServiceImpl {
     console.log(`[PhotoService] Starting import task with ID: ${taskId}`);
 
     // 3. 路径去重与规范化
-    const uniquePaths = [...new Set(filePaths.map(normalizePath))].sort((a, b) =>
-      a.localeCompare(b, undefined, { numeric: true })
+    const uniquePaths = [...new Set(filePaths.map(normalizePath))].sort(
+      (a, b) => a.localeCompare(b, undefined, { numeric: true }),
     );
     const total = uniquePaths.length;
     console.log(`[PhotoService] Starting import task for ${total} files`);
@@ -466,7 +484,7 @@ class PhotoServiceImpl {
         filePath: p.filePath,
         info: "",
         isEnabled: true,
-      }))
+      })),
     );
 
     // 6. 启动缩略图生成（后台，传入 taskId）
@@ -477,7 +495,9 @@ class PhotoServiceImpl {
       .then(() => {
         // 检查任务是否仍然有效
         if (taskId !== this.currentImportTaskId) {
-          console.log(`[PhotoService] Import task ${taskId} was superseded, skipping completion`);
+          console.log(
+            `[PhotoService] Import task ${taskId} was superseded, skipping completion`,
+          );
           return;
         }
         this.finishImportTask(taskId);
@@ -485,7 +505,9 @@ class PhotoServiceImpl {
       })
       .catch((err) => {
         if (taskId !== this.currentImportTaskId) {
-          console.log(`[PhotoService] Import task ${taskId} was superseded, ignoring error`);
+          console.log(
+            `[PhotoService] Import task ${taskId} was superseded, ignoring error`,
+          );
           return;
         }
         console.error("[PhotoService] EXIF extraction error:", err);
@@ -500,35 +522,51 @@ class PhotoServiceImpl {
 
   /** 生成进度文本 */
   private getImportProgressText(): string {
-    const { thumbnailProgress, exifProgress, processedFiles, totalFiles } = this.importTask;
+    const { thumbnailProgress, exifProgress, processedFiles, totalFiles } =
+      this.importTask;
     const avgProgress = Math.round((thumbnailProgress + exifProgress) / 2);
     return `缩略图: ${Math.round(thumbnailProgress)}% | EXIF: ${Math.round(exifProgress)}% | 总进度: ${avgProgress}% (${processedFiles}/${totalFiles} 张)`;
   }
 
   /** 启动缩略图生成任务 */
-  private async startThumbnailGeneration(filePaths: string[], taskId: number): Promise<void> {
+  private async startThumbnailGeneration(
+    filePaths: string[],
+    taskId: number,
+  ): Promise<void> {
     try {
       // 检查任务是否仍然有效
       if (taskId !== this.currentImportTaskId) {
-        console.log(`[PhotoService] Thumbnail task ${taskId} superseded, skipping`);
+        console.log(
+          `[PhotoService] Thumbnail task ${taskId} superseded, skipping`,
+        );
         return;
       }
 
       let thumbsPath = "../.cache/.thumbs";
       try {
         const electronAPI = (window as any)?.ElectronAPI;
-        if (electronAPI?.getThumbsCacheDir) thumbsPath = await electronAPI.getThumbsCacheDir();
-      } catch (e) { /* ignore */ }
+        if (electronAPI?.getThumbsCacheDir)
+          thumbsPath = await electronAPI.getThumbsCacheDir();
+      } catch (e) {
+        /* ignore */
+      }
 
       await fetch(`${SERVER_BASE_URL}/generate_thumbnails`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file_paths: filePaths, thumbs_path: thumbsPath, width: 128, height: 128 }),
+        body: JSON.stringify({
+          file_paths: filePaths,
+          thumbs_path: thumbsPath,
+          width: 128,
+          height: 128,
+        }),
       });
 
       // 检查任务是否仍然有效
       if (taskId !== this.currentImportTaskId) {
-        console.log(`[PhotoService] Thumbnail task ${taskId} superseded after fetch, skipping store update`);
+        console.log(
+          `[PhotoService] Thumbnail task ${taskId} superseded after fetch, skipping store update`,
+        );
         return;
       }
 
@@ -539,15 +577,23 @@ class PhotoServiceImpl {
   }
 
   /** 启动 EXIF 读取任务（分批处理，带进度更新，更新 DB 和 Store） */
-  private async startExifExtraction(filePaths: string[], taskId: number): Promise<void> {
+  private async startExifExtraction(
+    filePaths: string[],
+    taskId: number,
+  ): Promise<void> {
     const total = filePaths.length;
     let completed = 0;
-    const exifBatch: Array<{ path: string; updates: { date?: string; fileSize?: number; info?: string } }> = []; // 缓存要写入的 EXIF 数据
+    const exifBatch: Array<{
+      path: string;
+      updates: { date?: string; fileSize?: number; info?: string };
+    }> = []; // 缓存要写入的 EXIF 数据
 
     for (let i = 0; i < total; i += EXIF_BATCH_SIZE) {
       // 检查任务是否仍然有效
       if (taskId !== this.currentImportTaskId) {
-        console.log(`[PhotoService] EXIF task ${taskId} superseded at batch ${i}, stopping`);
+        console.log(
+          `[PhotoService] EXIF task ${taskId} superseded at batch ${i}, stopping`,
+        );
         return;
       }
 
@@ -577,7 +623,10 @@ class PhotoServiceImpl {
                 : undefined;
 
             // 收集 EXIF 数据到缓存，而不是立即写入
-            exifBatch.push({ path: absPath, updates: { date: captureTime, fileSize, info: infoStr } });
+            exifBatch.push({
+              path: absPath,
+              updates: { date: captureTime, fileSize, info: infoStr },
+            });
 
             // 检查任务是否仍然有效，然后才更新 Store
             if (taskId !== this.currentImportTaskId) return;
@@ -586,15 +635,13 @@ class PhotoServiceImpl {
             const currentStore = usePhotoFilterStore.getState();
             currentStore.fnSetAllPhotos(
               currentStore.lstAllPhotos.map((p) =>
-                p.filePath === absPath
-                  ? { ...p, info: captureTime || "" }
-                  : p
-              )
+                p.filePath === absPath ? { ...p, info: captureTime || "" } : p,
+              ),
             );
           } catch (e) {
             console.warn(
               `[PhotoService] EXIF extraction failed for ${absPath}:`,
-              e
+              e,
             );
           }
 
@@ -613,12 +660,14 @@ class PhotoServiceImpl {
             await this.writeExifBatchToDb(exifBatch);
             exifBatch.length = 0; // 清空缓存
           }
-        })
+        }),
       );
 
       // 批次间延迟前检查任务是否仍然有效
       if (taskId !== this.currentImportTaskId) {
-        console.log(`[PhotoService] EXIF task ${taskId} superseded after batch, stopping`);
+        console.log(
+          `[PhotoService] EXIF task ${taskId} superseded after batch, stopping`,
+        );
         return;
       }
 
@@ -635,7 +684,10 @@ class PhotoServiceImpl {
 
   /** 批量将 EXIF 数据写入数据库 */
   private async writeExifBatchToDb(
-    batch: Array<{ path: string; updates: { date?: string; fileSize?: number; info?: string } }>
+    batch: Array<{
+      path: string;
+      updates: { date?: string; fileSize?: number; info?: string };
+    }>,
   ): Promise<void> {
     if (batch.length === 0) return;
     try {
@@ -685,7 +737,9 @@ class PhotoServiceImpl {
   private finishImportTask(taskId: number): void {
     // 检查任务是否仍然有效
     if (taskId !== this.currentImportTaskId) {
-      console.log(`[PhotoService] Import task ${taskId} superseded, skipping finish`);
+      console.log(
+        `[PhotoService] Import task ${taskId} superseded, skipping finish`,
+      );
       return;
     }
 

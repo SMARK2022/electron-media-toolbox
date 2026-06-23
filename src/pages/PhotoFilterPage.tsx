@@ -39,18 +39,24 @@ interface WorkerRowProps {
   t: ReturnType<typeof useTranslation>["t"]; // i18n 翻译函数
 }
 
-const WorkerRow = React.memo<WorkerRowProps>(({ index, workerStatus, t }) => (
-  <div className="space-y-1">
-    <div className="text-muted-foreground flex items-center justify-between text-[11px]">
-      <span className="truncate">{t("filterPage.workerLabel")} {index + 1}</span>
-      <span className="text-foreground ml-2 flex-shrink-0 font-mono text-xs">{workerStatus}</span>
+const WorkerRow = React.memo<WorkerRowProps>(
+  ({ index, workerStatus, t }) => (
+    <div className="space-y-1">
+      <div className="text-muted-foreground flex items-center justify-between text-[11px]">
+        <span className="truncate">
+          {t("filterPage.workerLabel")} {index + 1}
+        </span>
+        <span className="text-foreground ml-2 flex-shrink-0 font-mono text-xs">
+          {workerStatus}
+        </span>
+      </div>
+      <Progress value={parseFloat(workerStatus)} className="w-full" />{" "}
+      {/* 进度条：根据百分比显示 */}
     </div>
-    <Progress value={parseFloat(workerStatus)} className="w-full" /> {/* 进度条：根据百分比显示 */}
-  </div>
-), (prev, next) => (
-  prev.index === next.index &&
-  prev.workerStatus === next.workerStatus
-)); // 仅比较 index 和 workerStatus，避免 t 函数变化导致重渲染
+  ),
+  (prev, next) =>
+    prev.index === next.index && prev.workerStatus === next.workerStatus,
+); // 仅比较 index 和 workerStatus，避免 t 函数变化导致重渲染
 
 WorkerRow.displayName = "WorkerRow";
 
@@ -61,93 +67,125 @@ WorkerRow.displayName = "WorkerRow";
 const ServerStatusMonitorDrawer = React.memo<{
   serverStatus: string; // 服务器状态文本
   serverData: ServerData | null; // 服务器数据对象
-}>(({ serverStatus, serverData }) => {
-  const { t } = useTranslation();
+}>(
+  ({ serverStatus, serverData }) => {
+    const { t } = useTranslation();
 
-  // 缓存关键数据以支持深度比较
-  const queueLength = serverData?.task_queue_length ?? 0; // 任务队列长度
-  const workerCount = serverData?.workers?.length ?? 0; // Worker 数量
-  const statusText = serverData?.status ?? t("filterPage.unknownStatus"); // 服务器状态文本
-  const workers = serverData?.workers ?? []; // Worker 列表
+    // 缓存关键数据以支持深度比较
+    const queueLength = serverData?.task_queue_length ?? 0; // 任务队列长度
+    const workerCount = serverData?.workers?.length ?? 0; // Worker 数量
+    const statusText = serverData?.status ?? t("filterPage.unknownStatus"); // 服务器状态文本
+    const workers = serverData?.workers ?? []; // Worker 列表
 
-  return (
-    <Drawer>
-      <DrawerTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-border bg-muted/60 text-muted-foreground hover:bg-muted flex items-center gap-2 rounded-xl border px-2 py-1 text-xs font-medium"
-        >
-          <Server className="h-3 w-3" /> {/* 服务器图标 */}
-          <span className="max-w-[19vw] truncate">{serverStatus}</span>
-        </Button>
-      </DrawerTrigger>
-      <DrawerContent className="bg-background grid max-h-[80vh] max-w-xl translate-y-0 grid-rows-[auto_1fr_auto] overflow-hidden border-t sm:rounded-t-xl sm:border">
-        {/* ===== 抽屉头：标题 + 状态指示器 ===== */}
-        <DrawerHeader className="border-b pb-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <DrawerTitle className="text-base font-semibold">{t("filterPage.serverTitle")}</DrawerTitle>
-              <DrawerDescription className="text-muted-foreground text-xs">
-                {t("filterPage.serverQueueLength", { len: queueLength })}
-              </DrawerDescription>
-            </div>
-            <div className={cn("rounded-full px-2 py-1 text-[12px] font-semibold", statusText === "空闲中" ? "bg-gray-100 text-gray-600" : "bg-emerald-100 text-emerald-700")}>
-              {statusText} {/* 状态指示：空闲/工作中 */}
-            </div>
-          </div>
-        </DrawerHeader>
-
-        {/* ===== 抽屉内容：统计 + Worker 进度条 ===== */}
-        <div className="min-h-0 overflow-hidden">
-          <ScrollArea className="h-full w-full">
-            <div className="space-y-4 p-4 pr-3">
-              {/* 统计卡片：队列长度 + Worker 数量 */}
-              <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
-                <div className="bg-muted rounded-lg p-3">
-                  <p className="text-muted-foreground mb-1 text-[11px] font-medium">{t("filterPage.serverQueueTitle")}</p>
-                  <p className="font-mono text-2xl font-bold text-blue-600">{queueLength}</p>
-                </div>
-                <div className="bg-muted rounded-lg p-3">
-                  <p className="text-muted-foreground mb-1 text-[11px] font-medium">{t("filterPage.serverWorkerCount") || "Workers"}</p>
-                  <p className="text-foreground font-mono text-2xl font-bold">{workerCount}</p>
-                </div>
+    return (
+      <Drawer>
+        <DrawerTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-border bg-muted/60 text-muted-foreground hover:bg-muted flex items-center gap-2 rounded-xl border px-2 py-1 text-xs font-medium"
+          >
+            <Server className="h-3 w-3" /> {/* 服务器图标 */}
+            <span className="max-w-[19vw] truncate">{serverStatus}</span>
+          </Button>
+        </DrawerTrigger>
+        <DrawerContent className="bg-background grid max-h-[80vh] max-w-xl translate-y-0 grid-rows-[auto_1fr_auto] overflow-hidden border-t sm:rounded-t-xl sm:border">
+          {/* ===== 抽屉头：标题 + 状态指示器 ===== */}
+          <DrawerHeader className="border-b pb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <DrawerTitle className="text-base font-semibold">
+                  {t("filterPage.serverTitle")}
+                </DrawerTitle>
+                <DrawerDescription className="text-muted-foreground text-xs">
+                  {t("filterPage.serverQueueLength", { len: queueLength })}
+                </DrawerDescription>
               </div>
+              <div
+                className={cn(
+                  "rounded-full px-2 py-1 text-[12px] font-semibold",
+                  statusText === "空闲中"
+                    ? "bg-gray-100 text-gray-600"
+                    : "bg-emerald-100 text-emerald-700",
+                )}
+              >
+                {statusText} {/* 状态指示：空闲/工作中 */}
+              </div>
+            </div>
+          </DrawerHeader>
 
-              {/* Worker 进度条列表 */}
-              <div className="space-y-2">
-                <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{t("filterPage.workerLabelPlural") || "Workers Progress"}</p>
+          {/* ===== 抽屉内容：统计 + Worker 进度条 ===== */}
+          <div className="min-h-0 overflow-hidden">
+            <ScrollArea className="h-full w-full">
+              <div className="space-y-4 p-4 pr-3">
+                {/* 统计卡片：队列长度 + Worker 数量 */}
+                <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+                  <div className="bg-muted rounded-lg p-3">
+                    <p className="text-muted-foreground mb-1 text-[11px] font-medium">
+                      {t("filterPage.serverQueueTitle")}
+                    </p>
+                    <p className="font-mono text-2xl font-bold text-blue-600">
+                      {queueLength}
+                    </p>
+                  </div>
+                  <div className="bg-muted rounded-lg p-3">
+                    <p className="text-muted-foreground mb-1 text-[11px] font-medium">
+                      {t("filterPage.serverWorkerCount") || "Workers"}
+                    </p>
+                    <p className="text-foreground font-mono text-2xl font-bold">
+                      {workerCount}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Worker 进度条列表 */}
                 <div className="space-y-2">
-                  {workers.length > 0 ? (
-                    workers.map((workerStatus, index) => <WorkerRow key={index} index={index} workerStatus={workerStatus} t={t} />) // 逐行渲染 Worker 状态
-                  ) : (
-                    <p className="text-muted-foreground py-4 text-center text-xs">{t("filterPage.noWorkerInfo") || "No worker info available."}</p>
-                  )}
+                  <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                    {t("filterPage.workerLabelPlural") || "Workers Progress"}
+                  </p>
+                  <div className="space-y-2">
+                    {workers.length > 0 ? (
+                      workers.map((workerStatus, index) => (
+                        <WorkerRow
+                          key={index}
+                          index={index}
+                          workerStatus={workerStatus}
+                          t={t}
+                        />
+                      )) // 逐行渲染 Worker 状态
+                    ) : (
+                      <p className="text-muted-foreground py-4 text-center text-xs">
+                        {t("filterPage.noWorkerInfo") ||
+                          "No worker info available."}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-            <ScrollBar />
-          </ScrollArea>
-        </div>
+              <ScrollBar />
+            </ScrollArea>
+          </div>
 
-        {/* ===== 抽屉尾部：关闭按钮 ===== */}
-        <DrawerFooter className="bg-muted/40 border-t px-4 py-3">
-          <DrawerClose asChild>
-            <Button variant="outline" size="sm" className="ml-auto">
-              {t("buttons.close")}
-            </Button>
-          </DrawerClose>
-        </DrawerFooter>
-      </DrawerContent>
-    </Drawer>
-  );
-}, (prev, next) => (
-  prev.serverStatus === next.serverStatus &&
-  prev.serverData?.task_queue_length === next.serverData?.task_queue_length &&
-  prev.serverData?.status === next.serverData?.status &&
-  prev.serverData?.workers?.length === next.serverData?.workers?.length &&
-  JSON.stringify(prev.serverData?.workers) === JSON.stringify(next.serverData?.workers)
-)); // 自定义比较函数：仅在关键字段变化时重渲染
+          {/* ===== 抽屉尾部：关闭按钮 ===== */}
+          <DrawerFooter className="bg-muted/40 border-t px-4 py-3">
+            <DrawerClose asChild>
+              <Button variant="outline" size="sm" className="ml-auto">
+                {t("buttons.close")}
+              </Button>
+            </DrawerClose>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
+    );
+  },
+  (prev, next) =>
+    prev.serverStatus === next.serverStatus &&
+    prev.serverData?.task_queue_length === next.serverData?.task_queue_length &&
+    prev.serverData?.status === next.serverData?.status &&
+    prev.serverData?.workers?.length === next.serverData?.workers?.length &&
+    JSON.stringify(prev.serverData?.workers) ===
+      JSON.stringify(next.serverData?.workers),
+); // 自定义比较函数：仅在关键字段变化时重渲染
 
 ServerStatusMonitorDrawer.displayName = "ServerStatusMonitorDrawer";
 
@@ -214,7 +252,10 @@ export default function PhotoFilterSubpage() {
 
   // 动态计算最小/最大宽度百分比（随窗口宽度自适应）
   const getMinMaxVw = React.useCallback(() => {
-    const minVw = Math.max((MIN_LEFT_WIDTH_PX / window.innerWidth) * 100, initialLeftVwRef.current - 20); // 至少 425px 或初始宽度减 20vw
+    const minVw = Math.max(
+      (MIN_LEFT_WIDTH_PX / window.innerWidth) * 100,
+      initialLeftVwRef.current - 20,
+    ); // 至少 425px 或初始宽度减 20vw
     const maxVw = Math.min(92, initialLeftVwRef.current + 20); // 最多初始宽度加 20vw，但不超过 92vw
     return { minVw, maxVw };
   }, []);
@@ -225,73 +266,96 @@ export default function PhotoFilterSubpage() {
   const startLeftRef = React.useRef(numLeftPaneWidthVw); // 记录拖动前的左侧宽度
 
   // 存放当前绑定到 window 的处理函数（用于卸载时统一移除，防止内存泄漏）
-  const mouseMoveHandlerRef = React.useRef<((e: MouseEvent) => void) | null>(null); // 鼠标移动处理器
+  const mouseMoveHandlerRef = React.useRef<((e: MouseEvent) => void) | null>(
+    null,
+  ); // 鼠标移动处理器
   const mouseUpHandlerRef = React.useRef<(() => void) | null>(null); // 鼠标释放处理器
-  const touchMoveHandlerRef = React.useRef<((e: TouchEvent) => void) | null>(null); // 触摸移动处理器
-  const touchEndHandlerRef = React.useRef<((e: TouchEvent) => void) | null>(null); // 触摸结束处理器
+  const touchMoveHandlerRef = React.useRef<((e: TouchEvent) => void) | null>(
+    null,
+  ); // 触摸移动处理器
+  const touchEndHandlerRef = React.useRef<((e: TouchEvent) => void) | null>(
+    null,
+  ); // 触摸结束处理器
 
   // 通用拖动处理：更新宽度并在范围内约束
-  const updatePaneWidth = React.useCallback((clientX: number) => {
-    const { minVw, maxVw } = getMinMaxVw(); // 动态获取约束范围
-    const deltaX = clientX - startXRef.current; // 鼠标/触摸相对于拖动起点的位移（像素）
-    const deltaVw = (deltaX / window.innerWidth) * 100; // 转换为相对于窗口宽度的百分比
-    let newLeft = startLeftRef.current + deltaVw; // 计算新的左侧宽度
-    if (newLeft < minVw) newLeft = minVw; // 强制约束到最小值（至少 425px）
-    if (newLeft > maxVw) newLeft = maxVw; // 强制约束到最大值
-    fnSetLeftPaneWidthVw(Number(newLeft.toFixed(2))); // 更新状态，保留 2 位小数
-  }, [getMinMaxVw, fnSetLeftPaneWidthVw]);
+  const updatePaneWidth = React.useCallback(
+    (clientX: number) => {
+      const { minVw, maxVw } = getMinMaxVw(); // 动态获取约束范围
+      const deltaX = clientX - startXRef.current; // 鼠标/触摸相对于拖动起点的位移（像素）
+      const deltaVw = (deltaX / window.innerWidth) * 100; // 转换为相对于窗口宽度的百分比
+      let newLeft = startLeftRef.current + deltaVw; // 计算新的左侧宽度
+      if (newLeft < minVw) newLeft = minVw; // 强制约束到最小值（至少 425px）
+      if (newLeft > maxVw) newLeft = maxVw; // 强制约束到最大值
+      fnSetLeftPaneWidthVw(Number(newLeft.toFixed(2))); // 更新状态，保留 2 位小数
+    },
+    [getMinMaxVw, fnSetLeftPaneWidthVw],
+  );
 
   // 通用清理函数：移除已绑定的事件监听器
-  const cleanupDragHandlers = React.useCallback((moveRef: React.MutableRefObject<any>, endRef: React.MutableRefObject<any>, eventType: "mouse" | "touch") => {
-    const moveEvent = eventType === "mouse" ? "mousemove" : "touchmove"; // 确定移动事件类型
-    const endEvent = eventType === "mouse" ? "mouseup" : "touchend"; // 确定结束事件类型
-    if (moveRef.current) window.removeEventListener(moveEvent, moveRef.current); // 移除移动事件监听
-    if (endRef.current) window.removeEventListener(endEvent, endRef.current); // 移除结束事件监听
-    moveRef.current = null; // 清空移动处理器引用
-    endRef.current = null; // 清空结束处理器引用
-  }, []);
+  const cleanupDragHandlers = React.useCallback(
+    (
+      moveRef: React.MutableRefObject<any>,
+      endRef: React.MutableRefObject<any>,
+      eventType: "mouse" | "touch",
+    ) => {
+      const moveEvent = eventType === "mouse" ? "mousemove" : "touchmove"; // 确定移动事件类型
+      const endEvent = eventType === "mouse" ? "mouseup" : "touchend"; // 确定结束事件类型
+      if (moveRef.current)
+        window.removeEventListener(moveEvent, moveRef.current); // 移除移动事件监听
+      if (endRef.current) window.removeEventListener(endEvent, endRef.current); // 移除结束事件监听
+      moveRef.current = null; // 清空移动处理器引用
+      endRef.current = null; // 清空结束处理器引用
+    },
+    [],
+  );
 
   // 启动左右分栏的鼠标拖动：创建并绑定移动/结束处理器
-  const startMouseDrag = React.useCallback((clientX: number) => {
-    draggingRef.current = true; // 标记拖动状态
-    startXRef.current = clientX; // 记录拖动起点
-    startLeftRef.current = numLeftPaneWidthVw; // 记录拖动前的左侧宽度
+  const startMouseDrag = React.useCallback(
+    (clientX: number) => {
+      draggingRef.current = true; // 标记拖动状态
+      startXRef.current = clientX; // 记录拖动起点
+      startLeftRef.current = numLeftPaneWidthVw; // 记录拖动前的左侧宽度
 
-    const onMouseMove = (ev: MouseEvent) => updatePaneWidth(ev.clientX); // 鼠标移动时更新宽度
+      const onMouseMove = (ev: MouseEvent) => updatePaneWidth(ev.clientX); // 鼠标移动时更新宽度
 
-    const onMouseUp = () => {
-      draggingRef.current = false; // 清除拖动状态
-      cleanupDragHandlers(mouseMoveHandlerRef, mouseUpHandlerRef, "mouse"); // 清理鼠标事件监听
-    };
+      const onMouseUp = () => {
+        draggingRef.current = false; // 清除拖动状态
+        cleanupDragHandlers(mouseMoveHandlerRef, mouseUpHandlerRef, "mouse"); // 清理鼠标事件监听
+      };
 
-    mouseMoveHandlerRef.current = onMouseMove;
-    mouseUpHandlerRef.current = onMouseUp;
-    window.addEventListener("mousemove", onMouseMove); // 添加鼠标移动监听
-    window.addEventListener("mouseup", onMouseUp); // 添加鼠标释放监听
-  }, [updatePaneWidth, cleanupDragHandlers, numLeftPaneWidthVw]);
+      mouseMoveHandlerRef.current = onMouseMove;
+      mouseUpHandlerRef.current = onMouseUp;
+      window.addEventListener("mousemove", onMouseMove); // 添加鼠标移动监听
+      window.addEventListener("mouseup", onMouseUp); // 添加鼠标释放监听
+    },
+    [updatePaneWidth, cleanupDragHandlers, numLeftPaneWidthVw],
+  );
 
   // 启动左右分栏的触摸拖动（移动端）：创建并绑定移动/结束处理器
-  const startTouchDrag = React.useCallback((clientX: number) => {
-    draggingRef.current = true; // 标记拖动状态
-    startXRef.current = clientX; // 记录拖动起点
-    startLeftRef.current = numLeftPaneWidthVw; // 记录拖动前的左侧宽度
+  const startTouchDrag = React.useCallback(
+    (clientX: number) => {
+      draggingRef.current = true; // 标记拖动状态
+      startXRef.current = clientX; // 记录拖动起点
+      startLeftRef.current = numLeftPaneWidthVw; // 记录拖动前的左侧宽度
 
-    const onTouchMove = (ev: TouchEvent) => {
-      const touch = ev.touches[0]; // 获取第一个触摸点
-      if (!touch) return; // 触摸点不存在则退出
-      updatePaneWidth(touch.clientX); // 触摸移动时更新宽度
-    };
+      const onTouchMove = (ev: TouchEvent) => {
+        const touch = ev.touches[0]; // 获取第一个触摸点
+        if (!touch) return; // 触摸点不存在则退出
+        updatePaneWidth(touch.clientX); // 触摸移动时更新宽度
+      };
 
-    const onTouchEnd = () => {
-      draggingRef.current = false; // 清除拖动状态
-      cleanupDragHandlers(touchMoveHandlerRef, touchEndHandlerRef, "touch"); // 清理触摸事件监听
-    };
+      const onTouchEnd = () => {
+        draggingRef.current = false; // 清除拖动状态
+        cleanupDragHandlers(touchMoveHandlerRef, touchEndHandlerRef, "touch"); // 清理触摸事件监听
+      };
 
-    touchMoveHandlerRef.current = onTouchMove;
-    touchEndHandlerRef.current = onTouchEnd;
-    window.addEventListener("touchmove", onTouchMove, { passive: false }); // 添加触摸移动监听（需禁用被动模式以支持 preventDefault）
-    window.addEventListener("touchend", onTouchEnd); // 添加触摸结束监听
-  }, [updatePaneWidth, cleanupDragHandlers, numLeftPaneWidthVw]);
+      touchMoveHandlerRef.current = onTouchMove;
+      touchEndHandlerRef.current = onTouchEnd;
+      window.addEventListener("touchmove", onTouchMove, { passive: false }); // 添加触摸移动监听（需禁用被动模式以支持 preventDefault）
+      window.addEventListener("touchend", onTouchEnd); // 添加触摸结束监听
+    },
+    [updatePaneWidth, cleanupDragHandlers, numLeftPaneWidthVw],
+  );
 
   // 卸载时清理左右分栏拖动监听器
   React.useEffect(() => {
@@ -320,9 +384,13 @@ export default function PhotoFilterSubpage() {
   const previewStartHeightRef = React.useRef(numPreviewHeightPercent); // 记录预览拖动前的高度百分比
   const previewContainerRectRef = React.useRef<DOMRect | null>(null); // 记录预览容器的位置和大小信息
 
-  const previewMouseMoveHandlerRef = React.useRef<((e: MouseEvent) => void) | null>(null); // 预览鼠标移动处理器
+  const previewMouseMoveHandlerRef = React.useRef<
+    ((e: MouseEvent) => void) | null
+  >(null); // 预览鼠标移动处理器
   const previewMouseUpHandlerRef = React.useRef<(() => void) | null>(null); // 预览鼠标释放处理器
-  const previewTouchMoveHandlerRef = React.useRef<((e: TouchEvent) => void) | null>(null); // 预览触摸移动处理器
+  const previewTouchMoveHandlerRef = React.useRef<
+    ((e: TouchEvent) => void) | null
+  >(null); // 预览触摸移动处理器
   const previewTouchEndHandlerRef = React.useRef<(() => void) | null>(null); // 预览触摸结束处理器
 
   // 通用更新预览高度函数：基于容器高度和移动增量计算新高度并约束在 20%-70% 范围内
@@ -349,7 +417,11 @@ export default function PhotoFilterSubpage() {
     const onMouseUp = () => {
       previewDraggingRef.current = false; // 清除拖动状态
       previewContainerRectRef.current = null; // 清空容器信息
-      cleanupDragHandlers(previewMouseMoveHandlerRef, previewMouseUpHandlerRef, "mouse"); // 清理鼠标事件监听
+      cleanupDragHandlers(
+        previewMouseMoveHandlerRef,
+        previewMouseUpHandlerRef,
+        "mouse",
+      ); // 清理鼠标事件监听
     };
 
     previewMouseMoveHandlerRef.current = onMouseMove;
@@ -374,7 +446,11 @@ export default function PhotoFilterSubpage() {
     const onTouchEnd = () => {
       previewDraggingRef.current = false; // 清除拖动状态
       previewContainerRectRef.current = null; // 清空容器信息
-      cleanupDragHandlers(previewTouchMoveHandlerRef, previewTouchEndHandlerRef, "touch"); // 清理触摸事件监听
+      cleanupDragHandlers(
+        previewTouchMoveHandlerRef,
+        previewTouchEndHandlerRef,
+        "touch",
+      ); // 清理触摸事件监听
     };
 
     previewTouchMoveHandlerRef.current = onTouchMove;
@@ -386,8 +462,16 @@ export default function PhotoFilterSubpage() {
   // 卸载时清理预览拖动监听器
   React.useEffect(() => {
     return () => {
-      cleanupDragHandlers(previewMouseMoveHandlerRef, previewMouseUpHandlerRef, "mouse"); // 清理预览鼠标事件
-      cleanupDragHandlers(previewTouchMoveHandlerRef, previewTouchEndHandlerRef, "touch"); // 清理预览触摸事件
+      cleanupDragHandlers(
+        previewMouseMoveHandlerRef,
+        previewMouseUpHandlerRef,
+        "mouse",
+      ); // 清理预览鼠标事件
+      cleanupDragHandlers(
+        previewTouchMoveHandlerRef,
+        previewTouchEndHandlerRef,
+        "touch",
+      ); // 清理预览触摸事件
     };
   }, []);
 

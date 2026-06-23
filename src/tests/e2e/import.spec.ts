@@ -6,32 +6,52 @@
 
 import { test, expect, Page, ElectronApplication } from "@playwright/test";
 import {
-  launchApp, closeApp, navigateTo, SELECTORS,
-  openImportDrawer, closeImportDrawer, importTestFiles,
-  waitForImportComplete, getDisplayedPhotoCount, rapidToggleDrawer,
-  TEST_IMAGES_DIR, assertPageHealthy
+  launchApp,
+  closeApp,
+  navigateTo,
+  SELECTORS,
+  openImportDrawer,
+  closeImportDrawer,
+  importTestFiles,
+  waitForImportComplete,
+  getDisplayedPhotoCount,
+  rapidToggleDrawer,
+  TEST_IMAGES_DIR,
+  assertPageHealthy,
 } from "./helpers/electronApp";
 
 let app: ElectronApplication;
 let page: Page;
 
-test.beforeAll(async () => { ({ app, page } = await launchApp()); });
-test.afterAll(async () => { await closeApp(); });
+test.beforeAll(async () => {
+  ({ app, page } = await launchApp());
+});
+test.afterAll(async () => {
+  await closeApp();
+});
 
 // ============================================================================
 // 导入页面基础测试
 // ============================================================================
 test.describe("导入页面基础功能", () => {
-  test.beforeEach(async () => { await navigateTo(page, "import"); });
+  test.beforeEach(async () => {
+    await navigateTo(page, "import");
+  });
 
   test("页面加载并显示导入按钮", async () => {
-    await expect(page.locator(SELECTORS.import.openDrawerBtn).first()).toBeVisible({ timeout: 10000 });
-    await expect(page.locator(SELECTORS.import.totalPhotos).first()).toBeVisible();
+    await expect(
+      page.locator(SELECTORS.import.openDrawerBtn).first(),
+    ).toBeVisible({ timeout: 10000 });
+    await expect(
+      page.locator(SELECTORS.import.totalPhotos).first(),
+    ).toBeVisible();
   });
 
   test("点击按钮打开导入 Drawer", async () => {
     await openImportDrawer(page);
-    await expect(page.locator(SELECTORS.import.drawer).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator(SELECTORS.import.drawer).first()).toBeVisible({
+      timeout: 5000,
+    });
     await expect(page.locator(SELECTORS.import.dropArea)).toBeVisible();
     await closeImportDrawer(page);
   });
@@ -49,18 +69,23 @@ test.describe("导入页面基础功能", () => {
 // 文件选择与路径输入测试
 // ============================================================================
 test.describe("文件选择与导入", () => {
-  test.beforeEach(async () => { await navigateTo(page, "import"); });
+  test.beforeEach(async () => {
+    await navigateTo(page, "import");
+  });
 
   test("选择文件后显示文件列表", async () => {
     await openImportDrawer(page);
     const fileInput = page.locator(SELECTORS.import.fileInput);
 
-    if (await fileInput.count() > 0) {
-      const testFiles = [`${TEST_IMAGES_DIR}/Z30_3044.JPG`, `${TEST_IMAGES_DIR}/Z30_3045.JPG`];
+    if ((await fileInput.count()) > 0) {
+      const testFiles = [
+        `${TEST_IMAGES_DIR}/Z30_3044.JPG`,
+        `${TEST_IMAGES_DIR}/Z30_3045.JPG`,
+      ];
       await fileInput.setInputFiles(testFiles);
       await page.waitForTimeout(500);
       // 应显示文件列表项
-      const fileItems = page.locator('text=/Z30_304/');
+      const fileItems = page.locator("text=/Z30_304/");
       await expect(fileItems.first()).toBeVisible({ timeout: 3000 });
     }
     await closeImportDrawer(page);
@@ -85,7 +110,9 @@ test.describe("文件选择与导入", () => {
 // 并发导入测试（高频点击）
 // ============================================================================
 test.describe("并发导入处理", () => {
-  test.beforeEach(async () => { await navigateTo(page, "import"); });
+  test.beforeEach(async () => {
+    await navigateTo(page, "import");
+  });
 
   test("快速点击导入按钮不崩溃", async () => {
     const btn = page.locator(SELECTORS.import.openDrawerBtn).first();
@@ -108,7 +135,9 @@ test.describe("并发导入处理", () => {
 
     // 最后一次正常打开
     await openImportDrawer(page);
-    await expect(page.locator(SELECTORS.import.drawer).first()).toBeVisible({ timeout: 3000 });
+    await expect(page.locator(SELECTORS.import.drawer).first()).toBeVisible({
+      timeout: 3000,
+    });
     await closeImportDrawer(page);
   });
 
@@ -118,11 +147,11 @@ test.describe("并发导入处理", () => {
     // 首次导入
     await openImportDrawer(page);
     const fileInput = page.locator(SELECTORS.import.fileInput);
-    if (await fileInput.count() > 0) {
+    if ((await fileInput.count()) > 0) {
       await fileInput.setInputFiles([`${TEST_IMAGES_DIR}/Z30_3044.JPG`]);
       await page.waitForTimeout(300);
       const submitBtn = page.locator(SELECTORS.import.submitBtn).first();
-      if (await submitBtn.isVisible() && await submitBtn.isEnabled()) {
+      if ((await submitBtn.isVisible()) && (await submitBtn.isEnabled())) {
         await submitBtn.click();
       }
     }
@@ -133,11 +162,11 @@ test.describe("并发导入处理", () => {
 
     // 再次导入不同文件
     await openImportDrawer(page);
-    if (await fileInput.count() > 0) {
+    if ((await fileInput.count()) > 0) {
       await fileInput.setInputFiles([`${TEST_IMAGES_DIR}/Z30_3050.JPG`]);
       await page.waitForTimeout(300);
       const submitBtn = page.locator(SELECTORS.import.submitBtn).first();
-      if (await submitBtn.isVisible() && await submitBtn.isEnabled()) {
+      if ((await submitBtn.isVisible()) && (await submitBtn.isEnabled())) {
         await submitBtn.click();
       }
     }

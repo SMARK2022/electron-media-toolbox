@@ -215,7 +215,8 @@ function FileImportDrawer({ onImported }: FileImportDrawerProps) {
     try {
       // 构造绝对路径列表
       const absoluteFilePaths = droppedFiles.map((file) => {
-        if (allHaveFullPaths && file.fullPath) return normalizePath(file.fullPath);
+        if (allHaveFullPaths && file.fullPath)
+          return normalizePath(file.fullPath);
         return normalizePath(`${normalizedFolder}/${file.name}`);
       });
 
@@ -261,10 +262,12 @@ function FileImportDrawer({ onImported }: FileImportDrawerProps) {
   return (
     <Drawer>
       <DrawerTrigger asChild>
-        <div className="pl-3"><Button variant="outline" className="gap-2">
-          <Upload className="h-4 w-4" />
-          {t("buttons.importPhotos")}
-        </Button></div>
+        <div className="pl-3">
+          <Button variant="outline" className="gap-2">
+            <Upload className="h-4 w-4" />
+            {t("buttons.importPhotos")}
+          </Button>
+        </div>
       </DrawerTrigger>
 
       <DrawerContent>
@@ -420,8 +423,12 @@ export default function PhotoImportSubpage() {
   const { t } = useTranslation();
   const photos = usePhotoFilterStore((s) => s.lstAllPhotos); // 显示完整照片列表
   const fnSetCurrentPage = usePhotoFilterStore((s) => s.fnSetCurrentPage);
-  const boolShowDisabledPhotos = usePhotoFilterStore((s) => s.boolShowDisabledPhotos);
-  const fnSetShowDisabledPhotos = usePhotoFilterStore((s) => s.fnSetShowDisabledPhotos);
+  const boolShowDisabledPhotos = usePhotoFilterStore(
+    (s) => s.boolShowDisabledPhotos,
+  );
+  const fnSetShowDisabledPhotos = usePhotoFilterStore(
+    (s) => s.fnSetShowDisabledPhotos,
+  );
 
   // 进入页面时设置当前页面类型，并确保显示完整列表（包括禁用照片）
   React.useEffect(() => {
@@ -434,7 +441,11 @@ export default function PhotoImportSubpage() {
   return (
     <div className="flex min-h-screen flex-col bg-slate-50/60 p-4 px-4 py-2 dark:bg-gray-900">
       <div className="mb-2 flex justify-between">
-        <FileImportDrawer onImported={() => { /* 可选回调 */ }} />
+        <FileImportDrawer
+          onImported={() => {
+            /* 可选回调 */
+          }}
+        />
         <div className="bg-muted inline-flex items-center rounded-full px-3 py-1 text-sm font-medium">
           <span className="text-muted-foreground">
             {t("labels.totalPhotos")}
@@ -446,7 +457,11 @@ export default function PhotoImportSubpage() {
       </div>
 
       {/* 虚拟化照片网格（自带滚动容器）*/}
-      <PhotoGridEnhance photos={photos} page="import" containerHeight="calc(100vh - 160px)" />
+      <PhotoGridEnhance
+        photos={photos}
+        page="import"
+        containerHeight="calc(100vh - 160px)"
+      />
 
       {/* 导入进度 Toast（订阅 PhotoService 状态自动显示/隐藏）*/}
       <ImportProgressToast />

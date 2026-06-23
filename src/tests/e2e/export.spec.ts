@@ -6,22 +6,36 @@
 
 import { test, expect, Page, ElectronApplication } from "@playwright/test";
 import {
-  launchApp, closeApp, navigateTo, SELECTORS,
-  setExportPath, getExportPathStatus, executeExport, closeExportDialog,
-  assertPageHealthy, rapidClick, EXPORT_TEST_DIR
+  launchApp,
+  closeApp,
+  navigateTo,
+  SELECTORS,
+  setExportPath,
+  getExportPathStatus,
+  executeExport,
+  closeExportDialog,
+  assertPageHealthy,
+  rapidClick,
+  EXPORT_TEST_DIR,
 } from "./helpers/electronApp";
 
 let app: ElectronApplication;
 let page: Page;
 
-test.beforeAll(async () => { ({ app, page } = await launchApp()); });
-test.afterAll(async () => { await closeApp(); });
+test.beforeAll(async () => {
+  ({ app, page } = await launchApp());
+});
+test.afterAll(async () => {
+  await closeApp();
+});
 
 // ============================================================================
 // 导出页面基础测试
 // ============================================================================
 test.describe("导出页面基础功能", () => {
-  test.beforeEach(async () => { await navigateTo(page, "export"); });
+  test.beforeEach(async () => {
+    await navigateTo(page, "export");
+  });
 
   test("页面加载并显示导出按钮", async () => {
     const btn = page.locator(SELECTORS.export.exportBtn).first();
@@ -47,7 +61,9 @@ test.describe("导出页面基础功能", () => {
 // 导出路径验证测试
 // ============================================================================
 test.describe("导出路径验证", () => {
-  test.beforeEach(async () => { await navigateTo(page, "export"); });
+  test.beforeEach(async () => {
+    await navigateTo(page, "export");
+  });
 
   test("输入有效路径显示存在状态", async () => {
     await setExportPath(page, EXPORT_TEST_DIR);
@@ -94,7 +110,9 @@ test.describe("导出路径验证", () => {
 // 导出操作测试
 // ============================================================================
 test.describe("导出操作", () => {
-  test.beforeEach(async () => { await navigateTo(page, "export"); });
+  test.beforeEach(async () => {
+    await navigateTo(page, "export");
+  });
 
   test("路径为空时导出按钮禁用", async () => {
     const input = page.locator(SELECTORS.export.pathInput).first();
@@ -139,7 +157,9 @@ test.describe("导出操作", () => {
 // 并发导出测试
 // ============================================================================
 test.describe("并发导出处理", () => {
-  test.beforeEach(async () => { await navigateTo(page, "export"); });
+  test.beforeEach(async () => {
+    await navigateTo(page, "export");
+  });
 
   test("快速点击导出按钮不崩溃", async () => {
     await setExportPath(page, EXPORT_TEST_DIR);
@@ -199,7 +219,9 @@ test.describe("导出页面状态保持", () => {
     await page.waitForTimeout(300);
 
     // 页面应正常加载
-    await expect(page.locator(SELECTORS.export.pathInput).first()).toBeVisible();
+    await expect(
+      page.locator(SELECTORS.export.pathInput).first(),
+    ).toBeVisible();
   });
 
   test("刷新启用照片列表", async () => {
@@ -207,7 +229,11 @@ test.describe("导出页面状态保持", () => {
     await page.waitForTimeout(500);
 
     // 检查照片计数显示
-    const countText = await page.locator('text=/\\d+/').first().textContent().catch(() => "0");
+    const countText = await page
+      .locator("text=/\\d+/")
+      .first()
+      .textContent()
+      .catch(() => "0");
     const count = parseInt(countText?.match(/\d+/)?.[0] || "0", 10);
     expect(count).toBeGreaterThanOrEqual(0);
   });
