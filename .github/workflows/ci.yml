@@ -133,8 +133,10 @@ jobs:
 
       # package 产出未签名应用 out/Electron Media Toolbox-win32-x64/
       # E2E 的 findLatestBuild() 会自动定位该目录
+      # 用 bash 而非 pwsh 执行：Forge 的打包子进程在 pwsh 下可能被截断导致
+      # out/ 为空但 exit code 仍为 0（❯ Finalizing package 后无 ✔ 即未完成）
       - name: Package app (no makers)
-        shell: pwsh
+        shell: bash
         run: npm run package
 
       # 验证打包产物确实存在，避免上传空目录导致 e2e 下载失败
