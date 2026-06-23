@@ -56,6 +56,8 @@ runs:
     - name: Install Nuitka and Python dependencies
       shell: cmd
       run: |
+        set "CONDA_BAT=%CONDA%\condabin\conda.bat"
+        call "%CONDA_BAT%" activate nuitka
         python -m pip install --upgrade pip
         pip install nuitka
         pip install -r python/requirements.txt

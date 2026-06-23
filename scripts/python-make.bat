@@ -109,6 +109,11 @@ echo [*] 使用 Nuitka 编译 %MAIN_FILE% 为单文件 exe (--mode=onefile) ...
   --nofollow-import-to=numpy.tests ^
   "%MAIN_FILE%"
 
+if errorlevel 1 (
+  echo [!] Nuitka 编译失败，终止。
+  goto :end
+)
+
 echo.
 echo [*] 编译完成，输出目录：%OUTPUT_DIR%
 echo [*] 你应该能在 "%OUTPUT_DIR%" 下看到 web_api.exe（Onefile 单文件可执行）。
