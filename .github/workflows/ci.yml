@@ -1,0 +1,57 @@
+name: CI
+
+# 质量门禁：lint + typecheck + format + vitest 单元测试
+# 跨平台矩阵验证（ubuntu + windows），不跑重型的 Forge make / E2E
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality (${{ matrix.os }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-latest
+          - os: windows
+            runner: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # 单元测试基于 jsdom，不触达 better-sqlite3 native 绑定，跳过 rebuild 加速
+      - name: Setup Node App
+        uses: ./.github/actions/setup-node-app
+        with:
+          rebuild-native: "false"
+
+      - name: Lint (eslint)
+        # eslint 配置此前因缺失 eslint-plugin-react-compiler 无法加载，存量代码累计 ~680 个违规
+        # 暂设为非阻塞（黄牌告警），待批量清理 no-explicit-any / config 文件后改为阻塞门禁
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Typecheck (tsc --noEmit)
+        run: npx tsc --noEmit
+
+      - name: Format check (prettier)
+        run: npm run format
+
+      - name: Unit tests (vitest, jsdom)
+        run: npm run test

@@ -1,0 +1,66 @@
+name: "Build Python Backend (Windows)"
+description: "Setup Miniconda env, install Nuitka + Python deps, compile python/out/web_api.exe"
+
+inputs:
+  conda-env:
+    description: "Conda environment name to activate (must match scripts/python-make.bat expectation)"
+    required: false
+    default: "nuitka"
+  python-version:
+    description: "Python version used by the build env"
+    required: false
+    default: "3.11"
+
+runs:
+  using: "composite"
+  steps:
+    # Nuitka 需要 MSVC 作为 C 编译后端（Windows 上优先 cl.exe，其次自动下载的 MinGW64）
+    - name: Setup MSBuild / MSVC toolchain
+      uses: microsoft/setup-msbuild@v2
+
+    # ONNX 模型(~105MB)走 Git LFS；用 cache 避免每次 CI checkout 都消耗 LFS 带宽
+    # key 基于 LFS 指针文件的 hash —— 模型不变则命中缓存，仅 cache miss 时才 git lfs pull
+    # checkout 不带 lfs:true（只拿指针），由本步骤把真实 onnx 还原到 python/checkpoint
+    - name: Restore ONNX models (cache)
+      id: onnx-cache
+      uses: actions/cache@v4
+      with:
+        path: python/checkpoint
+        key: onnx-models-${{ hashFiles('python/checkpoint/*.onnx') }}
+
+    - name: Pull ONNX models via LFS (cache miss only)
+      if: steps.onnx-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        git lfs install
+        git lfs pull
+
+    # 用 Miniconda 提供隔离的 Python 环境，与本地 scripts/python-make.bat 期望的 conda env 对齐
+    - name: Setup Miniconda
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        activate-environment: ${{ inputs.conda-env }}
+        python-version: ${{ inputs.python-version }}
+        channels: conda-forge,defaults
+        auto-activate-base: false
+
+    # Nuitka onefile 编译耗时较长，缓存 .nuitka-cache + ccache 可显著加速增量构建
+    - name: Cache Nuitka build artifacts
+      uses: actions/cache@v4
+      with:
+        path: python/.nuitka-cache
+        key: ${{ runner.os }}-nuitka-${{ hashFiles('python/requirements.txt', 'python/web_api.py', 'python/utils/**/*.py') }}
+        restore-keys: |
+          ${{ runner.os }}-nuitka-
+
+    - name: Install Nuitka and Python dependencies
+      shell: cmd
+      run: |
+        python -m pip install --upgrade pip
+        pip install nuitka
+        pip install -r python/requirements.txt
+
+    # python-make.cjs 会调用 python-make.bat，bat 内部再次 `conda activate nuitka`（幂等）
+    - name: Compile web_api.exe via Nuitka
+      shell: cmd
+      run: node scripts/python-make.cjs
