@@ -42,6 +42,7 @@ export function exposeWindowContext() {
    * 再不行则返回空字符串，由渲染层自行退回到 file.name。
    */
   contextBridge.exposeInMainWorld("ElectronAPI", {
+    platform: process.platform,
     readFile: (file: string) => ipcRenderer.invoke("read-file", file),
     readClipboard: () => ipcRenderer.invoke("clipboard-read"),
     getThumbsCacheDir: () => ipcRenderer.invoke("db-get-thumbs-cache-dir"),

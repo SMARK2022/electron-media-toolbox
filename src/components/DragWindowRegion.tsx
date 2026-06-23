@@ -10,16 +10,18 @@ interface DragWindowRegionProps {
 }
 
 export default function DragWindowRegion({ title }: DragWindowRegionProps) {
+  const isMac = window.ElectronAPI?.platform === "darwin";
+
   return (
     <div className="flex w-screen items-stretch justify-between">
-      <div className="draglayer w-full">
+      <div className={`draglayer w-full ${isMac ? "pl-[78px]" : ""}`}>
         {title && (
           <div className="flex flex-1 p-2 text-xs whitespace-nowrap text-gray-400 select-none">
             {title}
           </div>
         )}
       </div>
-      <WindowButtons />
+      {!isMac && <WindowButtons />}
     </div>
   );
 }

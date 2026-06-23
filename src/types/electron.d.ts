@@ -9,6 +9,7 @@ declare global {
       getDbPath(): Promise<string>;
     };
     ElectronAPI: {
+      platform: string;
       readFile(file: string): Promise<{ success: boolean; content: string }>;
       readClipboard(): Promise<string>;
       getThumbsCacheDir(): Promise<string>;
