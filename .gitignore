@@ -60,7 +60,6 @@ dev/
 *.zip
 
 # Config files
-.prettier*
 .npmrc
 
 # Storybook
