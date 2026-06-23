@@ -21,13 +21,13 @@ export interface MatchResult {
   probabilities: number[];
 }
 
-// 高斯核函数
-const gaussian = (x: number, sigma: number): number => {
+// 高斯核函数（导出以供单元测试直接断言）
+export const gaussian = (x: number, sigma: number): number => {
   return Math.exp(-(x * x) / (2 * sigma * sigma));
 };
 
-// 计算两个 bbox 的 IoU
-const computeIoU = (
+// 计算两个 bbox 的 IoU（导出以供单元测试直接断言）
+export const computeIoU = (
   bbox1: [number, number, number, number],
   bbox2: [number, number, number, number],
 ): number => {
@@ -50,8 +50,8 @@ const computeIoU = (
   return unionArea > 0 ? interArea / unionArea : 0;
 };
 
-// 从 bbox 提取特征
-const extractFeatures = (bbox: [number, number, number, number]) => {
+// 从 bbox 提取特征（导出以供单元测试直接断言）
+export const extractFeatures = (bbox: [number, number, number, number]) => {
   const [x1, y1, x2, y2] = bbox;
   const width = x2 - x1;
   const height = y2 - y1;
@@ -63,8 +63,8 @@ const extractFeatures = (bbox: [number, number, number, number]) => {
   return { centerX, centerY, width, height, area, aspectRatio };
 };
 
-// Softmax 函数
-const softmax = (logits: number[]): number[] => {
+// Softmax 函数（导出以供单元测试直接断言）
+export const softmax = (logits: number[]): number[] => {
   const maxLogit = Math.max(...logits);
   const exps = logits.map((l) => Math.exp(l - maxLogit));
   const sumExps = exps.reduce((a, b) => a + b, 0);
