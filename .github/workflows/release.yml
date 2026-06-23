@@ -78,6 +78,11 @@ jobs:
           $sizeMB = [math]::Round((Get-Item python/out/web_api.exe).Length / 1MB, 1)
           Write-Host "web_api.exe size: $sizeMB MB"
 
+      # Squirrel.Windows 的 CreateZipFromDirectory 调用 7z 创建 nupkg，需 7z 在 PATH
+      - name: Add 7-Zip to PATH (Squirrel dependency)
+        shell: pwsh
+        run: echo "C:\Program Files\7-Zip" >> $env:GITHUB_PATH
+
       # --platform=win32 让 forge 跳过 forge.config.ts 里的 darwin / rpm / deb makers
       - name: Package with Electron Forge (Windows)
         shell: pwsh

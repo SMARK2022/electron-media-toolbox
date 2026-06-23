@@ -1,9 +1,9 @@
 name: "Setup Node App"
-description: "Setup Node.js + npm ci + optionally rebuild better-sqlite3 for Electron"
+description: "Setup Node.js + npm ci (--ignore-scripts) + optionally download Electron and rebuild better-sqlite3"
 
 inputs:
   rebuild-native:
-    description: "Whether to setup Python, run full npm ci (with install scripts) and electron-rebuild. Set false for pure lint/unit jobs."
+    description: "Whether to download Electron binary and run electron-rebuild. Set false for pure lint/unit jobs."
     required: false
     default: "true"
 
@@ -16,26 +16,19 @@ runs:
         node-version: "20"
         cache: "npm"
 
-    # node-gyp 需要 Python 编译 better-sqlite3；必须在 npm ci 之前就位
-    - name: Setup Python (for node-gyp)
-      if: inputs.rebuild-native == 'true'
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
-
+    # --ignore-scripts 跳过 better-sqlite3 的 node-gyp 编译
+    # （CI runner 的 VS 2026 (v18) 不被 @electron/node-gyp v10.2 识别，导致 npm ci 失败）
+    # electron-rebuild 会下载 Electron 预编译包（无需本地编译），在后续步骤按需补回
     - name: Install npm dependencies
       shell: bash
       run: |
         set -euo pipefail
-        if [ "${{ inputs.rebuild-native }}" = "true" ]; then
-          # 完整安装：让 electron 下载、better-sqlite3 编译（setup-python 提供 Python）、
-          # electron-winstaller 提取 Squirrel 工具等 install 脚本正常执行
-          npm ci --no-audit --no-fund
-        else
-          # CI 质量门禁：跳过 install 脚本（better-sqlite3 编译、electron 下载等），
-          # lint/typecheck/vitest 不需要 native 模块与 electron 二进制
-          npm ci --ignore-scripts --no-audit --no-fund
-        fi
+        npm ci --ignore-scripts --no-audit --no-fund
+
+    - name: Download Electron binary
+      if: inputs.rebuild-native == 'true'
+      shell: bash
+      run: node node_modules/electron/install.js
 
     - name: Rebuild native modules (better-sqlite3 → Electron ABI)
       if: inputs.rebuild-native == 'true'
