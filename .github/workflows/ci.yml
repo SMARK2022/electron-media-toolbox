@@ -1,23 +1,75 @@
 name: CI
 
-# 质量门禁：lint + typecheck + format + vitest 单元测试
-# 跨平台矩阵验证（ubuntu + windows），不跑重型的 Forge make / E2E
+# ============================================================================
+# 统一流水线：质量门禁 + 构建 + E2E + 发版
+# ============================================================================
+#
+# 依赖链：
+#   push/PR to master
+#     ├── quality  (lint + tsc + format + vitest)   ← 并行，不互相阻塞
+#     ├── build    (Nuitka 编译 + package 打包)      ← 并行，产出 E2E 需要的打包应用
+#     │
+#     ├── e2e      needs: [quality, build]           ← 两者都通过后才跑 Playwright
+#     │
+#     └── release  needs: e2e                        ← E2E 通过后才发版（仅 push to master）
+#
+# 设计要点：
+# - quality 和 build 并行执行，互不阻塞——质量检查不依赖打包结果
+# - e2e 同时门控于 quality 和 build：代码质量不过或打包失败都不跑 E2E
+# - release 门控于 e2e：集成测试不过不发版，避免把有问题的包推给用户
+# - PR 只跑 quality + build + e2e，跳过 release（release 仅 push to master 触发）
+# - build 的 Nuitka 编译有 cache（build-python-win action），源码不变时秒级复用
 
 on:
   push:
     branches: [master]
+    # 仅源码/配置/依赖变更才触发完整流水线（含构建+E2E+发版），
+    # 避免纯文档/README 改动触发 ~30min 的 Nuitka+Forge 构建
+    paths:
+      - "src/**"
+      - "python/**"
+      - "assets/**"
+      - "forge.config.ts"
+      - "vite.base.config.ts"
+      - "vite.main.config.ts"
+      - "vite.preload.config.ts"
+      - "vite.renderer.config.mts"
+      - "vite.renderer.config.ts"
+      - "tsconfig.json"
+      - "postcss.config.js"
+      - "tailwind.config.js"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/ci.yml"
+      - ".github/actions/**"
+      - "scripts/**"
   pull_request:
     branches: [master]
+    paths:
+      - "src/**"
+      - "python/**"
+      - "assets/**"
+      - "forge.config.ts"
+      - "package.json"
+      - ".github/workflows/ci.yml"
+      - ".github/actions/**"
   workflow_dispatch:
 
+# 不使用 cancel-in-progress：release job 正在上传 assets 时被取消
+# 会留下半创建的 Release + 部分上传的 asset，原 release.yml 特意设 false 正是为此
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write # release job 需要创建 tag 和 GitHub Release
 
 jobs:
+  # ==========================================================================
+  # Job 1: 质量门禁（lint + typecheck + format + vitest）
+  # 与 build 并行执行，跨平台矩阵（ubuntu + windows）
+  # ==========================================================================
   quality:
     name: Quality (${{ matrix.os }})
     runs-on: ${{ matrix.runner }}
@@ -42,8 +94,6 @@ jobs:
           rebuild-native: "false"
 
       - name: Lint (eslint)
-        # 存量违规已全量清理（jsx-runtime 预设 + TS 关闭 prop-types/display-name
-        # + CommonJS 配置补 globals + 源码 any/unused 逐项修复），恢复为阻塞门禁
         run: npm run lint
 
       - name: Typecheck (tsc --noEmit)
@@ -54,3 +104,264 @@ jobs:
 
       - name: Unit tests (vitest, jsdom)
         run: npm run test
+
+  # ==========================================================================
+  # Job 2: 构建打包（Nuitka 编译 web_api.exe + electron-forge package）
+  # 与 quality 并行执行，产出 E2E 需要的未签名打包应用
+  # ==========================================================================
+  build:
+    name: Build (Windows)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        # 不在此处 lfs: true；ONNX 模型由 build-python-win 的 cache 负责还原
+
+      - name: Setup Node App
+        uses: ./.github/actions/setup-node-app
+
+      - name: Build Python backend (web_api.exe via Nuitka)
+        uses: ./.github/actions/build-python-win
+
+      - name: Verify web_api.exe exists
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "python/out/web_api.exe")) {
+            throw "python/out/web_api.exe not found, Nuitka build failed"
+          }
+          $sizeMB = [math]::Round((Get-Item python/out/web_api.exe).Length / 1MB, 1)
+          Write-Host "web_api.exe size: $sizeMB MB"
+
+      # package 产出未签名应用 out/Electron Media Toolbox-win32-x64/
+      # E2E 的 findLatestBuild() 会自动定位该目录
+      - name: Package app (no makers)
+        shell: pwsh
+        run: npm run package
+
+      # 上传打包产物供 e2e job 下载使用
+      - name: Upload packaged app
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-app
+          path: out/
+          retention-days: 1
+
+  # ==========================================================================
+  # Job 3: E2E 集成测试（Playwright + Electron）
+  # 等待 quality + build 都通过后执行
+  # ==========================================================================
+  e2e:
+    name: E2E (Windows)
+    needs: [quality, build]
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      # E2E 需要 node_modules（Playwright、测试 helper 等），但不需要 native rebuild
+      # 因为打包产物已含 better-sqlite3 的 Electron ABI 编译结果
+      - name: Setup Node App
+        uses: ./.github/actions/setup-node-app
+        with:
+          rebuild-native: "false"
+
+      # 下载 build job 产出的打包应用，放到 out/ 目录供 findLatestBuild() 定位
+      - name: Download packaged app
+        uses: actions/download-artifact@v4
+        with:
+          name: packaged-app
+          path: out
+
+      - name: Setup Playwright
+        shell: pwsh
+        run: npx playwright install
+
+      # E2E 路径已相对化，通过 env 指向 fixture / 临时导出目录
+      # fixture 图缺失时 import 类用例会降级跳过，不阻塞流水线
+      - name: Run E2E tests
+        env:
+          E2E_TEST_IMAGES_DIR: ${{ github.workspace }}/src/tests/e2e/fixtures/images
+          E2E_EXPORT_DIR: ${{ runner.temp }}/e2e-export
+        shell: pwsh
+        run: npm run test:e2e
+
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            playwright-report/
+            test-results/
+
+  # ==========================================================================
+  # Job 4: 发版（Forge make → GitHub Release）
+  # 等待 E2E 通过后执行，仅 push to master 时触发（PR 跳过）
+  # ==========================================================================
+  release:
+    name: Release
+    needs: e2e
+    runs-on: windows-2022
+    # 仅 push to master 或手动触发时发版；PR 不发版
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # release notes 需要完整 commit 历史
+
+      - name: Setup Node App
+        uses: ./.github/actions/setup-node-app
+
+      - name: Build Python backend (web_api.exe via Nuitka)
+        uses: ./.github/actions/build-python-win
+
+      - name: Verify web_api.exe exists
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "python/out/web_api.exe")) {
+            throw "python/out/web_api.exe not found, Nuitka build failed"
+          }
+
+      # --platform=win32 让 forge 跳过 forge.config.ts 里的 darwin / rpm / deb makers
+      - name: Build installers with Electron Forge (Windows)
+        shell: pwsh
+        run: npm run make -- --platform=win32
+
+      - name: Collect release assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $Assets = "release-assets"
+          New-Item -ItemType Directory -Force -Path $Assets | Out-Null
+
+          # Squirrel Windows: Setup.exe（用户安装入口）
+          $squirrelDir = "out/make/squirrel.windows/x64"
+          if (Test-Path $squirrelDir) {
+            Get-ChildItem -Path $squirrelDir -Filter "*.exe" |
+              Copy-Item -Destination $Assets -Force
+          } else {
+            Write-Host "[warn] Squirrel output not found at $squirrelDir"
+          }
+
+          # WiX MSI：msi 安装包
+          $wixDir = "out/make/wix/x64"
+          if (Test-Path $wixDir) {
+            Get-ChildItem -Path $wixDir -Filter "*.msi" |
+              Copy-Item -Destination $Assets -Force
+          } else {
+            Write-Host "[warn] WiX output not found at $wixDir"
+          }
+
+          Write-Host "==== Collected assets ===="
+          Get-ChildItem $Assets | Format-Table Name, @{N='MB';E={[math]::Round($_.Length/1MB,2)}}
+
+      - name: Generate SHA256 checksums
+        shell: pwsh
+        run: |
+          $Assets = "release-assets"
+          $checksums = Join-Path $Assets "checksums.txt"
+          Set-Content -Path $checksums -Value ""
+          Get-ChildItem $Assets -File | Where-Object { $_.Name -ne "checksums.txt" } | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)" | Add-Content -Path $checksums
+          }
+          Write-Host "==== checksums.txt ===="
+          Get-Content $checksums
+
+      - name: Resolve version
+        id: v
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          VERSION="${VERSION#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "undefined" ]; then
+            echo "Failed to resolve package.json version" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      # 从上一个版本 tag 到 HEAD 的 commit 按版本 bump 分节展示
+      - name: Generate release notes from commit log
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 查找上一个版本 tag（仅匹配 x.y.z 格式，排除 backup/Alpha 等非版本 tag）
+          PREV_TAG=$(git tag --sort=-creatordate \
+            | grep -E "^(v)?[0-9]+\.[0-9]+\.[0-9]+$" \
+            | grep -vE "^(v)?${VERSION}$" \
+            | head -1)
+
+          {
+            echo "## 更新内容"
+            echo ""
+
+            if [ -z "$PREV_TAG" ]; then
+              echo "（首次发布）"
+              git log --format="%h %s" --reverse | head -50
+            else
+              # 查找版本 bump commit：首个在 package.json diff 中引入当前版本号的 commit
+              BUMPCOMMIT=$(git log "${PREV_TAG}..HEAD" --reverse --format="%H" \
+                -S "\"version\": \"${VERSION}\"" -- package.json | head -1)
+
+              if [ -n "$BUMPCOMMIT" ]; then
+                # 有版本 bump：分两节，避免上个版本期间积累的 commit 与本版本新增混在一起
+                # 第二节：bump 之后的 commit（当前版本的新增变更）
+                POST_BUMP=$(git log "${BUMPCOMMIT}..HEAD" --format="%h %s" --reverse)
+                if [ -n "$POST_BUMP" ]; then
+                  echo "### v${VERSION} 新增"
+                  echo ""
+                  echo "$POST_BUMP"
+                  echo ""
+                fi
+
+                # 第一节：bump commit 及之前积累的 commit（上个版本期间未发版的变更）
+                ACCUMULATED=$(git log "${PREV_TAG}..${BUMPCOMMIT}" --format="%h %s" --reverse)
+                if [ -n "$ACCUMULATED" ]; then
+                  echo "### 自 \`${PREV_TAG}\` 积累"
+                  echo ""
+                  echo "$ACCUMULATED"
+                  echo ""
+                fi
+              else
+                # 无版本 bump（同版本重新 push）：单节展示全部增量
+                echo "自 \`${PREV_TAG}\` 以来的变更："
+                echo ""
+                git log "${PREV_TAG}..HEAD" --format="%h %s" --reverse
+                echo ""
+              fi
+            fi
+
+            echo "---"
+            echo "自动构建 from ${{ github.sha }}"
+          } > release-notes.md
+          echo "==== release-notes.md ===="
+          cat release-notes.md
+
+      # 同一版本多次 push：tag 已存在则更新 notes + assets（--clobber 覆盖）
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.v.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; updating notes and assets."
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "$TAG" \
+              --notes-file release-notes.md
+          fi
+
+          cd release-assets
+          for file in *; do
+            echo "Uploading $file"
+            gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
+          done
