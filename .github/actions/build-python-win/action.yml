@@ -61,6 +61,9 @@ runs:
         pip install -r python/requirements.txt
 
     # python-make.cjs 会调用 python-make.bat，bat 内部再次 `conda activate nuitka`（幂等）
+    # CI 子进程里 conda 可能不在 PATH，通过 CONDA_BAT 显式指向 conda.bat 让 bat 能激活环境
     - name: Compile web_api.exe via Nuitka
       shell: cmd
-      run: node scripts/python-make.cjs
+      run: |
+        if defined CONDA set "CONDA_BAT=%CONDA%\condabin\conda.bat"
+        node scripts/python-make.cjs
