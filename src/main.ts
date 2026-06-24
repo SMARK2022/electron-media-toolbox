@@ -13,6 +13,7 @@ import { toErrMsg } from "./lib/error-utils";
 import { spawn, type ChildProcess } from "child_process";
 import * as http from "http"; // 新增：用于调用后端 /shutdown
 import { LruBufferCache } from "./helpers/cache/lru-buffer-cache";
+import { getBackendBinaryName } from "./lib/backend-path";
 
 /* -------------------------------------------------------------------------- */
 /*                               初始化与常量                                   */
@@ -103,8 +104,8 @@ let pythonBackend: ChildProcess | null = null;
 
 /**
  * Python 后端启动配置：command 是可执行文件路径，args 是参数列表。
- * Windows：运行 Nuitka 编译的 web_api.exe。
- * macOS：运行 Nuitka 编译的 web_api（无 .exe 扩展名）。
+ * Windows：运行 Nuitka 编译的 web_api.exe（onefile 单文件）。
+ * macOS：运行 Nuitka 编译的 web_api（--mode=app 产物，在 .app/Contents/MacOS/ 内）。
  * Dev 和打包模式都使用编译后的二进制，不走 python3 源码。
  */
 interface BackendLaunchConfig {
@@ -116,41 +117,44 @@ interface BackendLaunchConfig {
  * 解析 Python 后端的启动配置：
  * - Windows Dev：    <project_root>/python/out/web_api.exe
  * - Windows 打包后： process.resourcesPath/web_api.exe
- * - macOS Dev：      <project_root>/python/out/web_api
- * - macOS 打包后：   process.resourcesPath/web_api
+ * - macOS Dev：      <project_root>/python/out/web_api.app/Contents/MacOS/web_api
+ * - macOS 打包后：   process.resourcesPath/web_api.app/Contents/MacOS/web_api
+ *
+ * macOS 路径含 .app bundle 结构：Nuitka --mode=app 要求 app bundle 目录，
+ * PyObjC Foundation 框架在非 app bundle 下会 FATAL 崩溃。
  */
 function resolvePythonBackendConfig(): BackendLaunchConfig | null {
-  // 不同平台的编译产物文件名不同：Windows 为 .exe，macOS/Linux 无扩展名
-  const exeName = process.platform === "win32" ? "web_api.exe" : "web_api";
+  // 平台相关的二进制相对路径（macOS 含 .app/Contents/MacOS/ 前缀）
+  const binName = getBackendBinaryName();
 
   if (inDevelopment) {
-    const devPath = path.join(process.cwd(), "python", "out", exeName);
+    const devPath = path.join(process.cwd(), "python", "out", binName);
     if (fs.existsSync(devPath)) {
       console.log("[PythonBackend] Dev binary found at:", devPath);
       return { command: devPath, args: [] };
     }
     console.warn(
-      `[PythonBackend] Dev binary not found at python/out/${exeName}, skip. Run \`npm run python:make\` to compile.`,
+      `[PythonBackend] Dev binary not found at python/out/${binName}, skip. Run \`npm run python:make\` to compile.`,
     );
     return null;
   }
 
-  // 打包后：extraResource 会把二进制放在 resources 根目录
-  const prodPath = path.join(process.resourcesPath, exeName);
+  // 打包后：extraResource 把二进制（或 .app 目录）放在 resources 根目录
+  const prodPath = path.join(process.resourcesPath, binName);
   if (fs.existsSync(prodPath)) {
     console.log("[PythonBackend] Packed binary found at:", prodPath);
     return { command: prodPath, args: [] };
   }
 
   // 兜底：兼容 resources/python/out/ 路径
-  const altPath = path.join(process.resourcesPath, "python", "out", exeName);
+  const altPath = path.join(process.resourcesPath, "python", "out", binName);
   if (fs.existsSync(altPath)) {
     console.log("[PythonBackend] Packed binary found at (alt):", altPath);
     return { command: altPath, args: [] };
   }
 
   console.warn(
-    "[PythonBackend] No backend binary found, backend will NOT be started.",
+    `[PythonBackend] No backend binary found, backend will NOT be started.`,
   );
   return null;
 }

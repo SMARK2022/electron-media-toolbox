@@ -6,6 +6,7 @@ import struct
 import zlib
 import concurrent.futures
 import ctypes
+import time  # QuickLook 异步超时控制用
 import numpy as np
 import cv2
 
@@ -34,7 +35,9 @@ def cv_imwrite(file_path: str, img: np.ndarray) -> bool:
 # ============================ 平台分支 ============================
 # Windows：使用 Shell API (IShellItemImageFactory) 获取系统缩略图，
 #           可利用 Windows 缩略图缓存（含 EXIF 内嵌缩略图），速度快。
-# macOS/Linux：无等效 Shell API，用 OpenCV imread + resize 降级实现，
+# macOS：使用 ImageIO（CGImageSourceCreateThumbnailAtIndex）+ QuickLook 三级降级，
+#           ImageIO 对 JPEG/PNG 比 OpenCV 快 1.5-2x（利用 EXIF 内嵌缩略图），
+#           QuickLook 对 WebP 快 15x（系统缓存），OpenCV 兜底。
 #           输出与 Windows 版相同的 BMP 编码字节（调用方用 np.frombuffer → cv2.imdecode 解码）。
 
 if sys.platform == "win32":
@@ -210,22 +213,159 @@ if sys.platform == "win32":
         return bmp_data
 
 else:
-    # ---- macOS / Linux 降级实现：用 OpenCV 读取 + resize，返回 BMP 字节 ----
-    def get_thumbnail(file_path, width, height):
-        """非 Windows 实现：用 OpenCV imread + resize 生成缩略图，返回 BMP 字节.
+    # ---- macOS 原生缩略图：ImageIO/QuickLook + OpenCV 三级降级 ----
+    # 延迟导入 PyObjC：未安装时 _HAS_* 为 False，直接降级到 OpenCV，
+    # 保证非 macOS 环境或无 PyObjC 的 conda 环境不会 import 失败
+    _HAS_IMAGEIO = False
+    _HAS_QUICKLOOK = False
+    try:
+        from Foundation import NSURL, NSMakeSize, NSRunLoop, NSDate
+        import objc
+        import Quartz
+        _HAS_IMAGEIO = True
+        try:
+            import QuickLookThumbnailing as QLT
+            _HAS_QUICKLOOK = True
+        except ImportError:
+            pass
+    except ImportError:
+        pass
 
-        输出格式与 Windows 版一致（BMP 编码字节），
-        调用方（web_api.py / generate_thumbnails）用 np.frombuffer → cv2.imdecode 解码。
+    def _cgimage_to_bgr(cg_image):
+        """CGImageRef → BGR ndarray（ImageIO 和 QuickLook 共用）。
+
+        通过 CGBitmapContextCreate 将 CGImage 渲染到 RGBA buffer，
+        再转换为 OpenCV BGR 格式。使用 kCGImageAlphaPremultipliedLast
+        以避免 alpha 预乘对像素值的影响。
         """
-        # cv_imread 支持中文路径（np.fromfile + cv2.imdecode）
-        img = _cv_imread(file_path)
-        # resize 到目标尺寸，与 Windows Shell API 的 SIIGBF_BIGGERSIZEOK 行为近似
-        img = cv2.resize(img, (width, height))
-        # 编码为 BMP 字节流，保持与 Windows 版 get_thumbnail 的返回契约一致
+        w = Quartz.CGImageGetWidth(cg_image)
+        h = Quartz.CGImageGetHeight(cg_image)
+        bpr = w * 4  # 每像素 4 字节（RGBA）
+        buf = bytearray(h * bpr)
+        ctx = Quartz.CGBitmapContextCreate(
+            buf, w, h, 8, bpr,
+            Quartz.CGColorSpaceCreateDeviceRGB(),
+            Quartz.kCGImageAlphaPremultipliedLast | Quartz.kCGBitmapByteOrder32Big,
+        )
+        if ctx is None:
+            raise RuntimeError("CGBitmapContextCreate failed")
+        Quartz.CGContextDrawImage(ctx, Quartz.CGRectMake(0, 0, w, h), cg_image)
+        # buf 是 RGBA 大端字节，reshape 后取前 3 通道并反转为 BGR
+        arr = np.frombuffer(bytes(buf), dtype=np.uint8).reshape(h, bpr)
+        bgr = arr[:, :w * 4].reshape(h, w, 4)[:, :, :3][:, :, ::-1].copy()
+        del ctx  # 释放 CGBitmapContext，防止 worker 线程内存泄漏
+        return bgr
+
+    def _bgr_to_bmp_bytes(img):
+        """BGR ndarray → BMP 字节（与 Windows 版 get_thumbnail 返回契约一致）。"""
         success, buffer = cv2.imencode('.bmp', img)
         if not success:
-            raise RuntimeError(f"Failed to encode thumbnail for {file_path}")
+            raise RuntimeError("Failed to encode BMP")
         return bytearray(buffer.tobytes())
+
+    def get_thumbnail(file_path, width, height):
+        """macOS 实现：ImageIO/QuickLook 原生缩略图 + OpenCV 兜底，返回 BMP 字节。
+
+        三级降级链（与 inference_onnx.py 的 _DummyIqaSession 兜底模式一致）：
+        1. WebP → QuickLook（系统缓存，29ms 固定；OpenCV/ImageIO 对 WebP 需 449ms）
+        2. JPEG/PNG → ImageIO（EXIF 内嵌缩略图 + 下采样，比 OpenCV 快 1.5-2x）
+        3. 兜底 → OpenCV imread + resize（保证非 PyObjC 环境可用）
+
+        返回 BMP 编码字节，调用方用 np.frombuffer → cv2.imdecode 解码。
+        """
+        max_px = max(width, height)
+        ext = os.path.splitext(file_path)[1].lower()
+
+        # --- 1. WebP 优先 QuickLook（OpenCV/ImageIO 的 WebP 解码器慢 15x）---
+        if ext == '.webp' and _HAS_QUICKLOOK:
+            try:
+                with objc.autorelease_pool():
+                    url = NSURL.fileURLWithPath_(file_path)
+                    # 请求 LowQuality | Thumbnail，接受任何 representation
+                    # （系统通常先返回 LowQuality rtype=2，质量已足够）
+                    rep_types = (
+                        QLT.QLThumbnailGenerationRequestRepresentationTypeLowQualityThumbnail
+                        | QLT.QLThumbnailGenerationRequestRepresentationTypeThumbnail
+                    )
+                    request = QLT.QLThumbnailGenerationRequest.alloc() \
+                        .initWithFileAtURL_size_scale_representationTypes_(
+                            url, NSMakeSize(float(max_px), float(max_px)), 1.0, rep_types)
+                    request.setIconMode_(False)
+
+                    event = threading.Event()
+                    result = {}
+
+                    def _handler(thumbnail, rtype, error):
+                        # 异步回调：拿到第一个 thumbnail 即 set，不等 rtype=4
+                        if error is not None:
+                            result["error"] = error
+                            event.set()
+                        elif thumbnail is not None and "thumbnail" not in result:
+                            result["thumbnail"] = thumbnail
+                            event.set()
+
+                    gen = QLT.QLThumbnailGenerator.sharedGenerator()
+                    gen.generateRepresentationsForRequest_updateHandler_(request, _handler)
+                    # QuickLook 异步回调依赖 NSRunLoop，子线程需手动驱动
+                    deadline = time.time() + 10.0
+                    while not event.is_set() and time.time() < deadline:
+                        NSRunLoop.currentRunLoop().runUntilDate_(
+                            NSDate.dateWithTimeIntervalSinceNow_(0.02))
+                    if not event.is_set():
+                        # 超时取消请求，防止系统 daemon 无响应时永久阻塞
+                        try:
+                            gen.cancelRequest_(request)
+                        except Exception:
+                            pass
+                        raise TimeoutError(f"QuickLook timeout: {file_path}")
+
+                    thumb = result.get("thumbnail")
+                    if thumb is None:
+                        raise RuntimeError(f"QuickLook no thumbnail: {file_path}")
+                    cg = thumb.CGImage()
+                    if cg is None:
+                        raise RuntimeError(f"QuickLook CGImage None: {file_path}")
+                    img = _cgimage_to_bgr(cg)
+                # BMP 编码在 autorelease_pool 外执行（不涉及 Objective-C 对象）
+                return _bgr_to_bmp_bytes(img)
+            except Exception:
+                pass  # 降级到 ImageIO
+
+        # --- 2. JPEG/PNG 用 ImageIO（比 OpenCV 快 1.5-2x）---
+        if _HAS_IMAGEIO:
+            try:
+                with objc.autorelease_pool():
+                    url = NSURL.fileURLWithPath_(file_path)
+                    source = Quartz.CGImageSourceCreateWithURL(
+                        url, {Quartz.kCGImageSourceShouldCache: False})
+                    if source is None:
+                        raise RuntimeError(f"CGImageSourceCreateWithURL failed: {file_path}")
+                    # IfAbsent=true：优先用 EXIF 内嵌缩略图，无则下采样原图
+                    # （不完全解码，比 OpenCV imread 快 1.5-2x）
+                    opts = {
+                        Quartz.kCGImageSourceThumbnailMaxPixelSize: max_px,
+                        Quartz.kCGImageSourceCreateThumbnailWithTransform: True,
+                        Quartz.kCGImageSourceShouldCacheImmediately: True,
+                        Quartz.kCGImageSourceCreateThumbnailFromImageIfAbsent: True,
+                    }
+                    cg = Quartz.CGImageSourceCreateThumbnailAtIndex(source, 0, opts)
+                    if cg is None:
+                        raise RuntimeError(f"CGImageSourceCreateThumbnailAtIndex failed: {file_path}")
+                    img = _cgimage_to_bgr(cg)
+                return _bgr_to_bmp_bytes(img)
+            except Exception:
+                pass  # 降级到 OpenCV
+
+        # --- 3. 兜底：OpenCV imread + resize ---
+        # 按 max_px 等比缩放（与 ImageIO/QuickLook 保持宽高比的行为一致，
+        # 而非旧代码的 cv2.resize(img, (width, height)) 强制拉伸）
+        img = _cv_imread(file_path)
+        h, w = img.shape[:2]
+        scale = min(1.0, float(max_px) / float(max(h, w)))
+        if scale < 1.0:
+            img = cv2.resize(img, (max(1, int(round(w * scale))), max(1, int(round(h * scale)))),
+                             interpolation=cv2.INTER_AREA)
+        return _bgr_to_bmp_bytes(img)
 
 
 def generate_thumbnails(

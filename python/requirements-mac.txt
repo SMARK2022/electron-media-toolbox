@@ -1,0 +1,10 @@
+# macOS 专用附加依赖：在 requirements.txt 之上覆盖安装
+# PyObjC 提供 macOS 原生框架绑定，用于 thumbnails.py 的原生缩略图生成：
+# - Quartz: CGImageSourceCreateThumbnailAtIndex（ImageIO 下采样，JPEG/PNG 快 2x）
+# - QuickLookThumbnailing: QLThumbnailGenerator（系统缓存，WebP 快 15x）
+# - Foundation/Cocoa: NSURL/NSRunLoop 等基础类型
+# 这些包仅在 macOS 上可安装（需要 macOS SDK），Windows/Linux 不安装
+pyobjc-core>=10.0
+pyobjc-framework-Cocoa>=10.0
+pyobjc-framework-Quartz>=10.0
+pyobjc-framework-QuickLookThumbnailing>=10.0

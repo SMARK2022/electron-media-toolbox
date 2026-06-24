@@ -62,21 +62,23 @@ cd "${PYTHON_DIR}"
 # ============================
 # 2) 开始编译
 # ============================
-# 使用 --mode=onefile 生成单文件，压缩率约 24%（243MB → 58MB）。
-# --onefile-tempdir-spec={CACHE_DIR}：解压到系统缓存目录（持久化），
-#   首次启动解压 ~15 秒，后续启动复用缓存只需 ~1 秒。
-#   Windows bat 用 {PROGRAM_DIR}/.web_api_cache + temporary（每次删除），
-#   因为 Windows 解压只需 2-3 秒；macOS 解压较慢，必须持久化缓存。
-echo "[*] 使用 Nuitka 编译 ${MAIN_FILE} 为 onefile（持久化缓存）..."
+# macOS 用 --mode=app（standalone + app bundle），因为 PyObjC Foundation 框架
+# 要求 app bundle 目录结构，--mode=onefile 会触发 Nuitka options-nanny FATAL。
+# 产物是 web_api.app/ 目录（非单文件），二进制在 Contents/MacOS/web_api。
+# standalone 模式无需 onefile 解压，启动时间 ~1s（vs onefile 冷启动 ~15s）。
+echo "[*] 使用 Nuitka 编译 ${MAIN_FILE} 为 app bundle（standalone + .app 目录）..."
 
 "$PYTHON_EXE" -m nuitka \
-  --mode=onefile \
-  --onefile-tempdir-spec="{CACHE_DIR}/web_api_runtime" \
+  --mode=app \
   --output-dir="${OUTPUT_DIR}" \
   --output-filename="web_api" \
   --jobs="${JOBS}" \
   --assume-yes-for-downloads \
   --lto=no \
+  --include-package=Quartz \
+  --include-package=Foundation \
+  --include-package=objc \
+  --include-package=QuickLookThumbnailing \
   --include-data-file="${MODEL_DIR}/lar_iqa.onnx=${MODEL_DIR}/lar_iqa.onnx" \
   --include-data-file="${MODEL_DIR}/2d106det_batch.onnx=${MODEL_DIR}/2d106det_batch.onnx" \
   --include-data-file="${MODEL_DIR}/det_10g.onnx=${MODEL_DIR}/det_10g.onnx" \
@@ -91,6 +93,6 @@ echo "[*] 使用 Nuitka 编译 ${MAIN_FILE} 为 onefile（持久化缓存）..."
 
 echo ""
 echo "[*] 编译完成，输出目录：${OUTPUT_DIR}"
-echo "[*] 可执行文件：${OUTPUT_DIR}/web_api（onefile，58MB 压缩）"
-echo "[*] 首次启动解压到 {CACHE_DIR}/web_api_runtime（约 15 秒），后续启动复用缓存（约 1 秒）"
+echo "[*] 可执行文件：${OUTPUT_DIR}/web_api.app/Contents/MacOS/web_api（app bundle）"
+echo "[*] standalone 模式无需解压，启动时间约 1 秒"
 echo ""
