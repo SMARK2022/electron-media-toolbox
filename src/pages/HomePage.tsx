@@ -12,7 +12,11 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-const MAX_ATTEMPTS = 10; // 最多尝试 10 次（约 10 秒）
+// 后端初始检测最多尝试次数：
+// Windows Nuitka onefile 解压约 5 秒，10 次（10 秒）足够；
+// macOS onefile 首次解压约 30 秒，需 40 次（40 秒）覆盖。
+// 统一使用 40 次，对 Windows 无副作用（后端启动后立即成功，不会跑满 40 次）
+const MAX_ATTEMPTS = 40;
 const REQUEST_TIMEOUT_MS = 1000; // 每次请求 1 秒超时
 const INITIAL_RETRY_INTERVAL_MS = 1000; // 初始阶段重试间隔 1 秒
 const CONNECTED_POLL_INTERVAL_MS = 2000; // 成功后每 2 秒刷新一次延迟

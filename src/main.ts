@@ -38,7 +38,11 @@ console.log(`Electron version: ${process.versions.electron}`);
 console.log("✓ Application initialization started");
 
 // 获取应用程序的根目录（打包后也有效，用于 .cache/.thumbs 等）
-const appRoot = process.cwd();
+// macOS 打包后 process.cwd() 为 "/"（不可写），改用 app.getPath("userData")
+// Windows 保持 process.cwd()（与既有 Squirrel 安装目录 + WiX 权限补丁一致）
+// 不变量：此路径必须可写，且与 database-listeners.ts 中的 appRoot 保持一致
+const appRoot =
+  process.platform === "darwin" ? app.getPath("userData") : process.cwd();
 console.log(`App root: ${appRoot}`);
 
 const ONE_GB = 1024 * 1024 * 1024;
@@ -54,7 +58,10 @@ function resolveLocalResourceCacheLimit(): {
   if (freeMemGB > 5) return { limitBytes: 4 * ONE_GB, freeMemGB };
   if (freeMemGB > 3) return { limitBytes: 2 * ONE_GB, freeMemGB };
   if (freeMemGB > 1) return { limitBytes: 1 * ONE_GB, freeMemGB };
-  return { limitBytes: 0, freeMemGB };
+  // macOS 的 getSystemMemoryInfo().free 仅返回未缓存页面（通常 <100MB），
+  // 不代表实际可用内存。设置 512MB 最小保底避免缓存完全禁用，
+  // LRU 淘汰机制会在实际内存不足时自动释放
+  return { limitBytes: 512 * 1024 * 1024, freeMemGB };
 }
 
 function detectMimeType(filePath: string): string {
@@ -89,70 +96,81 @@ console.log(
 );
 
 /* -------------------------------------------------------------------------- */
-/*                          Python 后端（web_api.exe）管理                      */
+/*                          Python 后端管理（跨平台）                           */
 /* -------------------------------------------------------------------------- */
 
 let pythonBackend: ChildProcess | null = null;
 
 /**
- * 解析 Python 后端 exe 的路径：
- * - Dev：    <project_root>/python/out/web_api.exe
- * - 打包后： process.resourcesPath/web_api.exe
+ * Python 后端启动配置：command 是可执行文件路径，args 是参数列表。
+ * Windows：运行 Nuitka 编译的 web_api.exe。
+ * macOS：运行 Nuitka 编译的 web_api（无 .exe 扩展名）。
+ * Dev 和打包模式都使用编译后的二进制，不走 python3 源码。
  */
-function resolvePythonBackendPath(): string | null {
-  // 当前后端只在 Windows 下有 exe，有其它平台再扩展
-  if (process.platform !== "win32") {
-    console.log("[PythonBackend] Non-Windows platform, skip backend.");
-    return null;
-  }
+interface BackendLaunchConfig {
+  command: string;
+  args: string[];
+}
 
-  const exeName = "web_api.exe";
+/**
+ * 解析 Python 后端的启动配置：
+ * - Windows Dev：    <project_root>/python/out/web_api.exe
+ * - Windows 打包后： process.resourcesPath/web_api.exe
+ * - macOS Dev：      <project_root>/python/out/web_api
+ * - macOS 打包后：   process.resourcesPath/web_api
+ */
+function resolvePythonBackendConfig(): BackendLaunchConfig | null {
+  // 不同平台的编译产物文件名不同：Windows 为 .exe，macOS/Linux 无扩展名
+  const exeName = process.platform === "win32" ? "web_api.exe" : "web_api";
 
   if (inDevelopment) {
     const devPath = path.join(process.cwd(), "python", "out", exeName);
     if (fs.existsSync(devPath)) {
-      console.log("[PythonBackend] Dev exe found at:", devPath);
-      return devPath;
+      console.log("[PythonBackend] Dev binary found at:", devPath);
+      return { command: devPath, args: [] };
     }
     console.warn(
-      "[PythonBackend] Dev exe not found at python/out/web_api.exe, skip.",
+      `[PythonBackend] Dev binary not found at python/out/${exeName}, skip. Run \`npm run python:make\` to compile.`,
     );
     return null;
   }
 
-  // 打包后：extraResource 会把 exe 放在 resources 根目录
+  // 打包后：extraResource 会把二进制放在 resources 根目录
   const prodPath = path.join(process.resourcesPath, exeName);
   if (fs.existsSync(prodPath)) {
-    console.log("[PythonBackend] Packed exe found at:", prodPath);
-    return prodPath;
+    console.log("[PythonBackend] Packed binary found at:", prodPath);
+    return { command: prodPath, args: [] };
   }
 
-  // 兜底：如果以后你又改回 resources/python/out/web_api.exe，可以兼容一下
+  // 兜底：兼容 resources/python/out/ 路径
   const altPath = path.join(process.resourcesPath, "python", "out", exeName);
   if (fs.existsSync(altPath)) {
-    console.log("[PythonBackend] Packed exe found at (alt):", altPath);
-    return altPath;
+    console.log("[PythonBackend] Packed binary found at (alt):", altPath);
+    return { command: altPath, args: [] };
   }
 
   console.warn(
-    "[PythonBackend] No backend exe found in resources, backend will NOT be started.",
+    "[PythonBackend] No backend binary found, backend will NOT be started.",
   );
   return null;
 }
 
 /**
  * 启动 Python 后端：
- * - exe 不存在则直接跳过
+ * - 运行 Nuitka 编译的二进制（Windows: web_api.exe, macOS: web_api）
+ * - 启动配置不存在则跳过
  * - 开发模式下使用 stdio: "inherit" 方便调试；打包后用 "ignore" 静音
  */
 function startPythonBackend() {
-  const exePath = resolvePythonBackendPath();
-  if (!exePath) return;
+  const config = resolvePythonBackendConfig();
+  if (!config) return;
 
-  console.log(`[PythonBackend] Starting backend: ${exePath}`);
+  console.log(
+    `[PythonBackend] Starting backend: ${config.command} ${config.args.join(" ")}`,
+  );
 
   try {
-    pythonBackend = spawn(exePath, [], {
+    pythonBackend = spawn(config.command, config.args, {
       stdio: inDevelopment ? "inherit" : "ignore",
       windowsHide: !inDevelopment,
     });
@@ -310,8 +328,6 @@ function createWindow() {
   if (inDevelopment) {
     mainWindow.webContents.openDevTools();
   }
-  // 如果你觉得两次 openDevTools 太吵，可以删掉这一行
-  mainWindow.webContents.openDevTools();
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);

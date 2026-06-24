@@ -20,6 +20,10 @@ declare global {
       runCommand(cmdStr: string, cmdPath?: string): Promise<string>;
       getPathForFile?(file: File): string;
       getPhotoMetadata(filePath: string): Promise<any>;
+      // 跨平台文件操作（替代旧 runCommand Windows cmd 方案，主进程用 fs API）
+      createFolder(folderPath: string): Promise<{ success: boolean }>;
+      copyFile(src: string, dest: string): Promise<{ success: boolean }>;
+      folderExists(folderPath: string): Promise<boolean>;
     };
     /* eslint-enable @typescript-eslint/no-explicit-any */
   }

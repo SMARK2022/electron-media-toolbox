@@ -52,8 +52,11 @@ export const LONG_TIMEOUT = 60000; // 长操作超时
  * 轮询后端 /status 直到就绪。
  * 必须在 Node 端 fetch（非 page.evaluate），因为后端 CORS 仅允许 localhost:5173，
  * 渲染进程发起的请求会被拦截。超时则 throw——fast-fail 比让所有依赖后端的测试空转更高效。
+ *
+ * 超时默认 60 秒：macOS Nuitka onefile 首次解压约 30 秒，
+ * Windows 通常 5 秒内就绪，不会跑满 60 秒
  */
-export async function waitForBackend(timeout = 30000): Promise<void> {
+export async function waitForBackend(timeout = 60000): Promise<void> {
   const startTime = Date.now();
   while (Date.now() - startTime < timeout) {
     try {
@@ -174,8 +177,8 @@ export async function launchApp(): Promise<{
 
   await pageInstance.waitForLoadState("domcontentloaded");
   await pageInstance.waitForTimeout(2000); // 等待应用初始化
-  // 等待 Python 后端就绪；未就绪时 fast-fail 避免后续测试空转超时
-  await waitForBackend(30000);
+  // 等待 Python 后端就绪；macOS onefile 首次解压约 30 秒，超时 60 秒覆盖
+  await waitForBackend(60000);
   return { app: appInstance, page: pageInstance };
 }
 

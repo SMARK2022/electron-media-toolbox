@@ -1,0 +1,5 @@
+# Windows 专用附加依赖：在 requirements.txt 之上覆盖安装
+# onnxruntime-directml 会替换标准 onnxruntime，提供 DirectML GPU 加速
+# comtypes 提供 Windows Shell COM 接口（IShellItemImageFactory 缩略图）
+onnxruntime-directml==1.23.0
+comtypes==1.2.0

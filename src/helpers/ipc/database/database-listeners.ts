@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { app, ipcMain } from "electron";
 import * as fs from "fs";
 import * as path from "path";
 import Database from "better-sqlite3";
@@ -16,7 +16,11 @@ export const initializeDatabase = () => {
   try {
     if (db) return;
 
-    const appRoot = process.cwd();
+    // macOS 打包后 process.cwd() 为 "/"（不可写），改用 app.getPath("userData")
+    // Windows 保持 process.cwd()（与 main.ts 中的 appRoot 保持一致，既有行为不变）
+    // 不变量：DB 路径必须可写，且与 main.ts 中的 appRoot 保持一致
+    const appRoot =
+      process.platform === "darwin" ? app.getPath("userData") : process.cwd();
     cacheDir = path.join(appRoot, ".cache");
     if (!fs.existsSync(cacheDir)) {
       fs.mkdirSync(cacheDir, { recursive: true });

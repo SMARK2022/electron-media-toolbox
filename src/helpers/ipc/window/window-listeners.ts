@@ -190,6 +190,70 @@ export function addWindowEventListeners(mainWindow: BrowserWindow) {
     }
   });
 
+  // ============ 跨平台文件操作（替代旧的 runCommand Windows cmd 方案） ============
+
+  /**
+   * 创建文件夹（跨平台，用于 ElectronAPI.createFolder）。
+   * 使用 fs.mkdirSync({recursive:true})，文件夹已存在时不报错，
+   * 替代旧实现中 Windows cmd 的 `md` 命令。
+   */
+  ipcMain.handle("create-folder", async (_event, folderPath: string) => {
+    try {
+      if (!folderPath || typeof folderPath !== "string") {
+        return { success: false, error: "Invalid folder path" };
+      }
+      // recursive:true 等价于 `md`（已存在时静默成功），跨平台安全
+      fs.mkdirSync(folderPath, { recursive: true });
+      return { success: true };
+    } catch (error: unknown) {
+      console.error("[create-folder] Error:", error);
+      return { success: false, error: toErrMsg(error) };
+    }
+  });
+
+  /**
+   * 复制文件（跨平台，用于 ElectronAPI.copyFile）。
+   * 使用 fs.copyFileSync，替代旧实现中 Windows cmd 的 `copy` 命令。
+   */
+  ipcMain.handle("copy-file", async (_event, src: string, dest: string) => {
+    try {
+      if (
+        !src ||
+        !dest ||
+        typeof src !== "string" ||
+        typeof dest !== "string"
+      ) {
+        return { success: false, error: "Invalid file path" };
+      }
+      // 确保 dest 的父目录存在（旧 cmd copy 也有类似行为依赖 cwd）
+      const destDir = path.dirname(dest);
+      if (destDir && !fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+      }
+      fs.copyFileSync(src, dest);
+      return { success: true };
+    } catch (error: unknown) {
+      console.error("[copy-file] Error:", error);
+      return { success: false, error: toErrMsg(error) };
+    }
+  });
+
+  /**
+   * 检查文件夹是否存在（跨平台，用于 ElectronAPI.folderExists）。
+   * 使用 fs.existsSync，替代旧实现中 Windows cmd 的 `if exist` 命令。
+   */
+  ipcMain.handle("check-folder-exists", async (_event, folderPath: string) => {
+    try {
+      if (!folderPath || typeof folderPath !== "string") {
+        return false;
+      }
+      return fs.existsSync(folderPath);
+    } catch (error: unknown) {
+      console.error("[check-folder-exists] Error:", error);
+      return false;
+    }
+  });
+
   /**
    * 获取单张照片的完整元数据（用于 ElectronAPI.getPhotoMetadata）。
    * 优先策略：

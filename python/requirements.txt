@@ -1,8 +1,6 @@
-comtypes==1.2.0
 fastapi==0.121.3
-numpy==2.3.5
-onnxruntime-directml==1.23.0
-opencv_python==4.10.0.84
-opencv_python_headless==4.7.0.72
+numpy>=2.2,<2.4
+onnxruntime>=1.20
+opencv_python_headless>=4.10.0.84
 pydantic==1.10.26
 uvicorn==0.38.0

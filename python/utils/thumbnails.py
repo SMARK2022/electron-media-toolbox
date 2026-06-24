@@ -1,5 +1,6 @@
 from typing import List, Callable
 import os
+import sys
 import threading
 import struct
 import zlib
@@ -8,23 +9,16 @@ import ctypes
 import numpy as np
 import cv2
 
-from ctypes import HRESULT, POINTER, WinError, byref, windll
-from ctypes.wintypes import DWORD, LONG, WORD
-
-from comtypes import COMMETHOD, GUID, IUnknown
+from utils.image_compute import cv_imread
 
 # 进度回调类型（可接受任意参数签名以兼容现有调用）
 ProgressFn = Callable[..., None]
 
 
-# 支持中文路径的 OpenCV 函数
-def cv_imread(file_path: str) -> np.ndarray:
+# 支持中文路径的 OpenCV 函数（与 image_compute.py 中的实现保持一致）
+def _cv_imread(file_path: str) -> np.ndarray:
     """支持中文路径的 cv2 读取."""
-    data = np.fromfile(file_path, dtype=np.uint8)
-    img = cv2.imdecode(data, cv2.IMREAD_COLOR)
-    if img is None:
-        raise RuntimeError(f"Failed to read image: {file_path}")
-    return img
+    return cv_imread(file_path)
 
 
 def cv_imwrite(file_path: str, img: np.ndarray) -> bool:
@@ -37,175 +31,201 @@ def cv_imwrite(file_path: str, img: np.ndarray) -> bool:
     return True
 
 
-# 手动定义缺少的类型
-LPCWSTR = ctypes.c_wchar_p
-HDC = ctypes.c_void_p
+# ============================ 平台分支 ============================
+# Windows：使用 Shell API (IShellItemImageFactory) 获取系统缩略图，
+#           可利用 Windows 缩略图缓存（含 EXIF 内嵌缩略图），速度快。
+# macOS/Linux：无等效 Shell API，用 OpenCV imread + resize 降级实现，
+#           输出与 Windows 版相同的 BMP 编码字节（调用方用 np.frombuffer → cv2.imdecode 解码）。
 
+if sys.platform == "win32":
+    # ---- Windows-only 导入：ctypes.wintypes / comtypes 仅在 Windows 存在 ----
+    from ctypes import HRESULT, POINTER, WinError, byref, windll
+    from ctypes.wintypes import DWORD, LONG, WORD
+    from comtypes import COMMETHOD, GUID, IUnknown
 
-# 定义 HBITMAP 为一个新的类型
-class HBITMAP(ctypes.c_void_p):
-    pass
+    # 手动定义缺少的类型
+    LPCWSTR = ctypes.c_wchar_p
+    HDC = ctypes.c_void_p
 
+    # 定义 HBITMAP 为一个新的类型
+    class HBITMAP(ctypes.c_void_p):
+        pass
 
-# 定义 SIZE 结构
-class SIZE(ctypes.Structure):
-    _fields_ = [("cx", ctypes.c_long), ("cy", ctypes.c_long)]
+    # 定义 SIZE 结构
+    class SIZE(ctypes.Structure):
+        _fields_ = [("cx", ctypes.c_long), ("cy", ctypes.c_long)]
 
+    # 定义 SIIGBF 枚举
+    class SIIGBF:
+        SIIGBF_RESIZETOFIT = 0
+        SIIGBF_BIGGERSIZEOK = 0x00000001
+        SIIGBF_MEMORYONLY = 0x00000002
+        SIIGBF_ICONONLY = 0x00000004
+        SIIGBF_THUMBNAILONLY = 0x00000008
+        SIIGBF_INCACHEONLY = 0x00000010
 
-# 定义 SIIGBF 枚举
-class SIIGBF:
-    SIIGBF_RESIZETOFIT = 0
-    SIIGBF_BIGGERSIZEOK = 0x00000001
-    SIIGBF_MEMORYONLY = 0x00000002
-    SIIGBF_ICONONLY = 0x00000004
-    SIIGBF_THUMBNAILONLY = 0x00000008
-    SIIGBF_INCACHEONLY = 0x00000010
-
-
-# 手动定义 IShellItemImageFactory 接口
-class IShellItemImageFactory(IUnknown):
-    _iid_ = GUID("{bcc18b79-ba16-442f-80c4-8a59c30c463b}")
-    _methods_ = [
-        COMMETHOD(
-            [],
-            HRESULT,
-            "GetImage",
-            (["in"], SIZE, "size"),
-            (["in"], ctypes.c_int, "flags"),
-            (["out"], POINTER(HBITMAP), "phbm"),
-        )
-    ]
-
-
-# 定义 IShellItem 接口
-class IShellItem(IUnknown):
-    _iid_ = GUID("{43826D1E-E718-42EE-BC55-A1E261C37BFE}")
-    _methods_ = []
-
-
-def get_thumbnail(file_path, width, height):
-    from comtypes import CoInitialize, CoUninitialize
-
-    file_path = file_path.replace("/", "\\")
-
-    CoInitialize()
-
-    # 创建 IShellItem
-    SHCreateItemFromParsingName = windll.shell32.SHCreateItemFromParsingName
-    SHCreateItemFromParsingName.argtypes = [
-        LPCWSTR,
-        ctypes.c_void_p,
-        POINTER(GUID),
-        POINTER(ctypes.c_void_p),
-    ]
-    SHCreateItemFromParsingName.restype = HRESULT
-
-    shell_item = ctypes.POINTER(IShellItem)()
-    hr = SHCreateItemFromParsingName(file_path, None, byref(IShellItem._iid_), byref(shell_item))
-    if hr != 0:
-        raise WinError(hr)
-
-    # 获取 IShellItemImageFactory 接口
-    factory = shell_item.QueryInterface(IShellItemImageFactory)
-
-    # 获取缩略图图像
-    size = SIZE(width, height)
-    flags = SIIGBF.SIIGBF_BIGGERSIZEOK
-
-    hbitmap = HBITMAP()
-    hbitmap = factory.GetImage(size, flags)
-
-    if not hbitmap:
-        raise WinError("无法获取缩略图")
-
-    # 将 HBITMAP 转换为字节数据
-    class BITMAP(ctypes.Structure):
-        _fields_ = [
-            ("bmType", LONG),
-            ("bmWidth", LONG),
-            ("bmHeight", LONG),
-            ("bmWidthBytes", LONG),
-            ("bmPlanes", WORD),
-            ("bmBitsPixel", WORD),
-            ("bmBits", ctypes.c_void_p),
+    # 手动定义 IShellItemImageFactory 接口
+    class IShellItemImageFactory(IUnknown):
+        _iid_ = GUID("{bcc18b79-ba16-442f-80c4-8a59c30c463b}")
+        _methods_ = [
+            COMMETHOD(
+                [],
+                HRESULT,
+                "GetImage",
+                (["in"], SIZE, "size"),
+                (["in"], ctypes.c_int, "flags"),
+                (["out"], POINTER(HBITMAP), "phbm"),
+            )
         ]
 
-    bitmap = BITMAP()
-    res = windll.gdi32.GetObjectW(hbitmap, ctypes.sizeof(BITMAP), byref(bitmap))
-    if res == 0:
-        raise WinError()
+    # 定义 IShellItem 接口
+    class IShellItem(IUnknown):
+        _iid_ = GUID("{43826D1E-E718-42EE-BC55-A1E261C37BFE}")
+        _methods_ = []
 
-    # 获取位图数据
-    class BITMAPINFOHEADER(ctypes.Structure):
-        _fields_ = [
-            ("biSize", DWORD),
-            ("biWidth", LONG),
-            ("biHeight", LONG),
-            ("biPlanes", WORD),
-            ("biBitCount", WORD),
-            ("biCompression", DWORD),
-            ("biSizeImage", DWORD),
-            ("biXPelsPerMeter", LONG),
-            ("biYPelsPerMeter", LONG),
-            ("biClrUsed", DWORD),
-            ("biClrImportant", DWORD),
+    def get_thumbnail(file_path, width, height):
+        """Windows 实现：通过 IShellItemImageFactory 获取系统缩略图，返回 BMP 字节."""
+        from comtypes import CoInitialize, CoUninitialize
+
+        # Windows Shell API 需要反斜杠路径
+        file_path = file_path.replace("/", "\\")
+
+        CoInitialize()
+
+        # 创建 IShellItem
+        SHCreateItemFromParsingName = windll.shell32.SHCreateItemFromParsingName
+        SHCreateItemFromParsingName.argtypes = [
+            LPCWSTR,
+            ctypes.c_void_p,
+            POINTER(GUID),
+            POINTER(ctypes.c_void_p),
         ]
+        SHCreateItemFromParsingName.restype = HRESULT
 
-    class BITMAPINFO(ctypes.Structure):
-        _fields_ = [
-            ("bmiHeader", BITMAPINFOHEADER),
-        ]
+        shell_item = ctypes.POINTER(IShellItem)()
+        hr = SHCreateItemFromParsingName(file_path, None, byref(IShellItem._iid_), byref(shell_item))
+        if hr != 0:
+            raise WinError(hr)
 
-    bmi = BITMAPINFO()
-    bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
-    bmi.bmiHeader.biWidth = bitmap.bmWidth
-    bmi.bmiHeader.biHeight = bitmap.bmHeight
-    bmi.bmiHeader.biPlanes = 1
-    bmi.bmiHeader.biBitCount = bitmap.bmBitsPixel
-    bmi.bmiHeader.biCompression = 0  # BI_RGB
+        # 获取 IShellItemImageFactory 接口
+        factory = shell_item.QueryInterface(IShellItemImageFactory)
 
-    # 计算图像数据大小
-    image_size = ((bitmap.bmWidth * bitmap.bmBitsPixel + 31) // 32) * 4 * bitmap.bmHeight
-    image_buffer = (ctypes.c_byte * image_size)()
+        # 获取缩略图图像
+        size = SIZE(width, height)
+        flags = SIIGBF.SIIGBF_BIGGERSIZEOK
 
-    hdc = windll.gdi32.CreateCompatibleDC(0)
-    res = windll.gdi32.GetDIBits(hdc, hbitmap, 0, bitmap.bmHeight, image_buffer, byref(bmi), 0)
-    if res == 0:
-        raise WinError()
+        hbitmap = HBITMAP()
+        hbitmap = factory.GetImage(size, flags)
 
-    windll.gdi32.DeleteDC(hdc)
-    windll.gdi32.DeleteObject(hbitmap)
+        if not hbitmap:
+            raise WinError("无法获取缩略图")
 
-    # 构建位图文件头
-    class BITMAPFILEHEADER(ctypes.Structure):
-        _pack_ = 1
-        _fields_ = [
-            ("bfType", WORD),
-            ("bfSize", DWORD),
-            ("bfReserved1", WORD),
-            ("bfReserved2", WORD),
-            ("bfOffBits", DWORD),
-        ]
+        # 将 HBITMAP 转换为字节数据
+        class BITMAP(ctypes.Structure):
+            _fields_ = [
+                ("bmType", LONG),
+                ("bmWidth", LONG),
+                ("bmHeight", LONG),
+                ("bmWidthBytes", LONG),
+                ("bmPlanes", WORD),
+                ("bmBitsPixel", WORD),
+                ("bmBits", ctypes.c_void_p),
+            ]
 
-    file_header_size = ctypes.sizeof(BITMAPFILEHEADER)
-    info_header_size = ctypes.sizeof(BITMAPINFOHEADER)
-    file_size = file_header_size + info_header_size + image_size
+        bitmap = BITMAP()
+        res = windll.gdi32.GetObjectW(hbitmap, ctypes.sizeof(BITMAP), byref(bitmap))
+        if res == 0:
+            raise WinError()
 
-    bmfh = BITMAPFILEHEADER()
-    bmfh.bfType = 0x4D42  # 'BM' 的 ASCII 码
-    bmfh.bfSize = file_size
-    bmfh.bfReserved1 = 0
-    bmfh.bfReserved2 = 0
-    bmfh.bfOffBits = file_header_size + info_header_size
+        # 获取位图数据
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_ = [
+                ("biSize", DWORD),
+                ("biWidth", LONG),
+                ("biHeight", LONG),
+                ("biPlanes", WORD),
+                ("biBitCount", WORD),
+                ("biCompression", DWORD),
+                ("biSizeImage", DWORD),
+                ("biXPelsPerMeter", LONG),
+                ("biYPelsPerMeter", LONG),
+                ("biClrUsed", DWORD),
+                ("biClrImportant", DWORD),
+            ]
 
-    bmp_data = bytearray()
-    bmp_data.extend(struct.pack("<HIHHI", bmfh.bfType, bmfh.bfSize, bmfh.bfReserved1, bmfh.bfReserved2, bmfh.bfOffBits))
-    bmp_data.extend(bytearray(bytes(bmi.bmiHeader)))
-    bmp_data.extend(image_buffer)
+        class BITMAPINFO(ctypes.Structure):
+            _fields_ = [
+                ("bmiHeader", BITMAPINFOHEADER),
+            ]
 
-    CoUninitialize()
+        bmi = BITMAPINFO()
+        bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+        bmi.bmiHeader.biWidth = bitmap.bmWidth
+        bmi.bmiHeader.biHeight = bitmap.bmHeight
+        bmi.bmiHeader.biPlanes = 1
+        bmi.bmiHeader.biBitCount = bitmap.bmBitsPixel
+        bmi.bmiHeader.biCompression = 0  # BI_RGB
 
-    return bmp_data
+        # 计算图像数据大小
+        image_size = ((bitmap.bmWidth * bitmap.bmBitsPixel + 31) // 32) * 4 * bitmap.bmHeight
+        image_buffer = (ctypes.c_byte * image_size)()
+
+        hdc = windll.gdi32.CreateCompatibleDC(0)
+        res = windll.gdi32.GetDIBits(hdc, hbitmap, 0, bitmap.bmHeight, image_buffer, byref(bmi), 0)
+        if res == 0:
+            raise WinError()
+
+        windll.gdi32.DeleteDC(hdc)
+        windll.gdi32.DeleteObject(hbitmap)
+
+        # 构建位图文件头
+        class BITMAPFILEHEADER(ctypes.Structure):
+            _pack_ = 1
+            _fields_ = [
+                ("bfType", WORD),
+                ("bfSize", DWORD),
+                ("bfReserved1", WORD),
+                ("bfReserved2", WORD),
+                ("bfOffBits", DWORD),
+            ]
+
+        file_header_size = ctypes.sizeof(BITMAPFILEHEADER)
+        info_header_size = ctypes.sizeof(BITMAPINFOHEADER)
+        file_size = file_header_size + info_header_size + image_size
+
+        bmfh = BITMAPFILEHEADER()
+        bmfh.bfType = 0x4D42  # 'BM' 的 ASCII 码
+        bmfh.bfSize = file_size
+        bmfh.bfReserved1 = 0
+        bmfh.bfReserved2 = 0
+        bmfh.bfOffBits = file_header_size + info_header_size
+
+        bmp_data = bytearray()
+        bmp_data.extend(struct.pack("<HIHHI", bmfh.bfType, bmfh.bfSize, bmfh.bfReserved1, bmfh.bfReserved2, bmfh.bfOffBits))
+        bmp_data.extend(bytearray(bytes(bmi.bmiHeader)))
+        bmp_data.extend(image_buffer)
+
+        CoUninitialize()
+
+        return bmp_data
+
+else:
+    # ---- macOS / Linux 降级实现：用 OpenCV 读取 + resize，返回 BMP 字节 ----
+    def get_thumbnail(file_path, width, height):
+        """非 Windows 实现：用 OpenCV imread + resize 生成缩略图，返回 BMP 字节.
+
+        输出格式与 Windows 版一致（BMP 编码字节），
+        调用方（web_api.py / generate_thumbnails）用 np.frombuffer → cv2.imdecode 解码。
+        """
+        # cv_imread 支持中文路径（np.fromfile + cv2.imdecode）
+        img = _cv_imread(file_path)
+        # resize 到目标尺寸，与 Windows Shell API 的 SIIGBF_BIGGERSIZEOK 行为近似
+        img = cv2.resize(img, (width, height))
+        # 编码为 BMP 字节流，保持与 Windows 版 get_thumbnail 的返回契约一致
+        success, buffer = cv2.imencode('.bmp', img)
+        if not success:
+            raise RuntimeError(f"Failed to encode thumbnail for {file_path}")
+        return bytearray(buffer.tobytes())
 
 
 def generate_thumbnails(

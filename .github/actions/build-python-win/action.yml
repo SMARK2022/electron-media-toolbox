@@ -20,7 +20,8 @@ runs:
       uses: actions/cache@v4
       with:
         path: python/out/web_api.exe
-        key: web-api-exe-${{ runner.os }}-${{ hashFiles('python/requirements.txt', 'python/web_api.py', 'python/utils/**/*.py', 'python/checkpoint/*.onnx') }}
+        # 缓存 key 包含 requirements-win.txt：仅 Windows 依赖变更时也会失效重新编译
+        key: web-api-exe-${{ runner.os }}-${{ hashFiles('python/requirements.txt', 'python/requirements-win.txt', 'python/web_api.py', 'python/utils/**/*.py', 'python/checkpoint/*.onnx') }}
 
     - name: Skip Nuitka compile (cache hit)
       if: steps.exe-cache.outputs.cache-hit == 'true'
@@ -63,7 +64,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: python/.nuitka-cache
-        key: ${{ runner.os }}-nuitka-${{ hashFiles('python/requirements.txt', 'python/web_api.py', 'python/utils/**/*.py') }}
+        key: ${{ runner.os }}-nuitka-${{ hashFiles('python/requirements.txt', 'python/requirements-win.txt', 'python/web_api.py', 'python/utils/**/*.py') }}
         restore-keys: |
           ${{ runner.os }}-nuitka-
 
@@ -77,6 +78,7 @@ runs:
         python -m pip install --upgrade pip
         pip install nuitka
         pip install -r python/requirements.txt
+        pip install -r python/requirements-win.txt
 
     # python-make.cjs 会调用 python-make.bat，bat 内部再次 `conda activate nuitka`（幂等）
     # CI 子进程里 conda 可能不在 PATH，通过 CONDA_BAT 显式指向 conda.bat 让 bat 能激活环境

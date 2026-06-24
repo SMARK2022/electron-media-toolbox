@@ -102,6 +102,29 @@ export function exposeWindowContext() {
     deleteFile: (filePath: string) =>
       ipcRenderer.invoke("delete-file", filePath),
 
+    // ============ 跨平台文件操作（替代旧 runCommand Windows cmd 方案） ============
+
+    /**
+     * 创建文件夹（跨平台，主进程用 fs.mkdirSync recursive）。
+     * 文件夹已存在时静默成功，与旧 `md` 行为一致。
+     */
+    createFolder: (folderPath: string) =>
+      ipcRenderer.invoke("create-folder", folderPath),
+
+    /**
+     * 复制文件（跨平台，主进程用 fs.copyFileSync）。
+     * 自动创建目标父目录，与旧 `copy` 依赖 cwd 的行为对齐。
+     */
+    copyFile: (src: string, dest: string) =>
+      ipcRenderer.invoke("copy-file", src, dest),
+
+    /**
+     * 检查文件夹是否存在（跨平台，主进程用 fs.existsSync）。
+     * 异常时返回 false（降级为不存在），不阻塞 UI 校验流程。
+     */
+    folderExists: (folderPath: string) =>
+      ipcRenderer.invoke("check-folder-exists", folderPath),
+
     /**
      * 获取单张照片的完整元数据信息（通过 IPC 调用后端）。
      */

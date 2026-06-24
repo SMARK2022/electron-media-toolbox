@@ -45,11 +45,13 @@ type CustomWalker = CopyClass<Walker> & {
 // 应用图标
 const appIcon = path.resolve(__dirname, "assets", "app.ico");
 
-// ================== Python 后端 exe 资源配置 ==================
+// ================== Python 后端编译产物资源配置 ==================
 
-// 注意：这里是“开发时”的源路径（项目根目录下）
-// 打包时会被复制到 <resources>/web_api.exe
-const pythonExeSource = path.resolve(__dirname, "python", "out", "web_api.exe");
+// 注意：这里是"开发时"的源路径（项目根目录下）
+// 打包时会被复制到 <resources>/web_api.exe（Windows）或 <resources>/web_api（macOS）
+// 不同平台的 Nuitka 编译产物文件名不同：Windows 为 .exe，macOS/Linux 无扩展名
+const pythonExeName = process.platform === "win32" ? "web_api.exe" : "web_api";
+const pythonExeSource = path.resolve(__dirname, "python", "out", pythonExeName);
 
 // extraResource 只能是 string 或 string[]
 // Electron Packager 会把这些文件直接拷贝到 resources 根目录
@@ -58,12 +60,12 @@ const extraResources: string[] = [];
 if (existsSync(pythonExeSource)) {
   extraResources.push(pythonExeSource);
   console.log(
-    "[forge-config] ✓ Found python backend exe, will bundle:",
+    "[forge-config] ✓ Found python backend binary, will bundle:",
     pythonExeSource,
   );
 } else {
   console.warn(
-    "[forge-config] ⚠ web_api.exe not found at python/out/web_api.exe; backend exe will NOT be bundled.",
+    `[forge-config] ⚠ ${pythonExeName} not found at python/out/${pythonExeName}; backend binary will NOT be bundled.`,
   );
 }
 

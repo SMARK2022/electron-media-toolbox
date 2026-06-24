@@ -1,39 +1,26 @@
 import path from "path-browserify";
 import { PhotoExtend, Photo } from "@/helpers/ipc/database/db";
 
-// 创建文件夹函数（允许文件夹已存在，文件夹存在也没问题）
+// 创建文件夹（跨平台：通过 IPC 委托主进程 fs.mkdirSync，不再走 Windows cmd 的 md 命令）
 async function createFolder(folderPath: string): Promise<void> {
   try {
-    await window.ElectronAPI.runCommand(
-      `md "${folderPath.replace(/\//g, "\\")}"`,
-      folderPath.split(path.sep)[0] + path.sep,
-    );
+    // 直接传递原始路径，主进程用 fs.mkdirSync({recursive:true}) 实现，
+    // 避免在 macOS/Linux 上执行不存在的 Windows shell 命令
+    await window.ElectronAPI.createFolder(folderPath);
   } catch (error) {
-    console.log(
-      `Failed to create folder: | md "${folderPath.replace(/\//g, "\\")}"`,
-      error,
-    );
-    // if ((error as any).code !== "EEXIST") {
-    //     throw error;
-    // }
+    // 旧实现用 try/catch 吞掉错误（包括文件夹已存在），保持此不变量
+    console.log(`Failed to create folder: ${folderPath}`, error);
   }
 }
 
-// 复制文件函数
+// 复制文件（跨平台：通过 IPC 委托主进程 fs.copyFileSync，不再走 Windows cmd 的 copy 命令）
 async function copyFile(src: string, dest: string): Promise<void> {
   try {
-    await window.ElectronAPI.runCommand(
-      `copy "${src.replace(/\//g, "\\")}" "${dest.replace(/\//g, "\\")}"`,
-      path.dirname(dest),
-    );
-    console.log(
-      `copy "${src.replace(/\//g, "\\")}" "${dest.replace(/\//g, "\\")}"`,
-    );
+    // src/dest 原样传递，IPC 序列化对 CJK/空格路径透明
+    await window.ElectronAPI.copyFile(src, dest);
+    console.log(`Copied ${src} to ${dest}`);
   } catch (error) {
-    console.error(
-      `Failed to copy file: ${src.replace(/\//g, "\\")} to ${dest.replace(/\//g, "\\")}`,
-      error,
-    );
+    console.error(`Failed to copy file: ${src} to ${dest}`, error);
   }
 }
 
@@ -76,18 +63,13 @@ async function copyPhotos(
   await Promise.all(copyPromises);
 }
 
-// Function to check if a folder exists
+// 检查文件夹是否存在（跨平台：通过 IPC 委托主进程 fs.existsSync）
 async function folderExists(folderPath: string): Promise<boolean> {
-  // Validate the folder path to prevent command injection by checking for quotes
-  if (folderPath.includes('"') || folderPath.includes("'")) {
-    console.error("Invalid folder path: path cannot contain quotes");
-    return false;
-  }
-
+  // 旧实现检查引号防 cmd 注入；新 IPC 用 fs API 无注入风险，
+  // 且 macOS 文件夹名常含撇号（如 John's Photos），保留检查会导致误报"不存在"
+  // 故移除引号校验，直接委托 fs.existsSync
   try {
-    const command = `if exist "${folderPath.replace(/\//g, "\\")}" (echo true) else (echo false)`;
-    const result = await window.ElectronAPI.runCommand(command);
-    return String(result).trim() === "true"; // Convert result to string before using trim
+    return await window.ElectronAPI.folderExists(folderPath);
   } catch (error) {
     console.error("Error checking folder existence:", error);
     return false;
