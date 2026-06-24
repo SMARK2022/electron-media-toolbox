@@ -200,6 +200,18 @@ jobs:
           name: packaged-app
           path: out
 
+      # electron.launch() 以开发模式启动（!app.isPackaged），resolvePythonBackendPath
+      # 查找 python/out/web_api.exe。但 E2E job 不编译后端（在 build job 完成），
+      # 需从打包产物的 resources/ 中提取 web_api.exe 到 python/out/ 供后端启动
+      - name: Extract web_api.exe for E2E backend
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "out" -Recurse -Filter "web_api.exe" -ErrorAction Stop | Select-Object -First 1
+          if (-not $exe) { throw "web_api.exe not found in packaged app" }
+          New-Item -ItemType Directory -Path "python/out" -Force | Out-Null
+          Copy-Item $exe.FullName "python/out/web_api.exe" -Force
+          Write-Host "Copied web_api.exe ($([math]::Round($exe.Length/1MB,1))MB) to python/out/"
+
       - name: Setup Playwright
         shell: pwsh
         run: npx playwright install

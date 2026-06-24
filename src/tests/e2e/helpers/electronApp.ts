@@ -247,7 +247,11 @@ export async function navigateTo(
 export async function getDisplayedPhotoCount(page: Page): Promise<number> {
   const locator = page.locator(SELECTORS.import.totalPhotos).first();
   if (await locator.isVisible().catch(() => false)) {
-    const text = await locator.textContent();
+    // 选择器匹配 <span>总张数</span>，计数值在兄弟 <span> 中。
+    // 读取 parentElement.textContent 以获取"总张数3"格式
+    const text = await locator.evaluate(
+      (el) => el.parentElement?.textContent ?? el.textContent ?? "",
+    );
     const match = text?.match(/\d+/);
     if (match) return parseInt(match[0], 10);
   }
@@ -318,6 +322,15 @@ export async function importTestFiles(
     return 0;
   }
   await page.waitForTimeout(500);
+
+  // Electron 39 中 setInputFiles 创建的 File 对象可能没有 path 属性，
+  // tryGetFullPath 返回空 → showFolderInput 为 true → handleSubmit 需要文件夹路径。
+  // 此时手动填入 TEST_IMAGES_DIR 让 handleSubmit 拼接出绝对路径。
+  const folderInput = page.locator(SELECTORS.import.folderInput).first();
+  if (await folderInput.isVisible().catch(() => false)) {
+    await folderInput.fill(TEST_IMAGES_DIR);
+    await page.waitForTimeout(300);
+  }
 
   const submitBtn = page.locator(SELECTORS.import.submitBtn).first();
   if ((await submitBtn.isVisible()) && (await submitBtn.isEnabled())) {
