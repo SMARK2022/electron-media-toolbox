@@ -71,6 +71,8 @@ test.describe("导出路径验证", () => {
   });
 
   test("输入有效路径显示存在状态", async () => {
+    // CI 中 EXPORT_TEST_DIR 可能尚未创建，先确保目录存在再验证状态
+    fs.mkdirSync(EXPORT_TEST_DIR, { recursive: true });
     await setExportPath(page, EXPORT_TEST_DIR);
     await page.waitForTimeout(500);
 
