@@ -25,6 +25,7 @@ bak/
 # Cache directories
 .cache/
 .tmp/
+.opencode/
 thumbs/
 
 # IDEs and editors

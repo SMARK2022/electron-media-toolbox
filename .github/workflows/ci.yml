@@ -1,24 +1,27 @@
 name: CI
 
 # ============================================================================
-# 统一流水线：质量门禁 + 构建 + E2E + 发版
+# 多平台流水线：质量门禁 + 构建 + E2E + 发版
 # ============================================================================
 #
 # 依赖链：
 #   push/PR to master
-#     ├── quality  (lint + tsc + format + vitest)   ← 并行，不互相阻塞
-#     ├── build    (Nuitka 编译 + package 打包)      ← 并行，产出 E2E 需要的打包应用
+#     ├── quality          (lint + tsc + format + vitest)     ← 三平台矩阵并行
+#     ├── build-windows    (Nuitka onefile + make)            ← 并行
+#     ├── build-macos      (Nuitka app bundle + make)         ← 并行
 #     │
-#     ├── e2e      needs: [quality, build]           ← 两者都通过后才跑 Playwright
+#     ├── e2e-windows      needs: [quality, build-windows]
+#     ├── e2e-macos        needs: [quality, build-macos]
 #     │
-#     └── release  needs: e2e                        ← E2E 通过后才发版（仅 push to master）
+#     └── release          needs: [e2e-windows, e2e-macos]    ← 单 job，ubuntu runner
 #
 # 设计要点：
-# - quality 和 build 并行执行，互不阻塞——质量检查不依赖打包结果
-# - e2e 同时门控于 quality 和 build：代码质量不过或打包失败都不跑 E2E
-# - release 门控于 e2e：集成测试不过不发版，避免把有问题的包推给用户
+# - quality 和两个 build 并行执行，互不阻塞
+# - 每个平台的 e2e 门控于 quality + 对应 build
+# - release 等待两个 e2e 都通过后执行：下载两个平台的 release assets，一次性发布
+# - build job 同时产出 packaged app（给 E2E）和安装包（给 release），release 零重复编译
 # - PR 只跑 quality + build + e2e，跳过 release（release 仅 push to master 触发）
-# - build 的 Nuitka 编译有 cache（build-python-win action），源码不变时秒级复用
+# - build 的 Nuitka 编译有 cache（build-python-win / build-python-mac action）
 
 on:
   push:
@@ -57,7 +60,7 @@ on:
   workflow_dispatch:
 
 # 不使用 cancel-in-progress：release job 正在上传 assets 时被取消
-# 会留下半创建的 Release + 部分上传的 asset，原 release.yml 特意设 false 正是为此
+# 会留下半创建的 Release + 部分上传的 asset
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: false
@@ -68,7 +71,7 @@ permissions:
 jobs:
   # ==========================================================================
   # Job 1: 质量门禁（lint + typecheck + format + vitest）
-  # 与 build 并行执行，跨平台矩阵（ubuntu + windows）
+  # 三平台矩阵（ubuntu + windows + macos），与其他 build job 并行
   # ==========================================================================
   quality:
     name: Quality (${{ matrix.os }})
@@ -81,6 +84,8 @@ jobs:
             runner: ubuntu-latest
           - os: windows
             runner: windows-2022
+          - os: macos
+            runner: macos-14
     defaults:
       run:
         shell: bash
@@ -106,10 +111,10 @@ jobs:
         run: npm run test
 
   # ==========================================================================
-  # Job 2: 构建打包（Nuitka 编译 web_api.exe + electron-forge package）
-  # 与 quality 并行执行，产出 E2E 需要的未签名打包应用
+  # Job 2a: Windows 构建（Nuitka onefile + Forge make）
+  # 产出：packaged app（给 E2E）+ Squirrel .exe / WiX .msi（给 release）
   # ==========================================================================
-  build:
+  build-windows:
     name: Build (Windows)
     runs-on: windows-2022
     steps:
@@ -131,19 +136,17 @@ jobs:
           $sizeMB = [math]::Round((Get-Item python/out/web_api.exe).Length / 1MB, 1)
           Write-Host "web_api.exe size: $sizeMB MB"
 
-      # package 产出未签名应用 out/Electron Media Toolbox-win32-x64/
-      # E2E 的 findLatestBuild() 会自动定位该目录
-      # NODE_OPTIONS 确保异步打包的 unhandled rejection 不会终止进程
-      # （Forge 7 的 packagerPromise 在某些情况下产生未捕获 rejection，
-      #  Node 24 默认 throw 会导致进程提前退出、out/ 为空）
-      - name: Package app (no makers)
+      # make 同时产出 packaged app（out/Electron Media Toolbox-win32-x64/）
+      # 和安装包（out/make/squirrel.windows/ + out/make/wix/）
+      # --platform=win32 让 forge 跳过 darwin/rpm/deb makers
+      # NODE_OPTIONS 防止 Forge 7 异步打包的 unhandled rejection 终止进程
+      - name: Build installers with Electron Forge (Windows)
         shell: bash
         env:
           NODE_OPTIONS: "--unhandled-rejections=warn"
-        run: npm run package
+        run: npm run make -- --platform=win32
 
-      # 验证打包产物确实存在，避免上传空目录导致 e2e 下载失败
-      # Forge package 用 productName 作为输出目录名（含空格），格式为 out/{productName}-{platform}-{arch}/
+      # 验证打包产物确实存在
       - name: Verify packaged app exists
         shell: pwsh
         run: |
@@ -155,52 +158,122 @@ jobs:
           }
           Write-Host "Packaged app: $($buildDir.FullName)"
 
-      # 上传打包产物供 e2e job 下载使用
-      # if-no-files-found: error 确保 out/ 为空时 build job 直接失败，e2e 被跳过
-      - name: Upload packaged app
+      # 上传打包产物供 e2e-windows job 下载使用
+      - name: Upload packaged app (for E2E)
         uses: actions/upload-artifact@v4
         with:
-          name: packaged-app
-          path: out/
+          name: packaged-app-win
+          path: out/Electron Media Toolbox-win32-x64/
           if-no-files-found: error
           retention-days: 1
 
+      # 上传安装包供 release job 下载使用（Squirrel .exe + WiX .msi）
+      - name: Upload release assets (for release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-win
+          path: out/make/
+          if-no-files-found: error
+          retention-days: 7
+
   # ==========================================================================
-  # Job 3: E2E 集成测试（Playwright + Electron）
-  # 等待 quality + build 都通过后执行
+  # Job 2b: macOS 构建（Nuitka app bundle + Forge make）
+  # 产出：packaged app（给 E2E）+ ZIP（给 release）
   # ==========================================================================
-  e2e:
+  build-macos:
+    name: Build (macOS)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node App
+        uses: ./.github/actions/setup-node-app
+
+      - name: Build Python backend (web_api.app via Nuitka)
+        uses: ./.github/actions/build-python-mac
+
+      - name: Verify web_api.app exists
+        shell: bash
+        run: |
+          if [ ! -f "python/out/web_api.app/Contents/MacOS/web_api" ]; then
+            echo "Error: web_api.app not found, Nuitka build failed"
+            exit 1
+          fi
+          SIZE_MB=$(du -sm "python/out/web_api.app" | cut -f1)
+          echo "web_api.app size: ${SIZE_MB} MB"
+
+      # make 同时产出 packaged app 和 ZIP 安装包
+      # --platform=darwin 让 forge 只运行 MakerZIP，跳过 Squirrel/WiX/RPM/Deb
+      - name: Build installers with Electron Forge (macOS)
+        shell: bash
+        env:
+          NODE_OPTIONS: "--unhandled-rejections=warn"
+        run: npm run make -- --platform=darwin
+
+      # 验证打包产物存在
+      - name: Verify packaged app exists
+        shell: bash
+        run: |
+          echo "Contents of out/:"
+          ls -d out/*/ 2>/dev/null || true
+          BUILD_DIR=$(find out -maxdepth 1 -type d -name "*darwin*" | head -1)
+          if [ -z "$BUILD_DIR" ]; then
+            echo "Error: Packaged app not found in out/ (expected *darwin-arm64*)"
+            exit 1
+          fi
+          echo "Packaged app: $BUILD_DIR"
+
+      # 上传打包产物供 e2e-macos job 下载使用
+      - name: Upload packaged app (for E2E)
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-app-mac
+          path: out/Electron Media Toolbox-darwin-arm64/
+          if-no-files-found: error
+          retention-days: 1
+
+      # 上传 ZIP 安装包供 release job 下载使用
+      - name: Upload release assets (for release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-mac
+          path: out/make/
+          if-no-files-found: error
+          retention-days: 7
+
+  # ==========================================================================
+  # Job 3a: E2E 集成测试 (Windows, Playwright + Electron)
+  # 等待 quality + build-windows 都通过后执行
+  # ==========================================================================
+  e2e-windows:
     name: E2E (Windows)
-    needs: [quality, build]
-    # 显式要求 needs 的 job 全部成功才执行，避免 build 失败后 e2e 仍尝试下载不存在的 artifact
+    needs: [quality, build-windows]
     if: success()
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
 
-      # E2E 需要 node_modules（Playwright、测试 helper 等），但不需要 native rebuild
-      # 因为打包产物已含 better-sqlite3 的 Electron ABI 编译结果
       - name: Setup Node App
         uses: ./.github/actions/setup-node-app
         with:
           rebuild-native: "false"
 
       # --ignore-scripts 跳过了 Electron postinstall，但 Playwright 的
-      # _electron.launch() 需要 node_modules/electron/dist/electron.exe 才能启动应用。
-      # 直接运行 install.js 会走 GitHub Releases 默认源（不读 .npmrc 的中国镜像），
-      # 在 GitHub Actions 美国机房上更可靠
+      # _electron.launch() 需要 node_modules/electron/dist/electron.exe 才能启动应用
       - name: Install Electron binary
         shell: bash
         run: node node_modules/electron/install.js
 
-      # 下载 build job 产出的打包应用，放到 out/ 目录供 findLatestBuild() 定位
+      # 下载 build-windows job 产出的打包应用
+      # upload-artifact@v4 上传目录时会剥离外层目录名（artifact 根 = 目录内容），
+      # 下载时必须指定含平台目录名的 path，才能还原 out/<platform-dir>/ 结构供 findLatestBuild() 定位
       - name: Download packaged app
         uses: actions/download-artifact@v4
         with:
-          name: packaged-app
-          path: out
+          name: packaged-app-win
+          path: out/Electron Media Toolbox-win32-x64
 
-      # electron.launch() 以开发模式启动（!app.isPackaged），resolvePythonBackendPath
+      # electron.launch() 以开发模式启动（!app.isPackaged），resolvePythonBackendConfig
       # 查找 python/out/web_api.exe。但 E2E job 不编译后端（在 build job 完成），
       # 需从打包产物的 resources/ 中提取 web_api.exe 到 python/out/ 供后端启动
       - name: Extract web_api.exe for E2E backend
@@ -216,8 +289,6 @@ jobs:
         shell: pwsh
         run: npx playwright install
 
-      # E2E 路径已相对化，通过 env 指向 fixture / 临时导出目录
-      # fixture 图缺失时 import 类用例会降级跳过，不阻塞流水线
       - name: Run E2E tests
         env:
           E2E_TEST_IMAGES_DIR: ${{ github.workspace }}/src/tests/e2e/fixtures/images
@@ -229,7 +300,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-results-${{ github.run_attempt }}
+          name: e2e-results-win-${{ github.run_attempt }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
@@ -237,13 +308,79 @@ jobs:
             test-results/
 
   # ==========================================================================
-  # Job 4: 发版（Forge make → GitHub Release）
-  # 等待 E2E 通过后执行，仅 push to master 时触发（PR 跳过）
+  # Job 3b: E2E 集成测试 (macOS, Playwright + Electron)
+  # 等待 quality + build-macos 都通过后执行
+  # ==========================================================================
+  e2e-macos:
+    name: E2E (macOS)
+    needs: [quality, build-macos]
+    if: success()
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node App
+        uses: ./.github/actions/setup-node-app
+        with:
+          rebuild-native: "false"
+
+      # Playwright 的 _electron.launch() 需要 node_modules/electron/dist/Electron.app
+      - name: Install Electron binary
+        shell: bash
+        run: node node_modules/electron/install.js
+
+      # 下载 build-macos job 产出的打包应用
+      # path 含平台目录名以还原 out/<platform-dir>/ 结构（同 e2e-windows 的处理）
+      - name: Download packaged app
+        uses: actions/download-artifact@v4
+        with:
+          name: packaged-app-mac
+          path: out/Electron Media Toolbox-darwin-arm64
+
+      # 从打包产物中提取 web_api.app 到 python/out/
+      # main.ts dev 模式查找 python/out/web_api.app/Contents/MacOS/web_api
+      # web_api.app 是目录（standalone app bundle），必须整体拷贝以保留框架结构
+      - name: Extract web_api.app for E2E backend
+        shell: bash
+        run: |
+          SRC=$(find out -type d -name "web_api.app" | head -1)
+          if [ -z "$SRC" ]; then echo "Error: web_api.app not found in packaged app"; exit 1; fi
+          mkdir -p python/out
+          cp -R "$SRC" python/out/
+          SIZE_MB=$(du -sm "python/out/web_api.app" | cut -f1)
+          echo "Copied web_api.app (${SIZE_MB} MB) to python/out/"
+
+      - name: Setup Playwright
+        shell: bash
+        run: npx playwright install
+
+      - name: Run E2E tests
+        env:
+          E2E_TEST_IMAGES_DIR: ${{ github.workspace }}/src/tests/e2e/fixtures/images
+          E2E_EXPORT_DIR: ${{ runner.temp }}/e2e-export
+        shell: bash
+        run: npm run test:e2e
+
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-mac-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            playwright-report/
+            test-results/
+
+  # ==========================================================================
+  # Job 4: 发版（收集双平台 assets → GitHub Release）
+  # 等待两个 E2E 都通过后执行，仅 push to master 时触发（PR 跳过）
+  # 单 job 跑在 ubuntu（最便宜），只需 gh CLI 收集 + 发布，无需编译
   # ==========================================================================
   release:
     name: Release
-    needs: e2e
-    runs-on: windows-2022
+    needs: [e2e-windows, e2e-macos]
+    runs-on: ubuntu-latest
     # 仅 push to master 或手动触发时发版；PR 不发版
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
@@ -251,67 +388,49 @@ jobs:
         with:
           fetch-depth: 0 # release notes 需要完整 commit 历史
 
-      - name: Setup Node App
-        uses: ./.github/actions/setup-node-app
+      # 下载两个平台的 release assets（安装包）
+      - name: Download Windows release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets-win
+          path: release-assets/win
 
-      - name: Build Python backend (web_api.exe via Nuitka)
-        uses: ./.github/actions/build-python-win
+      - name: Download macOS release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets-mac
+          path: release-assets/mac
 
-      - name: Verify web_api.exe exists
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "python/out/web_api.exe")) {
-            throw "python/out/web_api.exe not found, Nuitka build failed"
-          }
-
-      # --platform=win32 让 forge 跳过 forge.config.ts 里的 darwin / rpm / deb makers
-      # NODE_OPTIONS 同 build job：防止 unhandled rejection 终止进程
-      - name: Build installers with Electron Forge (Windows)
-        shell: bash
-        env:
-          NODE_OPTIONS: "--unhandled-rejections=warn"
-        run: npm run make -- --platform=win32
-
+      # 将所有平台的安装包汇总到单一目录
+      # 用 find 而非 globstar（bash 默认未启用 globstar，** 会静默退化为 *）
       - name: Collect release assets
-        shell: pwsh
+        shell: bash
         run: |
-          $ErrorActionPreference = "Stop"
-          $Assets = "release-assets"
-          New-Item -ItemType Directory -Force -Path $Assets | Out-Null
+          set -euo pipefail
+          mkdir -p release-assets/all
 
-          # Squirrel Windows: Setup.exe（用户安装入口）
-          $squirrelDir = "out/make/squirrel.windows/x64"
-          if (Test-Path $squirrelDir) {
-            Get-ChildItem -Path $squirrelDir -Filter "*.exe" |
-              Copy-Item -Destination $Assets -Force
-          } else {
-            Write-Host "[warn] Squirrel output not found at $squirrelDir"
-          }
+          # Windows: Squirrel Setup.exe + WiX .msi
+          find release-assets/win -name '*.exe' -exec cp -t release-assets/all/ {} + 2>/dev/null || echo "[warn] No Windows .exe found"
+          find release-assets/win -name '*.msi' -exec cp -t release-assets/all/ {} + 2>/dev/null || echo "[warn] No Windows .msi found"
 
-          # WiX MSI：msi 安装包
-          $wixDir = "out/make/wix/x64"
-          if (Test-Path $wixDir) {
-            Get-ChildItem -Path $wixDir -Filter "*.msi" |
-              Copy-Item -Destination $Assets -Force
-          } else {
-            Write-Host "[warn] WiX output not found at $wixDir"
-          }
+          # macOS: ZIP
+          find release-assets/mac -name '*.zip' -exec cp -t release-assets/all/ {} + 2>/dev/null || echo "[warn] No macOS .zip found"
 
-          Write-Host "==== Collected assets ===="
-          Get-ChildItem $Assets | Format-Table Name, @{N='MB';E={[math]::Round($_.Length/1MB,2)}}
+          echo "==== Collected assets ===="
+          ls -la release-assets/all/
 
       - name: Generate SHA256 checksums
-        shell: pwsh
+        shell: bash
         run: |
-          $Assets = "release-assets"
-          $checksums = Join-Path $Assets "checksums.txt"
-          Set-Content -Path $checksums -Value ""
-          Get-ChildItem $Assets -File | Where-Object { $_.Name -ne "checksums.txt" } | ForEach-Object {
-            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
-            "$hash  $($_.Name)" | Add-Content -Path $checksums
-          }
-          Write-Host "==== checksums.txt ===="
-          Get-Content $checksums
+          cd release-assets/all
+          : > checksums.txt
+          for f in *; do
+            [ "$f" = "checksums.txt" ] && continue
+            hash=$(sha256sum "$f" | cut -d' ' -f1)
+            echo "$hash  $f" >> checksums.txt
+          done
+          echo "==== checksums.txt ===="
+          cat checksums.txt
 
       - name: Resolve version
         id: v
@@ -405,7 +524,7 @@ jobs:
               --notes-file release-notes.md
           fi
 
-          cd release-assets
+          cd release-assets/all
           for file in *; do
             echo "Uploading $file"
             gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber

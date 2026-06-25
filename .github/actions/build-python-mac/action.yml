@@ -1,0 +1,99 @@
+name: "Build Python Backend (macOS)"
+description: "Cache web_api.app; on miss, setup Miniconda + Nuitka + compile. Skips ~20min compile when unchanged."
+
+inputs:
+  conda-env:
+    description: "Conda 环境名（必须与 scripts/python-make.sh 的 CONDA_ENV_NAME 默认值一致）"
+    required: false
+    default: "nuitka"
+  python-version:
+    description: "Conda 环境的 Python 版本"
+    required: false
+    default: "3.11"
+
+runs:
+  using: "composite"
+  steps:
+    # web_api.app 缓存：Python 源码/依赖/模型不变时直接复用整个 .app 目录，跳过 ~20min Nuitka 编译
+    # macOS 产物是目录（standalone + app bundle），而非 Windows 的单文件
+    - name: Cache web_api.app
+      id: exe-cache
+      uses: actions/cache@v4
+      with:
+        path: python/out/web_api.app
+        # 缓存 key 包含 requirements-mac.txt：仅 macOS 依赖（PyObjC）变更时也会失效重新编译
+        key: web-api-app-${{ runner.os }}-${{ hashFiles('python/requirements.txt', 'python/requirements-mac.txt', 'python/web_api.py', 'python/utils/**/*.py', 'python/checkpoint/*.onnx') }}
+
+    - name: Skip Nuitka compile (cache hit)
+      if: steps.exe-cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: echo "✓ web_api.app cache hit, skipping Nuitka compile (~20min saved)"
+
+    # ==================== 以下步骤仅在缓存未命中时执行 ====================
+
+    # ONNX 模型(~105MB)走 Git LFS；用 cache 避免每次 CI checkout 都消耗 LFS 带宽
+    - name: Restore ONNX models (cache)
+      if: steps.exe-cache.outputs.cache-hit != 'true'
+      id: onnx-cache
+      uses: actions/cache@v4
+      with:
+        path: python/checkpoint
+        key: onnx-models-${{ hashFiles('python/checkpoint/*.onnx') }}
+
+    - name: Pull ONNX models via LFS (cache miss only)
+      if: steps.exe-cache.outputs.cache-hit != 'true' && steps.onnx-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        git lfs install
+        git lfs pull
+
+    - name: Setup Miniconda
+      if: steps.exe-cache.outputs.cache-hit != 'true'
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        activate-environment: ${{ inputs.conda-env }}
+        python-version: ${{ inputs.python-version }}
+        channels: conda-forge,defaults
+        auto-activate-base: false
+
+    # Nuitka 编译耗时较长，缓存 .nuitka-cache 加速增量构建（源码变更时的 fallback）
+    - name: Cache Nuitka build artifacts
+      if: steps.exe-cache.outputs.cache-hit != 'true'
+      uses: actions/cache@v4
+      with:
+        path: python/.nuitka-cache
+        key: ${{ runner.os }}-nuitka-${{ hashFiles('python/requirements.txt', 'python/requirements-mac.txt', 'python/web_api.py', 'python/utils/**/*.py') }}
+        restore-keys: |
+          ${{ runner.os }}-nuitka-
+
+    # 安装 Nuitka + 跨平台依赖 + macOS 专用依赖（PyObjC）
+    - name: Install Nuitka and Python dependencies
+      if: steps.exe-cache.outputs.cache-hit != 'true'
+      shell: bash -el {0}
+      run: |
+        conda activate ${{ inputs.conda-env }}
+        python -m ensurepip --upgrade
+        python -m pip install --upgrade pip
+        pip install nuitka
+        pip install -r python/requirements.txt
+        pip install -r python/requirements-mac.txt
+
+    # python-make.cjs 自动检测平台，macOS 上调度 python-make.sh（--mode=app）
+    # CONDA_ENV_NAME 传入 conda 环境名，python-make.sh 据此激活
+    - name: Compile web_api.app via Nuitka
+      if: steps.exe-cache.outputs.cache-hit != 'true'
+      shell: bash -el {0}
+      env:
+        CONDA_ENV_NAME: ${{ inputs.conda-env }}
+      run: node scripts/python-make.cjs
+
+    - name: Verify web_api.app exists
+      shell: bash
+      run: |
+        # macOS 产物是 .app 目录，二进制在 Contents/MacOS/ 内
+        if [ ! -f "python/out/web_api.app/Contents/MacOS/web_api" ]; then
+          echo "Error: python/out/web_api.app/Contents/MacOS/web_api not found, Nuitka build failed"
+          exit 1
+        fi
+        SIZE_MB=$(du -sm "python/out/web_api.app" | cut -f1)
+        echo "web_api.app size: ${SIZE_MB} MB"
