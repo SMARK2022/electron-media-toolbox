@@ -44,7 +44,9 @@ runs:
       if: steps.exe-cache.outputs.cache-hit != 'true' && steps.onnx-cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        git lfs install
+        # macOS runner 预置了 pre-push hook，git lfs install 会因冲突报错；
+        # --force 覆盖已有 hook，确保 LFS smudge/filter 正常工作
+        git lfs install --force
         git lfs pull
 
     - name: Setup Miniconda
