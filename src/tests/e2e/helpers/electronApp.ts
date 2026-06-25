@@ -559,8 +559,22 @@ export async function togglePhotoEnabled(
   const card = page.locator(PHOTO_CARD_SELECTOR).nth(index);
   if (!(await card.isVisible().catch(() => false))) return false;
   await card.dblclick();
-  await page.waitForTimeout(500); // 等状态更新 + 重渲染
-  // 检查禁用态 class 是否出现
+  // 等状态更新 + 重渲染：CI 环境渲染较慢，用轮询等待 class 变化（最多 3s）
+  // 比固定 waitForTimeout 更可靠，避免 CI 中 500ms 不够导致 flaky
+  const beforeDisabled = ((await card.getAttribute("class")) ?? "").includes(
+    "opacity-40",
+  );
+  try {
+    await expect
+      .poll(
+        async () =>
+          ((await card.getAttribute("class")) ?? "").includes("opacity-40"),
+        { timeout: 3000, intervals: [200] },
+      )
+      .toBe(!beforeDisabled);
+  } catch {
+    // 超时后返回当前实际状态，让测试断言决定 pass/fail
+  }
   const cls = (await card.getAttribute("class")) ?? "";
   return cls.includes("opacity-40");
 }

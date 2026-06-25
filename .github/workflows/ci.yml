@@ -350,6 +350,17 @@ jobs:
           SIZE_MB=$(du -sm "python/out/web_api.app" | cut -f1)
           echo "Copied web_api.app (${SIZE_MB} MB) to python/out/"
 
+          # artifact 传输后 Unix 执行权限可能丢失，必须恢复
+          # web_api 二进制和 .so 文件都需要可执行权限
+          chmod +x python/out/web_api.app/Contents/MacOS/web_api
+          find python/out/web_api.app -name '*.so' -exec chmod +x {} +
+          # 打包产物内的 web_api.app 也需要恢复权限（production 模式从 Resources/ 启动）
+          find out -path "*/web_api.app/Contents/MacOS/web_api" -exec chmod +x {} +
+          find out -path "*/web_api.app/*.so" -exec chmod +x {} +
+
+          # 清除 macOS quarantine 属性（如有），防止 Gatekeeper 拦截
+          xattr -cr out/ 2>/dev/null || true
+
       - name: Setup Playwright
         shell: bash
         run: npx playwright install
