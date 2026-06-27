@@ -1,4 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import {
+  getOrCreateBitmap,
+  setCurrentDisplaySrc,
+  type ImageBitmapLike,
+} from "./bitmapCache";
 
 export interface PreviewFocusRegion {
   bbox: [number, number, number, number];
@@ -21,6 +26,12 @@ interface ImagePreviewProps {
    * 当为 true 时，focusRegion 变化不会触发动画，而是直接跳转
    */
   disableFocusAnimation?: boolean;
+  /**
+   * ImageBitmap 解码完成时回调，传递原始图像尺寸。
+   * 父组件（PhotoDetailsTable）用此尺寸做人脸追踪 bbox 归一化——
+   * 替代原先独立的 new Image() 解码，消除 7MB 冗余加载
+   */
+  onImageReady?: (width: number, height: number) => void;
 }
 
 const clamp = (value: number, min: number, max: number) =>
@@ -33,9 +44,10 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   focusRegion,
   onUserInteraction,
   disableFocusAnimation = false,
+  onImageReady,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const imageRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // 图片和容器的真实尺寸
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
@@ -57,6 +69,11 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   const focusRegionRef = useRef<PreviewFocusRegion | null>(null);
   // 用户交互标志：一次交互后立即生效，后续调用忽略（避免多次渲染）
   const userInteractionTriggered = useRef(false);
+
+  // ImageBitmap 状态——替代原先的 <img>，使用 createImageBitmap 解码
+  // ImageBitmap 是 GPU 后端句柄，显式 close() 前不被 Blink MemoryCache 淘汰
+  const [bitmap, setBitmap] = useState<ImageBitmapLike | null>(null);
+  const [decodeError, setDecodeError] = useState(false);
 
   // 缩放限制（相对于自适应尺寸）
   const MIN_SCALE = 1; // 最小就是自适应大小
@@ -253,11 +270,61 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
     ],
   );
 
-  // 图片加载完成
-  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
-  };
+  // 图片解码：用 createImageBitmap 替代 <img>.onLoad
+  // 缓存命中时零延迟（ImageBitmap 在 bitmapCache 中存活），未命中则后台解码
+  useEffect(() => {
+    if (!src) {
+      setBitmap(null);
+      setImageSize({ width: 0, height: 0 });
+      setDecodeError(false);
+      return;
+    }
+
+    let cancelled = false;
+    setDecodeError(false);
+    // 通知缓存模块当前正在显示的 URL（防止 LRU 淘汰当前页）
+    setCurrentDisplaySrc(src);
+
+    getOrCreateBitmap(src)
+      .then((bm) => {
+        if (cancelled) return; // 组件已卸载或 src 已变化
+        setBitmap(bm);
+        setImageSize({ width: bm.width, height: bm.height });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // createImageBitmap 失败（格式不支持/文件损坏）——显示错误状态
+        setDecodeError(true);
+        setImageSize({ width: 0, height: 0 });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  // bitmap 就绪后通知父组件原始尺寸——替代 PhotoDetailsTable 的独立 new Image()
+  // 用 useEffect 统一驱动（缓存命中和新解码都触发），避免 subagent 指出的遗漏
+  useEffect(() => {
+    if (bitmap && bitmap.width > 0) {
+      onImageReady?.(bitmap.width, bitmap.height);
+    }
+  }, [bitmap, onImageReady]);
+
+  // 在 canvas 上绘制 bitmap——替代原先可见的 <img> 元素
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !bitmap) return;
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      // 高质量插值：canvas 1:1 绘制 bitmap，CSS transform 负责缩放
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(bitmap as unknown as CanvasImageSource, 0, 0);
+    }
+  }, [bitmap]);
 
   // 监听容器尺寸变化（使用 requestAnimationFrame 优化流畅度，替代防抖）
   useEffect(() => {
@@ -458,17 +525,9 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      {/* 隐藏的原始图片用于获取尺寸（src 为空时不渲染，避免重复加载页面） */}
-      {src && (
-        <img
-          src={src}
-          alt="Original"
-          onLoad={handleImageLoad}
-          style={{ display: "none" }}
-        />
-      )}
-
-      {/* 实际渲染的图片 */}
+      {/* canvas 渲染——替代原先的隐藏 <img> + 可见 <img> 双重解码。
+          ImageBitmap 由 createImageBitmap 在 Worker 线程解码，通过 ctx.drawImage 绘制。
+          CSS transform 逻辑（缩放/平移/动画）与原 <img> 完全一致 */}
       {imageSize.width > 0 && (
         <div
           style={{
@@ -484,24 +543,22 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
             pointerEvents: "none",
           }}
         >
-          <img
-            ref={imageRef}
-            src={src}
-            alt="Preview"
+          <canvas
+            ref={canvasRef}
             style={{
               width: "100%",
               height: "100%",
               display: "block",
               pointerEvents: "none",
               userSelect: "none",
+              imageRendering: "auto", // CSS 缩放时高质量重采样
             }}
-            draggable={false}
           />
         </div>
       )}
 
       {/* 加载提示 */}
-      {imageSize.width === 0 && (
+      {imageSize.width === 0 && !decodeError && (
         <div
           style={{
             position: "absolute",
@@ -513,6 +570,22 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
           }}
         >
           Loading...
+        </div>
+      )}
+
+      {/* 解码失败提示——createImageBitmap 不支持的格式或文件损坏 */}
+      {decodeError && (
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            color: "#c00",
+            fontSize: "14px",
+          }}
+        >
+          Failed to load image
         </div>
       )}
 

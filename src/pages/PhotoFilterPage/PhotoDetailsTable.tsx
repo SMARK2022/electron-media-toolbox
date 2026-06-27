@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import { useTranslation } from "react-i18next";
 import ImagePreview, { PreviewFocusRegion } from "@/components/ImagePreview";
+import { getOrCreateBitmap } from "@/components/bitmapCache";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -25,6 +26,7 @@ import { PhotoExtend } from "@/helpers/ipc/database/db";
 import { cn } from "@/lib/utils";
 import { FaceTracker, FaceInfo as TrackerFaceInfo } from "./faceTracker";
 import { FaceStripBar, FaceInfo } from "./FaceStripBar";
+import { usePhotoFilterStore } from "@/helpers/store/usePhotoFilterStore";
 
 interface PhotoDetailsTableProps {
   photo?: PhotoExtend;
@@ -248,19 +250,41 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(
       }
     }, [filePath, imageSize, faces, isTrackingActive]);
 
-    // 加载图片获取尺寸
+    // 从 ImageBitmap 获取原始尺寸——替代原先独立的 new Image() 解码。
+    // useCallback 稳定化引用，避免 ImagePreview 的 useEffect 因 onImageReady 新引用而重复触发
+    const handleImageReady = useCallback(
+      (w: number, h: number) => setImageSize({ width: w, height: h }),
+      [],
+    );
+
+    // 图片尺寸获取 + 预热同组相邻照片——替代原先独立的 new Image() 全量解码。
+    // 尺寸现在由 ImagePreview 的 onImageReady 回调提供（从 ImageBitmap.width/height 获取），
+    // 消除了 7MB 冗余解码。预热用 getOrCreateBitmap 在后台解码，用户切换时命中缓存。
     useEffect(() => {
       if (!filePath) {
+        // 无照片时重置尺寸——避免残留上一张的值影响人脸追踪逻辑
         setImageSize({ width: 0, height: 0 });
         return;
       }
-      const img = new Image();
-      img.onload = () =>
-        setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
-      img.src = `local-resource://${filePath}`;
-      return () => {
-        img.onload = null;
-      };
+      // 预热同组内的前后照片：用户通常在同一分组内反复对比，
+      // 不跨组预热避免占用有限缓存槽位
+      const groups = usePhotoFilterStore.getState().lstGalleryGroupedPhotos;
+      for (const group of groups) {
+        const idx = group.findIndex((p) => p.filePath === filePath);
+        if (idx === -1) continue; // 当前照片不在此组
+        // 预热同组下一张和上一张——覆盖前进和后退两种导航方向
+        for (const offset of [1, -1]) {
+          const neighbor = group[idx + offset];
+          if (neighbor) {
+            // getOrCreateBitmap 内部有 in-flight 去重，
+            // 若 ImagePreview 同时请求同一 URL 会复用 Promise，不重复解码
+            getOrCreateBitmap(`local-resource://${neighbor.filePath}`).catch(
+              () => {},
+            );
+          }
+        }
+        break; // 找到所在组后不再继续搜索
+      }
     }, [filePath]);
 
     // 格式化显示数据
@@ -366,6 +390,7 @@ const PhotoDetailsTable: React.FC<PhotoDetailsTableProps> = React.memo(
               isTrackingActive ? handleUserInteraction : undefined
             }
             disableFocusAnimation={isFirstFocusAfterSwitch}
+            onImageReady={handleImageReady}
           />
         </div>
 
