@@ -79,6 +79,12 @@ test.describe("完整工作流程", () => {
 
     // Step 3: 点选照片——双击切换启用/禁用
     await test.step("点选照片", async () => {
+      // checkIdleState 在后端空闲 2s 后调用 refreshPhotos，可能触发 PhotoGrid
+      // DOM 重建使双击失效。等待卡片可见后额外等 2s 让 refreshPhotos 完成
+      await expect(page.locator(PHOTO_CARD_SELECTOR).first()).toBeVisible({
+        timeout: 10000,
+      });
+      await page.waitForTimeout(2000);
       // 双击第一张照片切换为禁用（PhotoGrid 双击 → toggleEnabled）
       const disabled = await togglePhotoEnabled(page, 0);
       expect(disabled).toBe(true); // 首次双击应变为禁用态
