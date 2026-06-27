@@ -188,9 +188,18 @@ function FileImportDrawer({ onImported }: FileImportDrawerProps) {
     setIsProcessing(false);
     clearTimeoutRef(invalidDropTimeoutRef);
     clearTimeoutRef(folderErrorTimeoutRef);
-    // 重置数据库状态：重新初始化并清空 present 表
-    initializeDatabase();
-    clearPhotos();
+    // DB 重置仅在后端空闲时执行——检测进行中 clearPhotos 会 DELETE present 表，
+    // 导致 Python DBManager 的 _file_id_cache 过期，后续 UPDATE 写入错误行或插入孤儿行。
+    // status=null（后端未连接）时不阻塞重置。
+    const { objServerStatusData } = usePhotoFilterStore.getState();
+    if (
+      !objServerStatusData?.status ||
+      objServerStatusData.status === "空闲中"
+    ) {
+      // 重新初始化并清空 present 表
+      initializeDatabase();
+      clearPhotos().catch((e) => console.error("clearPhotos failed:", e));
+    }
   };
 
   // ---------- 提交 ----------

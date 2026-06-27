@@ -195,9 +195,13 @@ export function getEnabledPhotosExtend(): Promise<PhotoExtend[]> {
   return window.ElectronDB.all(sql, []);
 }
 
-// 清空照片表并将内容移动到 previous 表（包含 simRefPath 和直方图）
+// 清空照片表并将内容移动到 previous 表（原子事务，包含 simRefPath、直方图和 faceData）
+// 使用 BEGIN IMMEDIATE + 单次 exec 确保 move 和 delete 在同一事务中执行，
+// 防止轮询定时器在两条独立 SQL 之间读到空的 present 表（中间状态）。
+// 补全 faceData 列——旧实现遗漏此列，导致归档后丢失人脸检测数据。
 export function clearPhotos() {
-  const moveSql = `
+  const sql = `
+        BEGIN IMMEDIATE;
         INSERT INTO previous (
             fileName,
             fileUrl,
@@ -212,7 +216,8 @@ export function clearPhotos() {
             isEnabled,
             histH,
             histS,
-            histV
+            histV,
+            faceData
         )
         SELECT
             fileName,
@@ -228,12 +233,14 @@ export function clearPhotos() {
             isEnabled,
             histH,
             histS,
-            histV
-        FROM present
+            histV,
+            faceData
+        FROM present;
+        DELETE FROM present;
+        COMMIT;
     `;
-  const deleteSql = `DELETE FROM present`;
-  window.ElectronDB.run(moveSql, []); // 将 present 表的内容移动到 previous 表
-  window.ElectronDB.run(deleteSql, []); // 清空 present 表
+  // 返回 Promise 以便调用方 await——失败时 db-exec handler 会自动 ROLLBACK
+  return window.ElectronDB.exec(sql);
 }
 
 // 根据条件获取照片记录（不拉取 simRefPath / 直方图）

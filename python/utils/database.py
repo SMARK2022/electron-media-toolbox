@@ -10,6 +10,22 @@ BINS = [90, 128, 128]
 HSVHist = Tuple[np.ndarray, np.ndarray, np.ndarray]
 
 
+def _connect(db_path: str) -> sqlite3.Connection:
+    """
+    打开数据库连接，统一设置 WAL 模式与 busy_timeout。
+
+    WAL 模式持久化在 DB 文件头，此处幂等设置以消除 Electron/Python 启动顺序依赖——
+    无论哪侧先打开 DB，都能确保进入 WAL 模式。
+    check_same_thread=False 允许 DBManager 的持久连接被 ThreadPoolExecutor 工作线程共享
+    （访问已由 DBManager._lock 串行化，同一时刻仅一个线程操作连接，单写者安全）。
+    busy_timeout=10000ms 给跨进程写锁争用足够的等待时间。
+    """
+    conn = sqlite3.connect(db_path, timeout=10.0, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 10000")
+    return conn
+
+
 def load_cache_from_db(db_path: str, show_disabled_photos: bool):
     """
     Load all images and cached similarity/IQA/HSV histograms from the database.
@@ -27,7 +43,7 @@ def load_cache_from_db(db_path: str, show_disabled_photos: bool):
     iqa_cache : Dict[str, float]
         Per-image IQA score, if already cached in DB.
     """
-    conn = sqlite3.connect(db_path)
+    conn = _connect(db_path)
     cursor = conn.cursor()
 
     # 始终读取所有照片（启用/未启用），后续再根据 isEnabled 控制参与计算与否
@@ -111,7 +127,7 @@ def save_cache_to_db(
     (process_pair_batch 中已更新 present 表)，
     这里主要确保 per-image 的 hist 与 IQA 同步回 DB。
     """
-    conn = sqlite3.connect(db_path)
+    conn = _connect(db_path)
     cursor = conn.cursor()
 
     # 对所有有 histogram、IQA 或人脸数据的图片进行更新
@@ -246,23 +262,5 @@ def save_cache_to_db(
                 ),
             )
 
-    conn.commit()
-    conn.close()
-
-
-def update_group_id_in_db(db_path: str, file_path: str, group_id: int) -> None:
-    """
-    Update the group ID for a specific file in the database.
-    """
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        UPDATE present
-        SET groupId = ?
-        WHERE filePath = ?
-        """,
-        (group_id, file_path),
-    )
     conn.commit()
     conn.close()

@@ -35,6 +35,10 @@ export const initializeDatabase = () => {
 
     db = new Database(dbPath);
 
+    // WAL 模式允许读写并发：Electron 的 SELECT 与 Python 的 UPDATE 不再互相阻塞。
+    // WAL 持久化在 DB 文件头，Python 侧 sqlite3.connect 会自动继承，无需重复设置。
+    db.pragma("journal_mode = WAL");
+
     // 统一补齐 present/previous 表的所有列（含后续新增列），避免 no such column 报错
     const tables = ["present", "previous"];
     const columns = [
@@ -115,6 +119,15 @@ export const addDatabaseEventListeners = () => {
         if (!db) return null;
         return db.exec(sql);
       } catch (error: unknown) {
+        // 多语句事务（BEGIN; ...; COMMIT;）中途失败时，事务仍处于打开状态。
+        // 必须在同一同步调用栈内 ROLLBACK，避免锁残留阻塞后续 IPC 请求。
+        // 若无活跃事务（如单语句 exec 失败），ROLLBACK 抛异常属预期，静默忽略。
+        try {
+          if (!db) return; // db 可能为 null（初始化失败时），无事务可回滚
+          db.exec("ROLLBACK;");
+        } catch {
+          // 无活跃事务时忽略——单语句 exec 失败不会开启事务
+        }
         console.error(`db-exec error: ${toErrMsg(error)}`);
         throw error;
       }

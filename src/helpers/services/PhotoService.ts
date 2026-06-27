@@ -88,6 +88,9 @@ class PhotoServiceImpl {
   private importProgressTimer: ReturnType<typeof setInterval> | null = null; // 导入进度轮询定时器
   private importTaskSubscribers: ((state: ImportTaskState) => void)[] = []; // 导入任务订阅列表
   private currentImportTaskId: number = 0; // 当前导入任务 ID（递增，用于区分不同任务）
+  // refreshPhotos 取消令牌：每次调用递增，旧请求在 await 后检查发现 token 变化则放弃 store 写入。
+  // 防止分组模式切换时旧请求的异步 IPC 结果覆盖新请求的 store 状态。
+  private refreshToken: number = 0;
   private formatStatusFn: ((data: ServerData | null) => string) | null = null;
 
   // ========== 生命周期 ==========
@@ -129,6 +132,21 @@ class PhotoServiceImpl {
   /** 设置状态格式化函数（由组件提供 i18n 翻译） */
   setStatusFormatter(fn: (data: ServerData | null) => string): void {
     this.formatStatusFn = fn;
+  }
+
+  /**
+   * 检测后端是否正在处理任务。
+   * 依据 objServerStatusData.status（由 500ms 状态轮询维护）判断：
+   * - status === "空闲中" 或 status === null（后端未连接）→ 不忙
+   * - 其他任何值 → 忙
+   *
+   * 用于阻止 clearPhotos 在检测运行期间执行——
+   * clearPhotos 会 DELETE present 表，导致 Python DBManager 的 _file_id_cache 过期，
+   * 后续 UPDATE WHERE id=? 要么命中 0 行（静默丢数据），要么 save_cache_to_db 插入孤儿行。
+   */
+  private isBackendBusy(): boolean {
+    const data = usePhotoFilterStore.getState().objServerStatusData;
+    return data?.status != null && data.status !== "空闲中";
   }
 
   // ========== 导入任务订阅 ==========
@@ -189,10 +207,16 @@ class PhotoServiceImpl {
 
   // ========== 数据加载 ==========
 
-  /** 加载初始照片数据到 Store */
-  private async loadPhotos(): Promise<void> {
+  /** 加载初始照片数据到 Store。
+   *  isCancelled 回调用于 refreshPhotos 的取消令牌——
+   *  在 getPhotos() await 返回后、写入 store 前检查，
+   *  防止旧请求的 loadPhotos 覆盖新请求已写入的 fnSetAllPhotos。
+   */
+  private async loadPhotos(isCancelled?: () => boolean): Promise<void> {
     try {
       const savedPhotos = await getPhotos();
+      // 被取消时跳过 store 写入——避免旧 refreshPhotos 的数据覆盖新请求
+      if (isCancelled?.()) return;
       const store = usePhotoFilterStore.getState();
 
       if (Array.isArray(savedPhotos) && savedPhotos.length > 0) {
@@ -211,18 +235,27 @@ class PhotoServiceImpl {
 
   /** 刷新照片数据（支持分组/全部模式） */
   async refreshPhotos(): Promise<void> {
+    // 取消令牌：每次调用递增。若在 await 期间有新的 refreshPhotos 被触发，
+    // 旧请求的 token 会过期，后续 store 写入被跳过——
+    // 防止分组模式切换时旧请求的异步结果覆盖新请求的 store 状态。
+    const token = ++this.refreshToken;
     const store = usePhotoFilterStore.getState();
     const { modeGalleryView, strSortedColumnKey, boolShowDisabledPhotos } =
       store;
 
     try {
-      await this.loadPhotos(); // 先加载最新照片列表
+      // 传入取消回调，使 loadPhotos 内部在 getPhotos() 返回后、写 store 前检查令牌
+      await this.loadPhotos(() => token !== this.refreshToken);
+      // 被 newer refreshPhotos 取代时放弃——避免旧 modeGalleryView 的数据覆盖新模式
+      if (token !== this.refreshToken) return;
       // 总览模式：使用 -2 获取所有照片；分组模式：使用 -1 获取未分组照片
       const photos: PhotoExtend[] = await getPhotosExtendByCriteria(
         modeGalleryView === "group" ? -1 : -2,
         strSortedColumnKey,
         !boolShowDisabledPhotos,
       );
+
+      if (token !== this.refreshToken) return;
 
       const groupedPhotos: Photo[][] = []; // 使用数组而非 Map，保证顺序稳定
       const allExtends: PhotoExtend[] = [];
@@ -260,6 +293,8 @@ class PhotoServiceImpl {
             strSortedColumnKey,
             !boolShowDisabledPhotos,
           );
+          // 分组循环中每次 IPC 后检查令牌——避免旧请求在切换模式后继续写入
+          if (token !== this.refreshToken) return;
 
           if (groupPhotos.length === 0) {
             consecutiveEmpty++;
@@ -275,6 +310,8 @@ class PhotoServiceImpl {
         }
       }
 
+      // 最终检查：所有异步 IPC 完成后，确认未被 newer refreshPhotos 取代
+      if (token !== this.refreshToken) return;
       // 更新 Store（即使 groupedPhotos 为空也要更新，确保清空旧数据）
       store.fnSetGalleryGroupedPhotos(groupedPhotos);
       store.fnCalculateEyeStats(allExtends);
@@ -439,6 +476,14 @@ class PhotoServiceImpl {
     const { filePaths, onComplete } = options;
     if (!filePaths.length) return false;
 
+    // 检测进行中不允许导入——clearPhotos 会破坏 Python DBManager 的行 ID 缓存，
+    // 导致 UPDATE 写入错误的行或 save_cache_to_db 插入孤儿行（数据损坏）。
+    // status=null（后端未连接）时不阻塞，允许用户先导入再启动检测。
+    if (this.isBackendBusy()) {
+      console.warn("[PhotoService] Backend is busy, cannot import");
+      return false;
+    }
+
     // 1. 如果已有导入任务运行中，先取消它（递增 taskId 使旧任务失效）
     if (this.importTask.isRunning) {
       console.log("[PhotoService] Cancelling previous import task");
@@ -475,7 +520,14 @@ class PhotoServiceImpl {
       filePath: absPath,
       isEnabled: true,
     }));
-    clearPhotos();
+    // await clearPhotos 确保事务完成后再插入新数据——
+    // 若 clearPhotos 失败（如 SQLITE_BUSY 超时），中止导入避免产生重复行
+    try {
+      await clearPhotos();
+    } catch (e) {
+      console.error("[PhotoService] clearPhotos failed, aborting import:", e);
+      return false;
+    }
     initializeDatabase();
     addPhotosExtend(placeholderPhotos);
     const store = usePhotoFilterStore.getState();

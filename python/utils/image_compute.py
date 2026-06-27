@@ -12,7 +12,7 @@ import os
 from utils.database import (
     load_cache_from_db,
     save_cache_to_db,
-    update_group_id_in_db,
+    _connect,
 )
 from utils.inference_onnx import infer_iqa_from_bgr, detect_faces_from_bgr
 
@@ -26,7 +26,11 @@ BINS: List[int] = [90, 128, 128]
 
 
 class DBManager:
-    """线程安全的数据库管理器，用于在多线程环境下实时缓存数据到数据库。"""
+    """线程安全的数据库管理器，用于在多线程环境下实时缓存数据到数据库。
+
+    持有单条持久连接（check_same_thread=False），避免每次 update 都新建/关闭连接。
+    线程安全由 self._lock 保证——同一时刻仅一个线程操作连接。
+    """
 
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -34,6 +38,14 @@ class DBManager:
         # 缓存 filePath -> row_id 的映射，避免重复查询
         self._file_id_cache: Dict[str, int] = {}
         self._cache_initialized = False
+        # 持久连接：整个 process_and_group_images 期间复用，消除数千次 connect/close/fsync
+        self._conn = _connect(db_path)
+
+    def close(self) -> None:
+        """关闭持久连接，在 process_and_group_images 的 finally 中调用。"""
+        if self._conn:
+            self._conn.close()
+            self._conn = None
 
     def _ensure_cache_initialized(self, cursor: sqlite3.Cursor) -> None:
         """初始化 filePath -> row_id 缓存。"""
@@ -55,6 +67,24 @@ class DBManager:
             return row[0]
         return None
 
+    def _get_row_id_safe(self, cursor: sqlite3.Cursor, file_path: str) -> Optional[int]:
+        """
+        获取行 ID 并校验其仍存在。
+
+        防御 clearPhotos 期间行被 DELETE 导致 _file_id_cache 过期的问题——
+        AUTOINCREMENT 保证已删除的 ID 不会复用，但缓存中的旧 ID 指向不存在的行，
+        UPDATE WHERE id=? 会静默命中 0 行。此方法检测到后失效缓存条目，
+        避免数据写入丢失（虽然该行已不在 present 表中，但不影响其他行）。
+        """
+        row_id = self._get_row_id(cursor, file_path)
+        if row_id is not None:
+            cursor.execute("SELECT id FROM present WHERE id = ?", (row_id,))
+            if cursor.fetchone() is None:
+                # 行已被删除（如用户在检测期间重新导入），失效缓存避免后续误用
+                self._file_id_cache.pop(file_path, None)
+                return None
+        return row_id
+
     def update_hist(self, file_path: str, hist: HSVHist) -> None:
         """实时更新直方图数据到数据库。"""
         h, s, v = hist
@@ -63,11 +93,12 @@ class DBManager:
         v_blob = v.astype(np.float32).tobytes()
 
         with self._lock:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            if not self._conn:
+                return
+            cursor = self._conn.cursor()
             try:
                 self._ensure_cache_initialized(cursor)
-                row_id = self._get_row_id(cursor, file_path)
+                row_id = self._get_row_id_safe(cursor, file_path)
                 if row_id:
                     cursor.execute(
                         """
@@ -77,18 +108,20 @@ class DBManager:
                         """,
                         (h_blob, s_blob, v_blob, row_id),
                     )
-                    conn.commit()
-            finally:
-                conn.close()
+                    self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def update_iqa(self, file_path: str, iqa_value: float) -> None:
         """实时更新 IQA 数据到数据库。"""
         with self._lock:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            if not self._conn:
+                return
+            cursor = self._conn.cursor()
             try:
                 self._ensure_cache_initialized(cursor)
-                row_id = self._get_row_id(cursor, file_path)
+                row_id = self._get_row_id_safe(cursor, file_path)
                 if row_id:
                     cursor.execute(
                         """
@@ -98,9 +131,10 @@ class DBManager:
                         """,
                         (float(iqa_value), row_id),
                     )
-                    conn.commit()
-            finally:
-                conn.close()
+                    self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def update_face(self, file_path: str, face_info: dict) -> None:
         """实时更新人脸检测数据到数据库。"""
@@ -110,11 +144,12 @@ class DBManager:
             return
 
         with self._lock:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            if not self._conn:
+                return
+            cursor = self._conn.cursor()
             try:
                 self._ensure_cache_initialized(cursor)
-                row_id = self._get_row_id(cursor, file_path)
+                row_id = self._get_row_id_safe(cursor, file_path)
                 if row_id:
                     cursor.execute(
                         """
@@ -124,20 +159,22 @@ class DBManager:
                         """,
                         (face_json, row_id),
                     )
-                    conn.commit()
-            finally:
-                conn.close()
+                    self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def update_similarity(
         self, file_path: str, ref_path: str, similarity: float, iqa_value: float
     ) -> None:
         """实时更新相似度数据到数据库。"""
         with self._lock:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            if not self._conn:
+                return
+            cursor = self._conn.cursor()
             try:
                 self._ensure_cache_initialized(cursor)
-                row_id = self._get_row_id(cursor, file_path)
+                row_id = self._get_row_id_safe(cursor, file_path)
                 if row_id:
                     cursor.execute(
                         """
@@ -147,9 +184,33 @@ class DBManager:
                         """,
                         (ref_path, similarity, iqa_value, row_id),
                     )
-                    conn.commit()
-            finally:
-                conn.close()
+                    self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def update_group_id(self, file_path: str, group_id: int) -> None:
+        """更新照片分组 ID（取代 update_group_id_in_db，复用持久连接）。"""
+        with self._lock:
+            if not self._conn:
+                return
+            cursor = self._conn.cursor()
+            try:
+                self._ensure_cache_initialized(cursor)
+                row_id = self._get_row_id_safe(cursor, file_path)
+                if row_id:
+                    cursor.execute(
+                        """
+                        UPDATE present
+                        SET groupId = ?
+                        WHERE id = ?
+                        """,
+                        (group_id, row_id),
+                    )
+                    self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
 
 
 # 全局数据库管理器实例（在 process_and_group_images 中初始化）
@@ -539,7 +600,8 @@ def process_and_group_images(
                 current_group_id += 1
 
         current_group.append((file_path, similarity, iqa_value))
-        update_group_id_in_db(db_path, file_path, current_group_id)
+        # 使用 DBManager.update_group_id 复用持久连接，取代每次新建连接的 update_group_id_in_db
+        _db_manager.update_group_id(file_path, current_group_id)
         update_progress("单线程分组中", 0, idx + 1, max(total_enabled, 1))
 
     if current_group:
@@ -587,7 +649,7 @@ def process_and_group_images(
             if nearest_group is None:
                 nearest_group = 0
 
-            update_group_id_in_db(db_path, file_path, nearest_group)
+            _db_manager.update_group_id(file_path, nearest_group)
 
             # 未启用图片不强制计算 IQA，只用已有缓存（若无则为 0）
             iqa_value = iqa_cache.get(file_path, 0.0)
@@ -599,7 +661,7 @@ def process_and_group_images(
         if image_files:
             groups = [[]]
             for idx, file_path in enumerate(image_files):
-                update_group_id_in_db(db_path, file_path, 0)
+                _db_manager.update_group_id(file_path, 0)
                 iqa_value = iqa_cache.get(file_path, 0.0)
                 groups[0].append((file_path, 0.0, iqa_value))
                 update_progress("单线程分组中", 0, idx + 1, total_images)
@@ -616,5 +678,9 @@ def process_and_group_images(
     print(f"Average Time per Image: {average_time_per_image:.2f} seconds")
     update_progress("已完成分析分组", 0, total_images, max(total_images, 1))
 
+    # 关闭持久连接并清除全局引用。
+    # 正常路径在此显式关闭；异常路径由 Python GC 回收连接（sqlite3 连接在 GC 时自动关闭），
+    # 下次检测调用会创建新 DBManager 替换旧引用，WAL 模式下不会阻塞其他操作。
+    _db_manager.close()
     _db_manager = None
     return groups
