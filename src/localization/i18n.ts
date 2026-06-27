@@ -188,6 +188,29 @@ const resources = {
         filterHintLine1Suffix:
           " on an image in the preview pane to quickly toggle its enabled status; click to preview, use keyboard ",
         filterHintLine1End: " to select photos within the same group.",
+        thresholdResubmitHint:
+          "Adjusting the threshold only takes effect after submitting a new detection task to regroup photos.",
+        retainStrategyTitle: "Retention Strategy",
+        retainCriteriaLabel: "Rank by",
+        retainCriteriaIqa: "IQA",
+        retainCriteriaEye: "Eyes open",
+        retainKeepCountLabel: "Keep per group",
+        retainEyeNotReady:
+          "Eye data not ready yet, ranking by IQA temporarily.",
+        retainTotalModeHint: "Switch to Group Mode to use retention strategy.",
+        retainPreviewTitle: "Confirm Disable Redundant",
+        retainPreviewDisable:
+          "This will disable {{count}} photos based on the current retention strategy. Continue?",
+        retainConfirm: "Confirm",
+        enableAllConfirmTitle: "Confirm Enable All",
+        enableAllConfirmDesc:
+          "This will re-enable {{count}} photos in the gallery. Continue?",
+        summaryGroups: "Groups",
+        summaryPhotos: "Photos",
+        summaryEnabled: "Enabled",
+        summaryDisabled: "Disabled",
+        summaryEyeRisk: "Eye risk",
+        hintsToggle: "Keyboard shortcuts",
         trackingMode: "Face Tracking", // 人像追踪模式
         eyeState: {
           open: "Normal", // 睁眼
@@ -413,6 +436,26 @@ const resources = {
         filterHintLine1: "在预览窗格中对图片左键双击或",
         filterHintLine1Suffix: "可快速切换启用状态；单击以预览，使用键盘 ",
         filterHintLine1End: " 选择同组内照片。",
+        thresholdResubmitHint: "调整阈值后需提交新的检测任务才会重新分组。",
+        retainStrategyTitle: "保留策略",
+        retainCriteriaLabel: "保留依据",
+        retainCriteriaIqa: "IQA 画质",
+        retainCriteriaEye: "睁眼优先",
+        retainKeepCountLabel: "每组保留",
+        retainEyeNotReady: "睁眼数据未就绪，暂按 IQA 排序。",
+        retainTotalModeHint: "切换至分组模式可用保留策略。",
+        retainPreviewTitle: "确认弃用冗余",
+        retainPreviewDisable:
+          "将根据当前保留策略弃用 {{count}} 张照片，是否继续？",
+        retainConfirm: "确认执行",
+        enableAllConfirmTitle: "确认启用所有",
+        enableAllConfirmDesc: "将重新启用画廊中 {{count}} 张照片，是否继续？",
+        summaryGroups: "分组数",
+        summaryPhotos: "照片数",
+        summaryEnabled: "已启用",
+        summaryDisabled: "已弃用",
+        summaryEyeRisk: "闭眼风险",
+        hintsToggle: "快捷键说明",
         trackingMode: "人像追踪", // 人像追踪模式
         eyeState: {
           open: "正常", // 睁眼

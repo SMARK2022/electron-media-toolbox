@@ -62,6 +62,74 @@ export interface EyeStatistics {
   openEyesCount: number; // 弹窗正常睁眼
 }
 
+// ============================================================================
+// 保留策略纯函数（右侧"弃用冗余"执行与预览摘要共享，保证所见即所执行）
+// ============================================================================
+/** 保留依据：IQA 画质优先 / 睁眼优先（闭眼风险少者先保留） */
+export type RetentionCriteria = "iqa" | "eye";
+
+export interface RetentionPolicy {
+  criteria: RetentionCriteria;
+  keepCount: number; // 每组保留数量，<1 时由 computeRetentionPolicy 钳制为 1
+}
+
+/**
+ * 解析 photo.info 为 IQA 数值。
+ * info 字段由 PhotoService.toPhoto 写入 (p.IQA ?? 0).toString()，
+ * 与 PhotoGrid 缩略图配色共享同一契约；非数字/空时退化为 0，避免污染排序。
+ */
+export const parseIQA = (info?: string | null): number => {
+  if (info == null || info === "") return 0;
+  const n = parseFloat(info);
+  // 后端可能写入非数字 info（如旧数据/空串），排序时须退化为最低分而非 NaN
+  return Number.isNaN(n) ? 0 : n;
+};
+
+/** 取闭眼风险数：闭眼 + 疑似闭眼。eyeStats 缺项视为 0（无人脸或未就绪）。 */
+const badEyeCount = (
+  filePath: string,
+  eyeStats: Map<string, EyeStatistics>,
+): number => {
+  const s = eyeStats.get(filePath);
+  return s ? s.closedEyesCount + s.suspiciousCount : 0;
+};
+
+/**
+ * 按保留策略对每组排序并切分为 keep / disable。
+ * - iqa：按 IQA(info) 降序
+ * - eye：闭眼风险数升序，再按 IQA 降序 tiebreak
+ *
+ * 不变量：eyeStats 为空时 badEyeCount 恒为 0，eye 策略自动退化为 iqa 排序，
+ * 保证启动瞬间数据未就绪时不会乱序弃用。
+ * keepCount 钳制为 >=1，防止误输入 0/负数清空整组。
+ */
+export const computeRetentionPolicy = (
+  groups: Photo[][],
+  policy: RetentionPolicy,
+  eyeStats: Map<string, EyeStatistics>,
+): { keep: Photo[]; disable: Photo[]; groupCount: number } => {
+  const keep: Photo[] = [];
+  const disable: Photo[] = [];
+  const n = Math.max(1, Math.floor(policy.keepCount)); // 至少保留 1 张
+
+  for (const group of groups) {
+    const ranked = [...group].sort((a, b) => {
+      if (policy.criteria === "eye") {
+        // 闭眼风险少者优先（升序）；eyeStats 缺失时两边均为 0，自然落入 IQA tiebreak
+        const diff =
+          badEyeCount(a.filePath, eyeStats) - badEyeCount(b.filePath, eyeStats);
+        if (diff !== 0) return diff;
+      }
+      // IQA 降序：作为 iqa 主依据，或 eye 策略的 tiebreak
+      return parseIQA(b.info) - parseIQA(a.info);
+    });
+    keep.push(...ranked.slice(0, n));
+    disable.push(...ranked.slice(n));
+  }
+
+  return { keep, disable, groupCount: groups.length };
+};
+
 interface PhotoFilterState {
   // ===== 通用照片状态（3 个页面复用）=====
   lstAllPhotos: Photo[]; // 当前相册中所有照片（扁平列表，import/filter 页面）
@@ -76,6 +144,9 @@ interface PhotoFilterState {
   tabRightPanel: "filter" | "preview";
   numSimilarityThreshold: number;
   boolShowDisabledPhotos: boolean;
+  // 弹窗保留策略：弃用冗余时按何依据、每组保留几张（右侧面板配置）
+  strRetainCriteria: RetentionCriteria;
+  numRetainKeepCount: number;
   strSortedColumnKey: string;
   boolCurrentPreviewEnabled: boolean;
   boolReloadAlbumRequested: boolean;
@@ -123,6 +194,8 @@ interface PhotoFilterState {
   fnSetGalleryMode: (mode: GalleryMode) => void;
   fnSetRightPanelTab: (tab: "filter" | "preview") => void;
   fnSetSimilarityThreshold: (value: number) => void;
+  fnSetRetainCriteria: (criteria: RetentionCriteria) => void;
+  fnSetRetainKeepCount: (count: number) => void;
   fnSetShowDisabledPhotos: (value: boolean) => void;
   fnSetSortedColumnKey: (value: string) => void;
   fnSetPreviewHeightPercent: (value: number) => void;
@@ -153,7 +226,7 @@ interface PhotoFilterState {
   // 弹窗业务操作
   fnSelectPreviewPhotos: (photos: Photo[]) => Promise<void>;
   fnTogglePhotoEnabledFromGrid: (photo: Photo) => Promise<void>;
-  fnDisableRedundantInGroups: () => Promise<void>;
+  fnDisableRedundantInGroups: (disablePaths: string[]) => Promise<void>;
   fnEnableAllPhotos: () => Promise<void>;
   fnUpdateFromDetailsPanel: (
     filePath: string,
@@ -181,6 +254,8 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     sessionStorage.getItem("similarityThreshold") || "0.8",
   ), // 弹窗相似度阈值，持久化在 sessionStorage
   boolShowDisabledPhotos: false, // 弹窗是否在相册中显示已禁用的图片
+  strRetainCriteria: "iqa", // 弹窗保留依据默认 IQA（睁眼优先需 eyeStats 就绪）
+  numRetainKeepCount: 1, // 弹窗默认每组保留 1 张（与历史行为一致）
   strSortedColumnKey: "IQA", // 弹窗排序列：默认按 IQA
   boolCurrentPreviewEnabled: false, // 弹窗当前预览图片是否启用（同步 switch 状态）
   boolReloadAlbumRequested: false, // 弹窗外部触发的刷新标记（如详情面板修改完状态后）
@@ -308,6 +383,9 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     sessionStorage.setItem("similarityThreshold", value.toString()); // 弹窗把阈值写入 sessionStorage，刷新后仍然生效
     set({ numSimilarityThreshold: value });
   },
+  fnSetRetainCriteria: (criteria) => set({ strRetainCriteria: criteria }), // 弹窗切换保留依据（IQA / 睁眼）
+  fnSetRetainKeepCount: (count) =>
+    set({ numRetainKeepCount: Math.max(1, Math.floor(count)) }), // 弹窗每组保留数量，钳制 >=1 防误清空
   fnSetShowDisabledPhotos: (value) => set({ boolShowDisabledPhotos: value }), // 弹窗总开关：是否在左侧展示禁用图片
   fnSetSortedColumnKey: (value) => set({ strSortedColumnKey: value }), // 弹窗调整排序列（如按 IQA / 相似度）
   fnSetPreviewHeightPercent: (value) => set({ numPreviewHeightPercent: value }), // 弹窗更新右侧预览高度百分比
@@ -525,31 +603,33 @@ export const usePhotoFilterStore = create<PhotoFilterState>((set, get) => ({
     if (nextPhoto) await fnSelectPhoto(nextPhoto);
   },
 
-  fnDisableRedundantInGroups: async () => {
-    const { lstGalleryGroupedPhotos, boolShowDisabledPhotos } = get();
+  fnDisableRedundantInGroups: async (disablePaths: string[]) => {
+    // disablePaths 由调用方（右侧预览）用 computeRetentionPolicy 快照计算得出，
+    // 这里只负责落库 + 同步画廊，不再重算——保证"预览所见 = 实际弃用"。
+    const { boolShowDisabledPhotos } = get();
+    const disableSet = new Set(disablePaths);
     try {
       await Promise.all(
-        lstGalleryGroupedPhotos.map(async (group) => {
-          const updates = group
-            .slice(1)
-            .map((photo) => updatePhotoEnabledStatus(photo.filePath, false));
-          await Promise.all(updates);
-        }),
+        disablePaths.map((p) => updatePhotoEnabledStatus(p, false)),
       );
 
       set((state) => {
         if (!boolShowDisabledPhotos) {
+          // 隐藏禁用项时：从画廊移除被弃用照片（保持历史"隐藏即移除"语义）
           return {
             lstGalleryGroupedPhotos: state.lstGalleryGroupedPhotos
-              .map((group) => (group.length > 0 ? [group[0]] : []))
-              .filter((group) => group.length > 0), // 弹窗每组只保留第一张，其余已在上面统一禁用
+              .map((group) => group.filter((p) => !disableSet.has(p.filePath)))
+              .filter((group) => group.length > 0),
           } as Partial<PhotoFilterState>;
         }
 
+        // 显示禁用项时：保留在画廊但标记 isEnabled=false
         return {
           lstGalleryGroupedPhotos: state.lstGalleryGroupedPhotos.map((group) =>
-            group.map((photo, idx) =>
-              idx === 0 ? photo : { ...photo, isEnabled: false },
+            group.map((photo) =>
+              disableSet.has(photo.filePath)
+                ? { ...photo, isEnabled: false }
+                : photo,
             ),
           ),
         } as Partial<PhotoFilterState>;
@@ -713,6 +793,10 @@ export const useSidePanelSelectors = () => ({
   fnSetSimilarityThreshold: usePhotoFilterStore(
     (s) => s.fnSetSimilarityThreshold,
   ),
+  strRetainCriteria: usePhotoFilterStore((s) => s.strRetainCriteria),
+  numRetainKeepCount: usePhotoFilterStore((s) => s.numRetainKeepCount),
+  fnSetRetainCriteria: usePhotoFilterStore((s) => s.fnSetRetainCriteria),
+  fnSetRetainKeepCount: usePhotoFilterStore((s) => s.fnSetRetainKeepCount),
   fnDisableRedundantInGroups: usePhotoFilterStore(
     (s) => s.fnDisableRedundantInGroups,
   ),
