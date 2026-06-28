@@ -213,7 +213,7 @@ export const SidePanel: React.FC<SidePanelProps> = React.memo(
 
         <TabsContent
           value="filter"
-          className="bg透明 mt-0 border-0 bg-transparent p-0"
+          className="mt-0 border-0 bg-transparent p-0"
         >
           <div className="space-y-4">
             {/* ① 智能推荐摘要卡 */}

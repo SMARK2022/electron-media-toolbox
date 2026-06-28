@@ -105,6 +105,17 @@ export const SELECTORS = {
     similaritySlider: '[role="slider"]',
     groupModeTab: 'button:has-text("分组模式"), button:has-text("Group Mode")',
     totalModeTab: 'button:has-text("整体模式"), button:has-text("Total Mode")',
+    // 右侧面板 filter Tab 触发器——tabRightPanel 可能被前序预览操作切到 preview，
+    // 须先激活 filter Tab 才能访问其内的弃用/启用按钮（Radix Tabs 非活动页卸载 DOM）
+    filterTabTrigger: 'button:has-text("筛选"), button:has-text("Filter")',
+    disableRedundantBtn:
+      'button:has-text("弃用冗余"), button:has-text("Disable Redundant")',
+    enableAllBtn: 'button:has-text("启用所有"), button:has-text("Enable All")',
+    // 确认对话框以 data-testid 锚定，避免与 export 页 [role="alertdialog"] 误匹配
+    retainConfirmDialog: '[data-testid="retain-confirm-dialog"]',
+    // 以下文本选择器须在测试中通过 dialog.locator() 限定作用域
+    retainConfirmBtn: 'button:has-text("确认执行"), button:has-text("Confirm")',
+    retainCancelBtn: 'button:has-text("取消"), button:has-text("Cancel")',
   },
   // 导出页面 - 使用 i18n 中精确的占位符文本
   export: {

@@ -19,6 +19,7 @@ import {
   PHOTO_CARD_SELECTOR,
   LONG_TIMEOUT,
   ensurePhotosImported,
+  getDisplayedPhotoCount,
 } from "./helpers/electronApp";
 
 let page: Page;
@@ -324,6 +325,142 @@ test.describe("分栏拖动", () => {
         await page.waitForTimeout(300);
       }
     }
+
+    await assertPageHealthy(page);
+  });
+});
+
+// ============================================================================
+// 保留策略与批量动作确认
+// 验证弃用冗余/启用所有的"预览摘要 + 确认执行"流程
+// ============================================================================
+test.describe("保留策略与批量动作确认", () => {
+  test.beforeEach(async () => {
+    await navigateTo(page, "filter");
+    // tabRightPanel 是全局 store 状态，可能被前序预览操作切到 "preview"，
+    // 此时 filter TabsContent 被卸载、弃用/启用按钮不在 DOM——须先激活 filter Tab
+    const filterTab = page.locator(SELECTORS.filter.filterTabTrigger).first();
+    if (await filterTab.isVisible().catch(() => false)) {
+      await filterTab.click();
+      await page.waitForTimeout(200);
+    }
+    // 重置 showDisabled 开关——前序测试 B 可能关闭它，泄漏到后续测试影响计数语义
+    const sw = page.locator(SELECTORS.filter.showDisabledSwitch).first();
+    if (await sw.isVisible().catch(() => false)) {
+      if (await sw.isChecked().catch(() => false)) {
+        await sw.click();
+        await page.waitForTimeout(300);
+      }
+    }
+  });
+
+  test("弃用冗余弹出确认对话框，取消后照片数不变", async () => {
+    if (TEST_IMAGE_COUNT === 0) return;
+    // 须先提交检测任务生成分组，否则 computeRetentionPolicy 返回空、按钮不弹窗
+    await submitDetectionTask(page);
+    await waitForTaskIdle(page, LONG_TIMEOUT);
+    await page.waitForTimeout(1000);
+
+    // 弃用冗余在 total 模式 disabled，须确保 group 模式
+    const groupTab = page.locator(SELECTORS.filter.groupModeTab).first();
+    if (await groupTab.isVisible().catch(() => false)) {
+      await groupTab.click();
+      await page.waitForTimeout(300);
+    }
+
+    const btn = page.locator(SELECTORS.filter.disableRedundantBtn).first();
+    if (!(await btn.isVisible().catch(() => false))) return; // 窄屏隐藏 SidePanel 时跳过
+    if (!(await btn.isEnabled().catch(() => false))) return;
+
+    const beforeCount = await getDisplayedPhotoCount(page);
+    await btn.click();
+
+    // 对话框必须出现——若不出现说明 computeRetentionPolicy 返回空（每组仅1张），
+    // 此时测试无法覆盖确认流程，应失败暴露 fixture 问题而非静默跳过
+    const dialog = page.locator(SELECTORS.filter.retainConfirmDialog);
+    await expect(dialog).toBeVisible({ timeout: 5000 });
+
+    // 取消——照片数不应变化
+    const cancelBtn = dialog.locator(SELECTORS.filter.retainCancelBtn).first();
+    await cancelBtn.click();
+    await expect(dialog).not.toBeVisible({ timeout: 3000 });
+
+    const afterCount = await getDisplayedPhotoCount(page);
+    expect(afterCount).toBe(beforeCount);
+    await assertPageHealthy(page);
+  });
+
+  test("确认弃用后画廊照片数减少", async () => {
+    if (TEST_IMAGE_COUNT === 0) return;
+    await submitDetectionTask(page);
+    await waitForTaskIdle(page, LONG_TIMEOUT);
+    await page.waitForTimeout(1000);
+
+    // boolShowDisabledPhotos=true 时弃用仅标记不移除，计数不降——须确保关闭
+    const sw = page.locator(SELECTORS.filter.showDisabledSwitch).first();
+    if (await sw.isVisible().catch(() => false)) {
+      if (await sw.isChecked().catch(() => false)) {
+        await sw.click();
+        await page.waitForTimeout(500);
+      }
+    }
+
+    const groupTab = page.locator(SELECTORS.filter.groupModeTab).first();
+    if (await groupTab.isVisible().catch(() => false)) {
+      await groupTab.click();
+      await page.waitForTimeout(300);
+    }
+
+    const btn = page.locator(SELECTORS.filter.disableRedundantBtn).first();
+    if (!(await btn.isVisible().catch(() => false))) return;
+    if (!(await btn.isEnabled().catch(() => false))) return;
+
+    const beforeCount = await getDisplayedPhotoCount(page);
+    // 画廊应有照片——若为 0 说明检测未完成或 DOM 未就绪，应失败而非静默跳过
+    expect(beforeCount).toBeGreaterThan(0);
+
+    await btn.click();
+
+    // 对话框必须出现——硬断言暴露 fixture/逻辑问题
+    const dialog = page.locator(SELECTORS.filter.retainConfirmDialog);
+    await expect(dialog).toBeVisible({ timeout: 5000 });
+
+    // 确认执行——在 dialog 内 scope 避免误匹配其他 Confirm 按钮
+    const confirmBtn = dialog
+      .locator(SELECTORS.filter.retainConfirmBtn)
+      .first();
+    await confirmBtn.click();
+
+    // 轮询等待画廊更新（异步写 DB + store 重建 + 可能的 4s 轮询）
+    // 用 < 严格断言：若弃用未执行则计数不变，断言失败暴露 bug
+    await expect
+      .poll(async () => getDisplayedPhotoCount(page), { timeout: 10000 })
+      .toBeLessThan(beforeCount);
+
+    await assertPageHealthy(page);
+  });
+
+  test("启用所有弹出确认对话框", async () => {
+    // 启用所有始终弹窗（即使 count=0），不依赖前序检测任务
+    const groupTab = page.locator(SELECTORS.filter.groupModeTab).first();
+    if (await groupTab.isVisible().catch(() => false)) {
+      await groupTab.click();
+      await page.waitForTimeout(300);
+    }
+
+    const btn = page.locator(SELECTORS.filter.enableAllBtn).first();
+    if (!(await btn.isVisible().catch(() => false))) return;
+
+    await btn.click();
+    await page.waitForTimeout(500);
+
+    const dialog = page.locator(SELECTORS.filter.retainConfirmDialog);
+    await expect(dialog).toBeVisible({ timeout: 3000 });
+
+    // 取消关闭
+    const cancelBtn = dialog.locator(SELECTORS.filter.retainCancelBtn).first();
+    await cancelBtn.click();
+    await expect(dialog).not.toBeVisible({ timeout: 3000 });
 
     await assertPageHealthy(page);
   });
