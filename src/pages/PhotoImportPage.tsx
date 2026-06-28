@@ -463,7 +463,7 @@ export default function PhotoImportSubpage() {
           <span className="text-muted-foreground">
             {t("labels.totalPhotos")}
           </span>
-          <span className="text-m ml-1 font-semibold text-blue-600 dark:text-blue-400">
+          <span className="ml-1 text-sm font-semibold text-blue-600 dark:text-blue-400">
             {photos.length}
           </span>
         </div>

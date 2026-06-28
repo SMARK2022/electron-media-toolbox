@@ -4,6 +4,7 @@ import {
   minimizeWindow,
 } from "@/helpers/window_helpers";
 import { type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 interface DragWindowRegionProps {
   title?: ReactNode;
@@ -27,14 +28,17 @@ export default function DragWindowRegion({ title }: DragWindowRegionProps) {
 }
 
 function WindowButtons() {
+  // t 在此组件内调用——DragWindowRegion 不直接使用 t，避免跨组件作用域引用
+  const { t } = useTranslation();
   return (
     <div className="flex">
       <button
-        title="Minimize"
+        title={t("windowControls.minimize")}
         type="button"
-        className="p-2 hover:bg-slate-300"
+        // dark:hover 补全：原仅 hover:bg-slate-300，暗色模式下 hover 态不可见
+        className="p-2 hover:bg-slate-300 dark:hover:bg-slate-600"
         onClick={minimizeWindow}
-        aria-label="Minimize window"
+        aria-label={t("windowControls.minimize")}
       >
         <svg
           aria-hidden="true"
@@ -47,11 +51,11 @@ function WindowButtons() {
         </svg>
       </button>
       <button
-        title="Maximize"
+        title={t("windowControls.maximize")}
         type="button"
-        className="p-2 hover:bg-slate-300"
+        className="p-2 hover:bg-slate-300 dark:hover:bg-slate-600"
         onClick={maximizeWindow}
-        aria-label="Maximize window"
+        aria-label={t("windowControls.maximize")}
       >
         <svg
           aria-hidden="true"
@@ -72,10 +76,10 @@ function WindowButtons() {
       </button>
       <button
         type="button"
-        title="Close"
-        className="p-2 hover:bg-red-300"
+        title={t("windowControls.close")}
+        className="p-2 hover:bg-red-300 dark:hover:bg-red-700/50"
         onClick={closeWindow}
-        aria-label="Close window"
+        aria-label={t("windowControls.close")}
       >
         <svg
           aria-hidden="true"

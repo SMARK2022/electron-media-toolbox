@@ -25,11 +25,6 @@ interface GalleryPanelProps {
   onPhotoClick: (photos: Photo[], event: string) => void | Promise<void>; // 照片点击回调
 }
 
-interface GalleryPanelProps {
-  totalPhotoCount: number; // 总照片数
-  onPhotoClick: (photos: Photo[], event: string) => void | Promise<void>; // 照片点击回调
-}
-
 export const GalleryPanel: React.FC<GalleryPanelProps> = React.memo(
   ({ totalPhotoCount, onPhotoClick }) => {
     const { t } = useTranslation();
@@ -70,7 +65,7 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = React.memo(
           <div className="text-muted-foreground flex items-center gap-3 text-sm">
             <div className="bg-muted flex items-center gap-1 rounded-full px-2 py-1">
               <ImageIcon className="text-muted-foreground/80 h-3.5 w-3.5" />
-              <span className="font-sm">{t("labels.totalPhotosLabel")}:</span>
+              <span className="text-sm">{t("labels.totalPhotosLabel")}:</span>
               <span className="rounded-full bg-blue-50 px-1.5 font-mono text-[14px] text-blue-700">
                 {totalPhotoCount}
               </span>

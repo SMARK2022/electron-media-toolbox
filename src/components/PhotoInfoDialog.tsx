@@ -24,8 +24,7 @@ import {
   Globe,
   Settings2,
 } from "lucide-react";
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { cn } from "@/lib/utils";
 
 interface PhotoInfoDialogProps {
   open: boolean;
@@ -108,11 +107,6 @@ const FIELD_LABEL_MAP_ZH: Record<string, string> = {
 function getFieldLabel(key: string, isChinese: boolean): string {
   if (!isChinese) return key; // 英文等其他语言直接返回原始 key
   return FIELD_LABEL_MAP_ZH[key] ?? key;
-}
-
-// 工具：合并 className
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
 }
 
 // 工具：文件大小格式化

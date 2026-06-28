@@ -30,6 +30,9 @@ const resources = {
       common: {
         cancel: "Cancel",
         close: "Close",
+        // 图标按钮的无障碍名称——读屏器据此播报按钮用途
+        toggleTheme: "Toggle theme",
+        language: "Language",
       },
       page: {
         title: "Home Page",
@@ -259,6 +262,32 @@ const resources = {
         gotoGithub: "Download from GitHub",
         noReleaseNotes: "No detailed release notes available for this version.",
       },
+      // 导入进度 Toast——之前全部硬编码中文，英文用户看到中文
+      importToast: {
+        complete: "Import Complete",
+        inProgress: "Importing photos...",
+        // {{count}} 占位符在 en/zh 中必须一致（i18n-parity 测试约束）
+        importedCount: "Successfully imported {{count}} photos",
+        progressCount: "{{processed}} / {{total}}",
+        overallProgress: "Overall",
+        thumbnail: "Thumbnail",
+        exif: "EXIF",
+        processing: "Processing...",
+        cancel: "Cancel Import",
+      },
+      // ImagePreview 加载/失败提示——之前硬编码英文
+      imagePreview: {
+        loading: "Loading...",
+        loadFailed: "Failed to load image",
+        // canvas 的无障碍标签——读屏器据此播报图片区域
+        previewAlt: "Photo preview",
+      },
+      // 窗口控制按钮 tooltip + aria-label——之前硬编码英文
+      windowControls: {
+        minimize: "Minimize",
+        maximize: "Maximize",
+        close: "Close",
+      },
     },
   },
   zh: {
@@ -288,6 +317,8 @@ const resources = {
       common: {
         cancel: "取消",
         close: "关闭",
+        toggleTheme: "切换主题",
+        language: "语言",
       },
       page: {
         title: "主页",
@@ -501,6 +532,30 @@ const resources = {
         later: "稍后再说（下次启动时）",
         gotoGithub: "前往 GitHub 下载",
         noReleaseNotes: "该版本未提供详细更新说明。",
+      },
+      // 导入进度 Toast 文案（与 en 占位符集合一致）
+      importToast: {
+        complete: "导入完成",
+        inProgress: "正在导入照片...",
+        importedCount: "共成功导入 {{count}} 张照片",
+        progressCount: "{{processed}} / {{total}} 张",
+        overallProgress: "总体进度",
+        thumbnail: "缩略图",
+        exif: "EXIF 数据",
+        processing: "处理中...",
+        cancel: "终止导入",
+      },
+      // ImagePreview 加载/失败提示
+      imagePreview: {
+        loading: "加载中...",
+        loadFailed: "图片加载失败",
+        previewAlt: "照片预览",
+      },
+      // 窗口控制按钮 tooltip + aria-label
+      windowControls: {
+        minimize: "最小化",
+        maximize: "最大化",
+        close: "关闭",
       },
     },
   },

@@ -4,6 +4,7 @@ import {
   setCurrentDisplaySrc,
   type ImageBitmapLike,
 } from "./bitmapCache";
+import { useTranslation } from "react-i18next";
 
 export interface PreviewFocusRegion {
   bbox: [number, number, number, number];
@@ -46,6 +47,7 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
   disableFocusAnimation = false,
   onImageReady,
 }) => {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -545,6 +547,8 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
         >
           <canvas
             ref={canvasRef}
+            role="img"
+            aria-label={t("imagePreview.previewAlt")}
             style={{
               width: "100%",
               height: "100%",
@@ -560,32 +564,38 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({
       {/* 加载提示 */}
       {imageSize.width === 0 && !decodeError && (
         <div
+          role="status"
           style={{
             position: "absolute",
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            color: "#999",
+            // 使用 --muted-foreground token：#999 在白底仅 2.85:1，未达 WCAG AA 4.5:1；
+            // --muted-foreground 亮色 ≈ 4.73:1，过 AA，且自动适应暗色模式
+            color: "hsl(var(--muted-foreground))",
             fontSize: "14px",
           }}
         >
-          Loading...
+          {t("imagePreview.loading")}
         </div>
       )}
 
       {/* 解码失败提示——createImageBitmap 不支持的格式或文件损坏 */}
       {decodeError && (
         <div
+          role="alert"
           style={{
             position: "absolute",
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
+            // 保留 #c00 而非改用 --destructive token：
+            // #c00 对白底 ≈ 5.9:1 已过 WCAG AA，而 --destructive(0 84.2% 60.2%) 仅 3.85:1 不达标
             color: "#c00",
             fontSize: "14px",
           }}
         >
-          Failed to load image
+          {t("imagePreview.loadFailed")}
         </div>
       )}
 

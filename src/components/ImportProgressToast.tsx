@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PhotoService } from "@/helpers/services/PhotoService";
+import { useTranslation } from "react-i18next";
 
 // 导入任务状态类型（与 PhotoService 同步）
 interface ImportTaskState {
@@ -58,6 +59,7 @@ const Progress = ({
 );
 
 export const ImportProgressToast = () => {
+  const { t } = useTranslation();
   const [state, setState] = useState<ImportTaskState>({
     isRunning: false,
     isComplete: false,
@@ -124,8 +126,14 @@ export const ImportProgressToast = () => {
         "animate-in slide-in-from-bottom-5 fade-in duration-300",
       )}
     >
-      {/* Header：标题 + 状态图标 + 关闭按钮 */}
-      <div className="mb-3 flex items-start justify-between">
+      {/* Header：标题 + 状态图标 + 关闭按钮
+          role=status + aria-live=polite 限定在 header 区域——
+          读屏器仅在标题变化（运行→完成）时播报，不被进度数字每 tick 打断 */}
+      <div
+        className="mb-3 flex items-start justify-between"
+        role="status"
+        aria-live="polite"
+      >
         <div className="flex items-center gap-3">
           {/* 状态图标：运行时显示旋转动画，完成时显示对勾 */}
           <div
@@ -145,12 +153,17 @@ export const ImportProgressToast = () => {
 
           <div>
             <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              {state.isComplete ? "导入完成" : "正在导入照片..."}
+              {state.isComplete
+                ? t("importToast.complete")
+                : t("importToast.inProgress")}
             </h4>
             <p className="mt-0.5 font-mono text-xs text-slate-500 dark:text-slate-400">
               {state.isComplete
-                ? `共成功导入 ${state.totalFiles} 张照片`
-                : `${state.processedFiles} / ${state.totalFiles} 张`}
+                ? t("importToast.importedCount", { count: state.totalFiles })
+                : t("importToast.progressCount", {
+                    processed: state.processedFiles,
+                    total: state.totalFiles,
+                  })}
             </p>
           </div>
         </div>
@@ -159,6 +172,7 @@ export const ImportProgressToast = () => {
         {state.isComplete && (
           <button
             onClick={handleDismiss}
+            aria-label={t("common.close")}
             className="shrink-0 text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-600 dark:hover:text-slate-300"
           >
             <X className="h-4 w-4" />
@@ -172,7 +186,7 @@ export const ImportProgressToast = () => {
           {/* 总体进度条 */}
           <div className="space-y-1">
             <div className="flex justify-between text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
-              <span>总体进度</span>
+              <span>{t("importToast.overallProgress")}</span>
               <span>{overallProgress}%</span>
             </div>
             <Progress value={overallProgress} className="h-2" />
@@ -187,7 +201,7 @@ export const ImportProgressToast = () => {
             <div className="space-y-1">
               <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300">
                 <ImageIcon className="h-3 w-3" />
-                <span>缩略图</span>
+                <span>{t("importToast.thumbnail")}</span>
               </div>
               <Progress
                 value={state.thumbnailProgress}
@@ -200,7 +214,7 @@ export const ImportProgressToast = () => {
             <div className="space-y-1">
               <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300">
                 <FileText className="h-3 w-3" />
-                <span>EXIF 数据</span>
+                <span>{t("importToast.exif")}</span>
               </div>
               <Progress
                 value={state.exifProgress}
@@ -215,7 +229,7 @@ export const ImportProgressToast = () => {
             <p className="flex items-center gap-2 truncate text-[10px] text-slate-400">
               <HardDrive className="h-3 w-3 shrink-0" />
               <span className="truncate">
-                {state.currentFile || "处理中..."}
+                {state.currentFile || t("importToast.processing")}
               </span>
             </p>
           </div>
@@ -233,7 +247,7 @@ export const ImportProgressToast = () => {
             )}
           >
             <Square className="h-3.5 w-3.5" />
-            <span>终止导入</span>
+            <span>{t("importToast.cancel")}</span>
           </button>
         </div>
       )}

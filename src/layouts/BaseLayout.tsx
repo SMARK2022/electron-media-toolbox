@@ -1,5 +1,6 @@
 import DragWindowRegion from "@/components/DragWindowRegion";
 import NavigationMenu from "@/components/NavigationMenu";
+import { Separator } from "@/components/ui/separator";
 import React from "react";
 
 export default function BaseLayout({
@@ -13,7 +14,8 @@ export default function BaseLayout({
       <div>
         <NavigationMenu />
       </div>
-      <hr />
+      {/* Separator 替代裸 <hr>：使用主题 border token，与 AboutPage 风格一致 */}
+      <Separator />
       <main>{children}</main>
     </div>
   );
