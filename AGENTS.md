@@ -7,7 +7,7 @@
 SMARK Media Tools — 基于 Electron + FastAPI(Nuitka 编译) + ONNX Runtime(DirectML) 的 Windows 桌面照片选片工具。
 
 - 仓库：https://github.com/SMARK2022/electron-media-toolbox
-- 平台：**Windows-only**（后端依赖 `onnxruntime-directml` + `comtypes`，macOS/Linux 仅能跑前端壳，`src/main.ts:103` 已显式跳过非 Windows 后端启动）
+- 平台：**Windows（主要）+ macOS（实验性）**。后端依赖 `onnxruntime-directml`（Windows）/ `onnxruntime`（macOS）+ `comtypes`（仅 Windows）。macOS 通过 ImageIO / QuickLook 生成缩略图，Nuitka `--mode=app` 编译为 `.app` bundle。`src/main.ts` 中 `resolvePythonBackendConfig()` 按平台返回不同的二进制路径
 - 版本：见 `package.json` 的 `version`，发版 tag 形如 `v2.1.1`，`GithubVersionChecker.tsx` 轮询 Releases
 
 ## 技术栈分层
@@ -56,15 +56,18 @@ npm run rebuild       # 更换 better-sqlite3 / Electron 版本后必须运行
 
 ## CI/CD
 
-| Workflow                        | 触发                      | 作用                                                                                                                  |
-| ------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/ci.yml`      | push/PR to master         | lint + typecheck + format + vitest（ubuntu + windows 矩阵）                                                           |
-| `.github/workflows/release.yml` | push master（paths 过滤） | 构建 web_api.exe + Forge make → 上传到 `v{version}` tag 的 GitHub Release，同版本多次 push 用 `--clobber` 覆盖 assets |
-| `.github/workflows/e2e.yml`     | PR / 手动                 | Playwright E2E（Windows，需 fixture 图）                                                                              |
+统一流水线 `.github/workflows/ci.yml`，依赖链：quality → build → e2e → release
+
+| Job     | 触发                         | 作用                                                        |
+| ------- | ---------------------------- | ----------------------------------------------------------- |
+| quality | push/PR to master            | lint + typecheck + format + vitest（ubuntu + windows 矩阵） |
+| build   | push to master（paths 过滤） | Nuitka 编译 web_api.exe + Forge package → 上传 artifact     |
+| e2e     | needs: [quality, build]      | Playwright E2E（Windows，需 fixture 图）                    |
+| release | needs: e2e，push to master   | Forge make → 上传到 `v{version}` tag 的 GitHub Release      |
 
 Composite actions：
 
-- `.github/actions/setup-node-app`：setup-node 20 + npm ci + 可选 rebuild
+- `.github/actions/setup-node-app`：setup-node 22 + npm ci + 可选 rebuild
 - `.github/actions/build-python-win`：Miniconda(nuitka env) + pip install + Nuitka 编译
 
 ## 代码签名
