@@ -301,10 +301,12 @@ export function GithubUpdateNotifier({ className }: { className?: string }) {
   const releaseDate = publishedAt ? new Date(publishedAt) : null;
 
   // 文案（保留 i18n，可在语言文件中配置对应 key）
+  // latestVersion 来自 GitHub API tag_name（如 "v2.1.3"），已含 v 前缀，
+  // 不再额外拼接 v 避免显示 "vv2.1.3"
   const title =
     t("updateDialog.title", {
       defaultValue: "发现新版本",
-    }) + ` v${latestVersion}`;
+    }) + ` ${latestVersion}`;
 
   const subtitle = t("updateDialog.subtitle", {
     defaultValue:
@@ -393,7 +395,7 @@ export function GithubUpdateNotifier({ className }: { className?: string }) {
                 </span>
                 <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 dark:bg-blue-900/40">
                   <code className="font-mono text-xs text-blue-700 sm:text-sm dark:text-blue-300">
-                    v{latestVersion}
+                    {latestVersion}
                   </code>
                 </span>
               </div>
