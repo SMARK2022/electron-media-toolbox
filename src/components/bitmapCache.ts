@@ -9,6 +9,12 @@
  * 2. LRU 访问序：命中时 delete + set 移到末尾，淘汰从头部移除
  * 3. currentDisplaySrc 对应的 bitmap 不被淘汰（用户正在看的图不能被回收）
  * 4. 重复写入同一 key 时 close 旧的 bitmap（防止泄漏）
+ *
+ * 加载路径：new Image() + img.onload → createImageBitmap(img)
+ * 不用 fetch() 是因为 local-resource:// 的 standard:true 会使 fetch 对
+ * Windows 盘符路径（如 H:）做严格 URL 校验时失败（port 解析歧义），
+ * 根本不触达协议 handler。<img>.src 赋值不做严格 URL 校验即派发请求，
+ * 与旧 <img> 元素加载行为一致，能正确触达 protocol.handle。
  */
 
 // ImageBitmap 在 jsdom 中不存在，用接口约束类型；运行时由 Chromium 提供
@@ -61,21 +67,38 @@ function evictOldest(): void {
  * 获取或创建 ImageBitmap。
  * - 缓存命中：零延迟返回（零 fetch、零 decode）
  * - in-flight 命中：复用同一 Promise（去重）
- * - 新请求：fetch + createImageBitmap（解码在 Worker 线程，不阻塞 UI）
+ * - 新请求：new Image() + img.onload 加载（与 <img> 相同的 URL 处理路径）
+ *   → createImageBitmap(img) 转为 GPU 后端句柄
  */
 export function getOrCreateBitmap(src: string): Promise<ImageBitmapLike> {
   // 1. 缓存命中
   const cached = getCachedBitmap(src);
   if (cached) return Promise.resolve(cached);
 
-  // 2. in-flight 去重：复用正在进行的 Promise，避免重复 fetch + decode
+  // 2. in-flight 去重：复用正在进行的 Promise，避免重复解码
   const pending = inflight.get(src);
   if (pending) return pending;
 
-  // 3. 新请求：fetch blob → createImageBitmap（后台线程解码）
-  const p = fetch(src)
-    .then((r) => r.blob())
-    .then((blob) => createImageBitmap(blob) as Promise<ImageBitmapLike>)
+  // 3. 新请求：用 <img> 加载（不走 fetch 的标准 URL 解析，正确处理 Windows 盘符路径）
+  //    → img.onload 触发后 createImageBitmap(img) 转为 GPU 句柄
+  const p = new Promise<ImageBitmapLike>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      // createImageBitmap 从已解码的 HTMLImageElement 创建 GPU 后端句柄，
+      // 显式 close() 前不被 Blink MemoryCache 淘汰
+      createImageBitmap(img)
+        .then((bitmap) => {
+          // 解绑事件引用让 GC 回收 img 的解码数据——ImageBitmap 已持有独立副本。
+          // 不用 img.src="" 因为空 src 会触发无意义的加载请求
+          img.onload = null;
+          img.onerror = null;
+          resolve(bitmap as unknown as ImageBitmapLike);
+        })
+        .catch(reject);
+    };
+    img.onerror = () => reject(new Error(`Failed to load: ${src}`));
+    img.src = src;
+  })
     .then((bitmap) => {
       inflight.delete(src);
       // 重复写入保护：若其他路径已缓存同一 URL，close 多余的避免泄漏
